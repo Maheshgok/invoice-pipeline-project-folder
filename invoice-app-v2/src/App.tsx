@@ -1,7 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './contexts/AuthContext'
-import Dashboard from './pages/Dashboard'
+import MultiUploadDashboard from './pages/MultiUploadDashboard'
 import Login from './pages/Login'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 
@@ -16,7 +16,7 @@ function App() {
               path="/*"
               element={
                 <ProtectedRoute>
-                  <Dashboard />
+                  <MultiUploadDashboard />
                 </ProtectedRoute>
               }
             />
