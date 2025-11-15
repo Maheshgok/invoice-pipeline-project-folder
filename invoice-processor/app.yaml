@@ -1,0 +1,20 @@
+runtime: python311
+service: invoice-processor
+entrypoint: gunicorn -b :$PORT main:app
+
+env_variables:
+  GOOGLE_CLOUD_PROJECT: "ocrinvoice-466611"
+  LOG_LEVEL: "INFO"
+  PUBSUB_TOPIC_INITIATE: "step-1-initiate"
+  PUBSUB_TOPIC_OUTPUT: "step-2-complete"
+  FIRESTORE_COLLECTION: "processing_results"
+  MODEL_NAME: "gpt-4o-mini"
+  BUCKET_NAME: "ocr-invoice-raw-files-bucket"
+  REGION: "asia-south1"
+
+# Cloud Run specific configurations
+instance_class: F1
+memory: 512Mi
+cpu: 1
+concurrency: 80
+timeout: 300s

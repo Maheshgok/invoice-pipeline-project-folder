@@ -1,0 +1,25 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Allow authenticated users to read invoice results they own
+    match /invoice_results/{jobId} {
+      allow read: if request.auth != null 
+        && request.auth.token.email == resource.data.user_email;
+      allow write: if false; // Only backend should write
+    }
+    
+    // Allow authenticated users to read their analysis requests  
+    match /analysis_requests/{requestId} {
+      allow read: if request.auth != null 
+        && request.auth.token.email == resource.data.user_email;
+      allow write: if request.auth != null
+        && request.auth.token.email == request.resource.data.user_email;
+    }
+    
+    // For development/testing only - remove in production
+    // match /{document=**} {
+    //   allow read, write: if request.auth != null;
+    // }
+  }
+}
