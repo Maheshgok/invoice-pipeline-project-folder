@@ -1,6 +1,5 @@
 import { Handler } from '@netlify/functions';
 import admin from 'firebase-admin';
-import multipart from 'lambda-multipart-parser';
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -91,26 +90,22 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
   }
 
   try {
-    // Parse multipart form data
-    const result = await multipart.parse(event);
+    const { fileName, fileSize, fileType } = JSON.parse(event.body);
     
-    const file = result.files?.[0];
-    const fileName = result.fileName || file?.filename || 'unknown-file';
-    
-    if (!file) {
+    if (!fileName) {
       return {
         statusCode: 400,
         headers,
-        body: JSON.stringify({ error: 'No file uploaded' })
+        body: JSON.stringify({ error: 'fileName is required' })
       };
     }
 
-    // Here you would upload the file to Firebase Storage
-    // For now, we'll use mock data but with the actual filename
+    // For now, we'll simulate file processing with mock data
+    // The actual file processing logic would be added here
     const mockProcessedData = {
       id: `invoice_${Date.now()}`,
       fileName: fileName,
-      fileSize: file.content?.length || 0,
+      fileSize: fileSize || Math.floor(Math.random() * 1000000),
       processedAt: new Date().toISOString(),
       userEmail: user.email,
       status: 'completed',
@@ -119,8 +114,8 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
         vendorName: 'Sample Vendor Inc.',
         invoiceNumber: `INV-${Math.floor(Math.random() * 10000)}`,
         invoiceDate: new Date().toISOString().split('T')[0],
-        totalAmount: (Math.random() * 2000 + 500).toFixed(2),
-        taxAmount: (Math.random() * 200 + 50).toFixed(2),
+        totalAmount: parseFloat((Math.random() * 2000 + 500).toFixed(2)),
+        taxAmount: parseFloat((Math.random() * 200 + 50).toFixed(2)),
         currency: 'USD',
         dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
       }
@@ -141,7 +136,7 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
     };
 
   } catch (error) {
-    console.error('Error processing file:', error);
+    console.error('Error saving to Firestore:', error);
     return {
       statusCode: 500,
       headers,

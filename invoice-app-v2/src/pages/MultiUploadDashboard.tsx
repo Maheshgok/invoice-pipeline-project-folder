@@ -1,11 +1,11 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { useMultiUpload } from '../hooks'
 
 const MultiUploadDashboard: React.FC = () => {
-  const { user } = useAuth()
+  const { user, logout } = useAuth()
   const { 
     uploadedFiles, 
     journalEntries, 
@@ -120,13 +120,30 @@ const MultiUploadDashboard: React.FC = () => {
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-gray-900 mb-2">
-          Multi-File Invoice Processing Dashboard
-        </h1>
-        <p className="text-gray-600">
-          Upload multiple invoices for batch processing and generate journal entries
-        </p>
+      <div className="mb-6 flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">
+            Multi-File Invoice Processing Dashboard
+          </h1>
+          <p className="text-gray-600">
+            Upload multiple invoices for batch processing and generate journal entries
+          </p>
+        </div>
+        
+        {/* User Menu */}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2 text-sm text-gray-600">
+            <User className="w-4 h-4" />
+            <span>{user?.email}</span>
+          </div>
+          <button
+            onClick={logout}
+            className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Logout</span>
+          </button>
+        </div>
       </div>
 
       {/* Top Section - Upload Area and Progress */}

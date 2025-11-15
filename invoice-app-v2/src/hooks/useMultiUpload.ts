@@ -53,7 +53,7 @@ export const useMultiUpload = () => {
 
   const processFile = useCallback(async (uploadedFile: UploadedFile) => {
     try {
-      // Step 1: Prepare file upload
+      // Step 1: Prepare for processing
       updateFileProgress(uploadedFile.id, 'uploading', 25)
       
       // Get auth token first
@@ -62,20 +62,20 @@ export const useMultiUpload = () => {
         throw new Error('Authentication required')
       }
 
-      // Create FormData for file upload
-      const formData = new FormData()
-      formData.append('file', uploadedFile.file)
-      formData.append('fileName', uploadedFile.file.name)
-      
       updateFileProgress(uploadedFile.id, 'uploading', 50)
 
-      // Step 2: Upload and process via our API
+      // Step 2: Call API with file info (for now, just send filename for mock processing)
       const response = await fetch('/api/process-invoice', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
         },
-        body: formData,
+        body: JSON.stringify({
+          fileName: uploadedFile.file.name,
+          fileSize: uploadedFile.file.size,
+          fileType: uploadedFile.file.type
+        }),
       })
 
       updateFileProgress(uploadedFile.id, 'processing', 75)
