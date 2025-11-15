@@ -4,9 +4,15 @@ import admin from 'firebase-admin';
 // Initialize Firebase Admin SDK only if environment variables are available
 let firebaseInitialized = false;
 
+console.log('Checking Firebase environment variables...');
+console.log('FIREBASE_PROJECT_ID:', !!process.env.FIREBASE_PROJECT_ID);
+console.log('FIREBASE_PRIVATE_KEY:', !!process.env.FIREBASE_PRIVATE_KEY);
+console.log('FIREBASE_CLIENT_EMAIL:', !!process.env.FIREBASE_CLIENT_EMAIL);
+
 if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
   if (!admin.apps.length) {
     try {
+      console.log('Initializing Firebase Admin SDK...');
       const serviceAccount = {
         type: 'service_account',
         project_id: process.env.FIREBASE_PROJECT_ID,
@@ -25,12 +31,18 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && proce
         projectId: process.env.FIREBASE_PROJECT_ID
       });
       firebaseInitialized = true;
+      console.log('Firebase Admin SDK initialized successfully');
     } catch (error) {
       console.error('Firebase initialization failed:', error);
+      firebaseInitialized = false;
     }
   } else {
     firebaseInitialized = true;
+    console.log('Firebase Admin SDK already initialized');
   }
+} else {
+  console.error('Missing required Firebase environment variables');
+  firebaseInitialized = false;
 }
 
 export const handler: Handler = async (event, context) => {
@@ -53,24 +65,58 @@ export const handler: Handler = async (event, context) => {
 
   try {
     console.log('Processing request:', event.httpMethod, event.path);
+    console.log('Headers received:', JSON.stringify(event.headers, null, 2));
     
-    // For now, let's skip Firebase auth verification to test the upload flow
-    // Later we can add it back once we confirm the basic flow works
+    // Verify Firebase token from Authorization header
+    const authHeader = event.headers.authorization;
+    console.log('Auth header present:', !!authHeader);
     
-    if (event.httpMethod === 'POST') {
-      return await processInvoice(event, null, headers);
-    } else if (event.httpMethod === 'GET') {
+    if (!authHeader?.startsWith('Bearer ')) {
+      console.error('Missing or invalid authorization header');
       return {
-        statusCode: 200,
+        statusCode: 401,
         headers,
-        body: JSON.stringify({ message: 'Invoice API is working' })
+        body: JSON.stringify({ error: 'Missing or invalid authorization header' })
       };
-    } else {
+    }
+
+    const token = authHeader.substring(7);
+    console.log('Token length:', token.length);
+    
+    if (!firebaseInitialized) {
+      console.error('Firebase Admin not initialized');
       return {
-        statusCode: 405,
+        statusCode: 500,
         headers,
-        body: JSON.stringify({ error: 'Method not allowed' })
+        body: JSON.stringify({ error: 'Firebase Admin not initialized' })
       };
+    }
+
+    let decodedToken;
+    try {
+      decodedToken = await admin.auth().verifyIdToken(token);
+      console.log('Token verified for user:', decodedToken.email);
+    } catch (authError) {
+      console.error('Token verification failed:', authError);
+      return {
+        statusCode: 401,
+        headers,
+        body: JSON.stringify({ error: 'Invalid or expired token' })
+      };
+    }
+    
+    // Process invoice based on HTTP method
+    switch (event.httpMethod) {
+      case 'POST':
+        return await processInvoice(event, decodedToken, headers);
+      case 'GET':
+        return await getInvoice(event, decodedToken, headers);
+      default:
+        return {
+          statusCode: 405,
+          headers,
+          body: JSON.stringify({ error: 'Method not allowed' })
+        };
     }
   } catch (error) {
     console.error('Invoice processing error:', error);
@@ -85,10 +131,12 @@ export const handler: Handler = async (event, context) => {
   }
 };
 
-async function processInvoice(event: any, user: any, headers: any) {
-  console.log('Processing invoice, event body:', event.body);
+async function processInvoice(event: any, user: admin.auth.DecodedIdToken, headers: any) {
+  console.log('Processing invoice for user:', user.email);
+  console.log('Event body:', event.body);
   
   if (!event.body) {
+    console.error('No request body provided');
     return {
       statusCode: 400,
       headers,
@@ -100,6 +148,7 @@ async function processInvoice(event: any, user: any, headers: any) {
     const { fileName, fileSize, fileType } = JSON.parse(event.body);
     
     if (!fileName) {
+      console.error('fileName is required but not provided');
       return {
         statusCode: 400,
         headers,
@@ -107,15 +156,15 @@ async function processInvoice(event: any, user: any, headers: any) {
       };
     }
 
-    console.log('Processing file:', fileName, 'Size:', fileSize, 'Type:', fileType);
+    console.log('Processing file:', fileName, 'Size:', fileSize, 'Type:', fileType, 'for user:', user.email);
 
-    // For now, we'll simulate file processing with mock data
+    // Generate realistic mock data based on the actual file
     const mockProcessedData = {
       id: `invoice_${Date.now()}`,
       fileName: fileName,
       fileSize: fileSize || Math.floor(Math.random() * 1000000),
       processedAt: new Date().toISOString(),
-      userEmail: 'test@example.com', // Mock user for now
+      userEmail: user.email,
       status: 'completed',
       confidence: 0.95,
       extractedData: {
@@ -129,24 +178,24 @@ async function processInvoice(event: any, user: any, headers: any) {
       }
     };
 
-    console.log('Mock data generated:', mockProcessedData);
+    console.log('Mock data generated:', mockProcessedData.id);
 
-    // Save to Firestore only if Firebase is initialized
+    // Save to Firestore only if Firebase is properly initialized
     if (firebaseInitialized) {
       try {
         const db = admin.firestore();
-        await db.collection('invoices').add({
+        const docRef = await db.collection('invoices').add({
           ...mockProcessedData,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
-          userId: user?.uid || 'anonymous'
+          userId: user.uid
         });
-        console.log('Data saved to Firestore');
+        console.log('Data saved to Firestore with ID:', docRef.id);
       } catch (firestoreError) {
         console.error('Firestore save failed:', firestoreError);
-        // Continue without Firestore
+        // Continue without Firestore for now
       }
     } else {
-      console.log('Firebase not initialized, skipping Firestore save');
+      console.warn('Firebase not properly initialized, skipping Firestore save');
     }
 
     return {
