@@ -1,8 +1,6 @@
 import { useState, useCallback } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
-import { storage } from '../config/firebase'
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 interface UploadedFile {
   id: string
@@ -55,7 +53,7 @@ export const useMultiUpload = () => {
 
   const processFile = useCallback(async (uploadedFile: UploadedFile) => {
     try {
-      // Step 1: Upload to Firebase Storage
+      // Step 1: Prepare file upload
       updateFileProgress(uploadedFile.id, 'uploading', 25)
       
       // Get auth token first
@@ -64,30 +62,23 @@ export const useMultiUpload = () => {
         throw new Error('Authentication required')
       }
 
-      // Create a unique file path in storage
-      const fileName = `${Date.now()}-${uploadedFile.file.name}`
-      const fileRef = ref(storage, `invoices/${fileName}`)
+      // Create FormData for file upload
+      const formData = new FormData()
+      formData.append('file', uploadedFile.file)
+      formData.append('fileName', uploadedFile.file.name)
       
       updateFileProgress(uploadedFile.id, 'uploading', 50)
-      
-      // Upload file to Firebase Storage
-      const snapshot = await uploadBytes(fileRef, uploadedFile.file)
-      const fileUrl = await getDownloadURL(snapshot.ref)
-      
-      updateFileProgress(uploadedFile.id, 'processing', 75)
 
-      // Step 2: Call the process-invoice API
+      // Step 2: Upload and process via our API
       const response = await fetch('/api/process-invoice', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          fileUrl: fileUrl,
-          fileName: uploadedFile.file.name
-        }),
+        body: formData,
       })
+
+      updateFileProgress(uploadedFile.id, 'processing', 75)
 
       if (!response.ok) {
         const errorData = await response.json()

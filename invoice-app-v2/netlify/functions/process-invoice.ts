@@ -1,5 +1,6 @@
 import { Handler } from '@netlify/functions';
 import admin from 'firebase-admin';
+import multipart from 'lambda-multipart-parser';
 
 // Initialize Firebase Admin SDK
 if (!admin.apps.length) {
@@ -89,54 +90,64 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
     };
   }
 
-  const { fileUrl, fileName } = JSON.parse(event.body);
-  
-  if (!fileUrl || !fileName) {
-    return {
-      statusCode: 400,
-      headers,
-      body: JSON.stringify({ error: 'fileUrl and fileName are required' })
-    };
-  }
-
-  // TODO: Integrate with your invoice processing service
-  // For now, return mock processed data
-  const mockProcessedData = {
-    id: `invoice_${Date.now()}`,
-    fileName,
-    fileUrl,
-    processedAt: new Date().toISOString(),
-    userEmail: user.email,
-    status: 'completed',
-    confidence: 0.95,
-    extractedData: {
-      vendorName: 'Sample Vendor Inc.',
-      invoiceNumber: `INV-${Math.floor(Math.random() * 10000)}`,
-      invoiceDate: new Date().toISOString().split('T')[0],
-      totalAmount: 1250.00,
-      taxAmount: 125.00,
-      currency: 'USD',
-      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-    }
-  };
-
-  // TODO: Save to Firestore
   try {
+    // Parse multipart form data
+    const result = await multipart.parse(event);
+    
+    const file = result.files?.[0];
+    const fileName = result.fileName || file?.filename || 'unknown-file';
+    
+    if (!file) {
+      return {
+        statusCode: 400,
+        headers,
+        body: JSON.stringify({ error: 'No file uploaded' })
+      };
+    }
+
+    // Here you would upload the file to Firebase Storage
+    // For now, we'll use mock data but with the actual filename
+    const mockProcessedData = {
+      id: `invoice_${Date.now()}`,
+      fileName: fileName,
+      fileSize: file.content?.length || 0,
+      processedAt: new Date().toISOString(),
+      userEmail: user.email,
+      status: 'completed',
+      confidence: 0.95,
+      extractedData: {
+        vendorName: 'Sample Vendor Inc.',
+        invoiceNumber: `INV-${Math.floor(Math.random() * 10000)}`,
+        invoiceDate: new Date().toISOString().split('T')[0],
+        totalAmount: (Math.random() * 2000 + 500).toFixed(2),
+        taxAmount: (Math.random() * 200 + 50).toFixed(2),
+        currency: 'USD',
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+      }
+    };
+
+    // Save to Firestore
     const db = admin.firestore();
     await db.collection('invoices').add({
       ...mockProcessedData,
       createdAt: admin.firestore.FieldValue.serverTimestamp(),
       userId: user.uid
     });
-  } catch (error) {
-    console.error('Error saving to Firestore:', error);
-  }
 
-  return {
-    statusCode: 200,
-    headers,
-    body: JSON.stringify(mockProcessedData)
-  };
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify(mockProcessedData)
+    };
+
+  } catch (error) {
+    console.error('Error processing file:', error);
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({ error: 'Error processing file upload' })
+    };
+  }
 }
 
 async function getInvoice(event: any, user: admin.auth.DecodedIdToken, headers: any) {
