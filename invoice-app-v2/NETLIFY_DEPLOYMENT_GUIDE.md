@@ -1,4 +1,4 @@
-﻿# Netlify Deployment Guide
+# Netlify Deployment Guide
 
 ## Environment Variables Setup
 
