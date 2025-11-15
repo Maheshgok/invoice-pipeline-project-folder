@@ -1,4 +1,4 @@
-﻿# Netlify configuration for invoice-app-v2
+# Netlify configuration for invoice-app-v2
 [build]
   base = "invoice-app-v2"
   publish = "dist"
