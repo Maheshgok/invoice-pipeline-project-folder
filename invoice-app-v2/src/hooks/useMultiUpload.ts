@@ -21,6 +21,11 @@ interface JournalEntry {
   debitAmount: number
   creditAmount: number
   reference: string
+  vendor?: string
+  totalAmount?: number
+  taxableAmount?: number
+  gstAmount?: number
+  isBalanced?: boolean
 }
 
 export const useMultiUpload = () => {
@@ -105,21 +110,52 @@ export const useMultiUpload = () => {
   }, [updateFileProgress, setFileResult, setFileError])
 
   const generateJournalEntry = (extractedData: any, fileName: string): JournalEntry => {
-    const invoiceDate = extractedData.invoiceDate || new Date().toISOString().split('T')[0]
-    const totalAmount = parseFloat(extractedData.totalAmount || '0')
-    const vendorName = extractedData.vendorName || 'Unknown Vendor'
-    const invoiceNumber = extractedData.invoiceNumber || fileName.replace(/\.[^/.]+$/, "")
+    // Handle new IndAS format with proper double-entry bookkeeping
+    if (extractedData.double_entry_bookkeeping?.journal_entry_set?.[0]?.entries) {
+      const journalSet = extractedData.double_entry_bookkeeping.journal_entry_set[0]
+      
+      // For now, return the first entry (expense account)
+      // In a full implementation, we'd create multiple journal entries
+      const expenseEntry = journalSet.entries.find((entry: any) => 
+        entry.account_type === 'Expense' && entry.debit_amount > 0
+      ) || journalSet.entries[0]
+
+      return {
+        id: `journal_${Date.now()}_${Math.random()}`,
+        invoiceId: extractedData.id || extractedData.invoice_number,
+        date: expenseEntry.date || extractedData.invoice_date || new Date().toLocaleDateString('en-IN').replace(/\//g, '-'),
+        accountName: expenseEntry.account_name,
+        accountCode: expenseEntry.account_code || '6001',
+        description: expenseEntry.narration || `${extractedData.vendor_name} - ${extractedData.invoice_number}`,
+        debitAmount: expenseEntry.debit_amount || 0,
+        creditAmount: expenseEntry.credit_amount || 0,
+        reference: extractedData.invoice_number || fileName.replace(/\.[^/.]+$/, ""),
+        vendor: extractedData.vendor_name,
+        totalAmount: extractedData.total_amount,
+        taxableAmount: extractedData.tax_details?.taxable_amount,
+        gstAmount: extractedData.tax_details?.total_gst,
+        isBalanced: journalSet.is_balanced
+      }
+    }
+    
+    // Fallback to legacy format
+    const invoiceDate = extractedData.invoice_date || extractedData.invoiceDate || new Date().toISOString().split('T')[0]
+    const totalAmount = parseFloat(extractedData.total_amount || extractedData.totalAmount || '0')
+    const vendorName = extractedData.vendor_name || extractedData.vendorName || 'Unknown Vendor'
+    const invoiceNumber = extractedData.invoice_number || extractedData.invoiceNumber || fileName.replace(/\.[^/.]+$/, "")
 
     return {
       id: `journal_${Date.now()}_${Math.random()}`,
       invoiceId: extractedData.id || invoiceNumber,
       date: invoiceDate,
       accountName: `Purchases - ${vendorName}`,
-      accountCode: '5000', // Default purchases account code
+      accountCode: '6001', // Updated to match IndAS format
       description: `Invoice from ${vendorName} - ${invoiceNumber}`,
       debitAmount: totalAmount, // Debit purchases
       creditAmount: 0,
-      reference: invoiceNumber
+      reference: invoiceNumber,
+      vendor: vendorName,
+      totalAmount: totalAmount
     }
   }
 
@@ -155,7 +191,8 @@ export const useMultiUpload = () => {
 
     const headers = [
       'Date', 'Account Name', 'Account Code', 'Description', 
-      'Debit Amount', 'Credit Amount', 'Reference'
+      'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 
+      'Total Amount', 'Taxable Amount', 'GST Amount', 'Balanced'
     ]
 
     const csvContent = [
@@ -167,7 +204,12 @@ export const useMultiUpload = () => {
         `"${entry.description.replace(/"/g, '""')}"`,
         entry.debitAmount,
         entry.creditAmount,
-        `"${entry.reference.replace(/"/g, '""')}"`
+        `"${entry.reference.replace(/"/g, '""')}"`,
+        `"${(entry.vendor || '').replace(/"/g, '""')}"`,
+        entry.totalAmount || 0,
+        entry.taxableAmount || 0,
+        entry.gstAmount || 0,
+        entry.isBalanced ? 'Yes' : 'No'
       ].join(','))
     ].join('\n')
 

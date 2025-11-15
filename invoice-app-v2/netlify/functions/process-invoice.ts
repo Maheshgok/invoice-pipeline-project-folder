@@ -189,7 +189,14 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
 
     console.log('Processing file:', fileName, 'Size:', fileSize, 'Type:', fileType, 'for user:', user.email);
 
-    // Generate realistic mock data based on the actual file
+    // Generate realistic Indian purchase invoice mock data with IndAS double-entry accounting
+    const baseAmount = parseFloat((Math.random() * 50000 + 5000).toFixed(2));
+    const gstRate = Math.random() > 0.5 ? 18 : 12; // Common GST rates in India
+    const taxableAmount = parseFloat((baseAmount / (1 + gstRate/100)).toFixed(2));
+    const totalGst = parseFloat((taxableAmount * gstRate/100).toFixed(2));
+    const cgst = parseFloat((totalGst / 2).toFixed(2));
+    const sgst = parseFloat((totalGst / 2).toFixed(2));
+    
     const mockProcessedData = {
       id: `invoice_${Date.now()}`,
       fileName: fileName,
@@ -199,13 +206,117 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
       status: 'completed',
       confidence: 0.95,
       extractedData: {
-        vendorName: `${fileName.split('.')[0]} Vendor Inc.`,
-        invoiceNumber: `INV-${Math.floor(Math.random() * 10000)}`,
-        invoiceDate: new Date().toISOString().split('T')[0],
-        totalAmount: parseFloat((Math.random() * 2000 + 500).toFixed(2)),
-        taxAmount: parseFloat((Math.random() * 200 + 50).toFixed(2)),
-        currency: 'USD',
-        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        vendor_name: `${fileName.split('.')[0].replace(/[^a-zA-Z0-9]/g, ' ')} Pvt Ltd`,
+        invoice_number: `INV/${new Date().getFullYear()}/${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`,
+        invoice_date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+        due_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+        total_amount: baseAmount,
+        currency: 'INR',
+        gstin: `27A${Math.floor(Math.random() * 1000000000).toString().padStart(10, '0')}Z${Math.floor(Math.random() * 10)}`,
+        pan: `A${['B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'][Math.floor(Math.random() * 23)]}${['B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'][Math.floor(Math.random() * 23)]}${['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'][Math.floor(Math.random() * 26)]}${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}${['A','B','C','D','E','F','G','H','J','K','L','M','N','P','Q','R','S','T','U','V','W','X','Y','Z'][Math.floor(Math.random() * 26)]}`,
+        items: [
+          {
+            description: "Office Supplies and Stationery",
+            quantity: Math.floor(Math.random() * 50) + 1,
+            unit_price: parseFloat((taxableAmount / (Math.floor(Math.random() * 50) + 1)).toFixed(2)),
+            total: taxableAmount,
+            hsn_code: "48239000",
+            gst_rate: gstRate
+          }
+        ],
+        tax_details: {
+          cgst: cgst,
+          sgst: sgst,
+          igst: 0,
+          total_gst: totalGst,
+          taxable_amount: taxableAmount
+        },
+        suggested_journal_entries: [
+          {
+            account_name: "Office Expenses",
+            account_type: "Expense",
+            debit_amount: taxableAmount,
+            credit_amount: 0,
+            narration: `Purchase from ${fileName.split('.')[0].replace(/[^a-zA-Z0-9]/g, ' ')} Pvt Ltd`
+          },
+          {
+            account_name: "CGST Input Tax Credit",
+            account_type: "Current Asset",
+            debit_amount: cgst,
+            credit_amount: 0,
+            narration: "CGST on purchase invoice"
+          },
+          {
+            account_name: "SGST Input Tax Credit", 
+            account_type: "Current Asset",
+            debit_amount: sgst,
+            credit_amount: 0,
+            narration: "SGST on purchase invoice"
+          },
+          {
+            account_name: `${fileName.split('.')[0].replace(/[^a-zA-Z0-9]/g, ' ')} Pvt Ltd`,
+            account_type: "Current Liability",
+            debit_amount: 0,
+            credit_amount: baseAmount,
+            narration: "Amount payable to vendor"
+          }
+        ],
+        double_entry_bookkeeping: {
+          journal_entry_set: [
+            {
+              entry_number: 1,
+              date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-'),
+              entries: [
+                {
+                  account_name: "Office Expenses",
+                  account_code: "6001",
+                  account_type: "Expense",
+                  debit_amount: taxableAmount,
+                  credit_amount: 0,
+                  narration: `Purchase from ${fileName.split('.')[0].replace(/[^a-zA-Z0-9]/g, ' ')} Pvt Ltd`
+                },
+                {
+                  account_name: "CGST Input Tax Credit",
+                  account_code: "1511",
+                  account_type: "Current Asset",
+                  debit_amount: cgst,
+                  credit_amount: 0,
+                  narration: "CGST on purchase invoice"
+                },
+                {
+                  account_name: "SGST Input Tax Credit",
+                  account_code: "1512",
+                  account_type: "Current Asset", 
+                  debit_amount: sgst,
+                  credit_amount: 0,
+                  narration: "SGST on purchase invoice"
+                },
+                {
+                  account_name: `${fileName.split('.')[0].replace(/[^a-zA-Z0-9]/g, ' ')} Pvt Ltd`,
+                  account_code: "2001",
+                  account_type: "Current Liability",
+                  debit_amount: 0,
+                  credit_amount: baseAmount,
+                  narration: "Amount payable to vendor"
+                }
+              ],
+              total_debit: parseFloat((taxableAmount + cgst + sgst).toFixed(2)),
+              total_credit: baseAmount,
+              is_balanced: true,
+              entry_description: "Recording purchase invoice with input GST"
+            }
+          ]
+        },
+        compliance_notes: {
+          gst_applicable: "Yes - Input Tax Credit available",
+          tds_applicable: "Not applicable for this transaction",
+          accounting_standard: "IndAS compliant double-entry bookkeeping", 
+          expense_category: "Office Expenses"
+        },
+        extracted_table: [
+          ["Description", "Quantity", "Unit Price", "Total", "HSN", "GST%"],
+          ["Office Supplies and Stationery", (Math.floor(Math.random() * 50) + 1).toString(), (taxableAmount / (Math.floor(Math.random() * 50) + 1)).toFixed(2), taxableAmount.toString(), "48239000", gstRate.toString()]
+        ]
       }
     };
 
