@@ -8,11 +8,13 @@ const MultiUploadDashboard: React.FC = () => {
   const { user, logout } = useAuth()
   const { 
     uploadedFiles, 
-    journalEntries, 
+    journalEntries,
+    invoiceResults, 
     addFile, 
     removeFile, 
     updateJournalEntry, 
-    downloadCSV 
+    downloadCSV,
+    clearAll
   } = useMultiUpload()
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)

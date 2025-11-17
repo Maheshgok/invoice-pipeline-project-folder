@@ -1,14 +1,16 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
+import { firestoreService, InvoiceProcessingResult, JournalEntryData } from '../services/firestore'
 
 interface UploadedFile {
   id: string
   file: File
   status: 'uploading' | 'processing' | 'completed' | 'error'
   progress: number
-  result?: any
+  result?: InvoiceProcessingResult
   error?: string
+  jobId?: string
 }
 
 interface JournalEntry {
@@ -31,6 +33,8 @@ interface JournalEntry {
 export const useMultiUpload = () => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
+  const [activeJobIds, setActiveJobIds] = useState<string[]>([])
+  const [invoiceResults, setInvoiceResults] = useState<InvoiceProcessingResult[]>([])
 
   const updateFileProgress = useCallback((fileId: string, status: UploadedFile['status'], progress: number) => {
     setUploadedFiles(prev =>
@@ -56,58 +60,141 @@ export const useMultiUpload = () => {
     )
   }, [])
 
+  // Set up real-time Firestore listeners
+  useEffect(() => {
+    if (activeJobIds.length > 0) {
+      // Listen to invoice processing results
+      firestoreService.listenToInvoiceResults(
+        activeJobIds,
+        (results) => {
+          setInvoiceResults(results)
+          // Update file statuses based on results
+          setUploadedFiles(prev => prev.map(file => {
+            const result = results.find(r => r.jobId === file.jobId)
+            if (result) {
+              return {
+                ...file,
+                status: result.status,
+                progress: result.progress,
+                result: result,
+                error: result.error
+              }
+            }
+            return file
+          }))
+        },
+        (error) => {
+          console.error('Invoice results listener error:', error)
+          toast.error('Real-time updates failed')
+        }
+      )
+
+      // Listen to journal entries
+      const invoiceIds = invoiceResults.map(r => r.id).filter(Boolean)
+      if (invoiceIds.length > 0) {
+        firestoreService.listenToJournalEntries(
+          invoiceIds,
+          (entries) => {
+            // Convert Firestore entries to JournalEntry format
+            const journalEntries = entries.map(entry => ({
+              id: entry.id,
+              invoiceId: entry.invoiceId,
+              date: entry.date,
+              accountName: entry.accountName,
+              accountCode: entry.accountCode,
+              description: entry.narration,
+              debitAmount: entry.debitAmount,
+              creditAmount: entry.creditAmount,
+              reference: entry.invoiceNumber,
+              vendor: entry.vendor
+            }))
+            setJournalEntries(journalEntries)
+          },
+          (error) => {
+            console.error('Journal entries listener error:', error)
+          }
+        )
+      }
+    }
+
+    // Cleanup listeners on unmount
+    return () => {
+      firestoreService.cleanup()
+    }
+  }, [activeJobIds, invoiceResults])
+
   const processFile = useCallback(async (uploadedFile: UploadedFile) => {
     try {
-      // Step 1: Prepare for processing
-      updateFileProgress(uploadedFile.id, 'uploading', 25)
-      
-      // Get auth token first
+      // Step 1: Get authentication token
       const idToken = await authService.getIdToken()
       if (!idToken) {
         throw new Error('Authentication required')
       }
 
-      updateFileProgress(uploadedFile.id, 'uploading', 50)
+      updateFileProgress(uploadedFile.id, 'uploading', 20)
 
-      // Step 2: Call API with file info (for now, just send filename for mock processing)
-      const response = await fetch('/api/process-invoice', {
+      // Step 2: Upload file to GCP initial-api (your existing Cloud Run service)
+      const formData = new FormData()
+      formData.append('file', uploadedFile.file)
+
+      const uploadResponse = await fetch('https://initial-api-812016027146.asia-south1.run.app/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${idToken}`
+        },
+        body: formData
+      })
+
+      if (!uploadResponse.ok) {
+        const errorData = await uploadResponse.json()
+        throw new Error(errorData.error || 'Upload failed')
+      }
+
+      const uploadResult = await uploadResponse.json()
+      const jobId = uploadResult.job_id
+
+      // Step 3: Update file with job ID and set to processing
+      setUploadedFiles(prev => prev.map(file => 
+        file.id === uploadedFile.id 
+          ? { ...file, jobId, status: 'processing', progress: 30 }
+          : file
+      ))
+
+      // Step 4: Add job ID to active jobs for real-time monitoring
+      setActiveJobIds(prev => [...prev, jobId])
+
+      // Step 5: Trigger queue processing
+      const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/add-job', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          fileName: uploadedFile.file.name,
-          fileSize: uploadedFile.file.size,
-          fileType: uploadedFile.file.type
-        }),
+          job_id: jobId,
+          bucket_path: uploadResult.bucket_path,
+          gcs_path: uploadResult.gcsPath,
+          filename: uploadedFile.file.name,
+          user_email: authService.getCurrentUser()?.email
+        })
       })
 
-      updateFileProgress(uploadedFile.id, 'processing', 75)
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.message || 'Failed to process file')
+      if (!queueResponse.ok) {
+        const errorData = await queueResponse.json()
+        throw new Error(errorData.error || 'Queue processing failed')
       }
 
-      const result = await response.json()
+      updateFileProgress(uploadedFile.id, 'processing', 50)
+      toast.success(`Started processing: ${uploadedFile.file.name}`)
       
-      updateFileProgress(uploadedFile.id, 'completed', 100)
-      setFileResult(uploadedFile.id, result)
-
-      // Generate journal entries from the invoice data
-      if (result.extractedData) {
-        const journalEntriesFromInvoice = generateJournalEntries(result.extractedData, uploadedFile.file.name)
-        setJournalEntries(prev => [...prev, ...journalEntriesFromInvoice])
-      }
-
-      toast.success(`Processed: ${uploadedFile.file.name}`)
+      // Real-time updates will handle completion via Firestore listeners
+      
     } catch (error: any) {
       updateFileProgress(uploadedFile.id, 'error', 0)
       setFileError(uploadedFile.id, error.message)
       toast.error(`Error processing ${uploadedFile.file.name}: ${error.message}`)
     }
-  }, [updateFileProgress, setFileResult, setFileError])
+  }, [updateFileProgress, setFileError])
 
   const generateJournalEntries = (extractedData: any, fileName: string): JournalEntry[] => {
     // Handle new IndAS format with proper double-entry bookkeeping
@@ -235,12 +322,22 @@ export const useMultiUpload = () => {
     toast.success('CSV downloaded successfully')
   }, [journalEntries])
 
+  const clearAll = useCallback(() => {
+    firestoreService.cleanup()
+    setUploadedFiles([])
+    setJournalEntries([])
+    setActiveJobIds([])
+    setInvoiceResults([])
+  }, [])
+
   return {
     uploadedFiles,
     journalEntries,
+    invoiceResults,
     addFile,
     removeFile,
     updateJournalEntry,
-    downloadCSV
+    downloadCSV,
+    clearAll
   }
 }
