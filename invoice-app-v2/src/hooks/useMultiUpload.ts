@@ -97,8 +97,8 @@ export const useMultiUpload = () => {
 
       // Generate journal entries from the invoice data
       if (result.extractedData) {
-        const journalEntry = generateJournalEntry(result.extractedData, uploadedFile.file.name)
-        setJournalEntries(prev => [...prev, journalEntry])
+        const journalEntriesFromInvoice = generateJournalEntries(result.extractedData, uploadedFile.file.name)
+        setJournalEntries(prev => [...prev, ...journalEntriesFromInvoice])
       }
 
       toast.success(`Processed: ${uploadedFile.file.name}`)
@@ -109,54 +109,64 @@ export const useMultiUpload = () => {
     }
   }, [updateFileProgress, setFileResult, setFileError])
 
-  const generateJournalEntry = (extractedData: any, fileName: string): JournalEntry => {
+  const generateJournalEntries = (extractedData: any, fileName: string): JournalEntry[] => {
     // Handle new IndAS format with proper double-entry bookkeeping
     if (extractedData.double_entry_bookkeeping?.journal_entry_set?.[0]?.entries) {
       const journalSet = extractedData.double_entry_bookkeeping.journal_entry_set[0]
       
-      // For now, return the first entry (expense account)
-      // In a full implementation, we'd create multiple journal entries
-      const expenseEntry = journalSet.entries.find((entry: any) => 
-        entry.account_type === 'Expense' && entry.debit_amount > 0
-      ) || journalSet.entries[0]
-
-      return {
-        id: `journal_${Date.now()}_${Math.random()}`,
+      // Create individual journal entries for each account in the double-entry set
+      return journalSet.entries.map((entry: any, index: number) => ({
+        id: `journal_${Date.now()}_${index}_${Math.random()}`,
         invoiceId: extractedData.id || extractedData.invoice_number,
-        date: expenseEntry.date || extractedData.invoice_date || new Date().toLocaleDateString('en-IN').replace(/\//g, '-'),
-        accountName: expenseEntry.account_name,
-        accountCode: expenseEntry.account_code || '6001',
-        description: expenseEntry.narration || `${extractedData.vendor_name} - ${extractedData.invoice_number}`,
-        debitAmount: expenseEntry.debit_amount || 0,
-        creditAmount: expenseEntry.credit_amount || 0,
+        date: entry.date || extractedData.invoice_date || new Date().toLocaleDateString('en-IN').replace(/\//g, '-'),
+        accountName: entry.account_name,
+        accountCode: entry.account_code || '',
+        description: entry.narration || `${extractedData.vendor_name} - ${extractedData.invoice_number}`,
+        debitAmount: entry.debit_amount || 0,
+        creditAmount: entry.credit_amount || 0,
         reference: extractedData.invoice_number || fileName.replace(/\.[^/.]+$/, ""),
         vendor: extractedData.vendor_name,
         totalAmount: extractedData.total_amount,
         taxableAmount: extractedData.tax_details?.taxable_amount,
         gstAmount: extractedData.tax_details?.total_gst,
         isBalanced: journalSet.is_balanced
-      }
+      }))
     }
     
-    // Fallback to legacy format
+    // Fallback to legacy format - create basic double entry
     const invoiceDate = extractedData.invoice_date || extractedData.invoiceDate || new Date().toISOString().split('T')[0]
     const totalAmount = parseFloat(extractedData.total_amount || extractedData.totalAmount || '0')
     const vendorName = extractedData.vendor_name || extractedData.vendorName || 'Unknown Vendor'
     const invoiceNumber = extractedData.invoice_number || extractedData.invoiceNumber || fileName.replace(/\.[^/.]+$/, "")
 
-    return {
-      id: `journal_${Date.now()}_${Math.random()}`,
-      invoiceId: extractedData.id || invoiceNumber,
-      date: invoiceDate,
-      accountName: `Purchases - ${vendorName}`,
-      accountCode: '6001', // Updated to match IndAS format
-      description: `Invoice from ${vendorName} - ${invoiceNumber}`,
-      debitAmount: totalAmount, // Debit purchases
-      creditAmount: 0,
-      reference: invoiceNumber,
-      vendor: vendorName,
-      totalAmount: totalAmount
-    }
+    return [
+      {
+        id: `journal_${Date.now()}_0_${Math.random()}`,
+        invoiceId: extractedData.id || invoiceNumber,
+        date: invoiceDate,
+        accountName: `Purchases - ${vendorName}`,
+        accountCode: '6001',
+        description: `Invoice from ${vendorName} - ${invoiceNumber}`,
+        debitAmount: totalAmount,
+        creditAmount: 0,
+        reference: invoiceNumber,
+        vendor: vendorName,
+        totalAmount: totalAmount
+      },
+      {
+        id: `journal_${Date.now()}_1_${Math.random()}`,
+        invoiceId: extractedData.id || invoiceNumber,
+        date: invoiceDate,
+        accountName: `Accounts Payable - ${vendorName}`,
+        accountCode: '2001',
+        description: `Invoice from ${vendorName} - ${invoiceNumber}`,
+        debitAmount: 0,
+        creditAmount: totalAmount,
+        reference: invoiceNumber,
+        vendor: vendorName,
+        totalAmount: totalAmount
+      }
+    ]
   }
 
   const addFile = useCallback((file: File) => {

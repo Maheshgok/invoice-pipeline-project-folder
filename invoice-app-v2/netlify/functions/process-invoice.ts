@@ -326,12 +326,43 @@ async function processInvoice(event: any, user: admin.auth.DecodedIdToken, heade
     if (firebaseInitialized) {
       try {
         const db = admin.firestore();
-        const docRef = await db.collection('invoices').add({
+        
+        // Save the main invoice document
+        const invoiceDocRef = await db.collection('invoices').add({
           ...mockProcessedData,
           createdAt: admin.firestore.FieldValue.serverTimestamp(),
           userId: user.uid
         });
-        console.log('Data saved to Firestore with ID:', docRef.id);
+        console.log('Invoice saved to Firestore with ID:', invoiceDocRef.id);
+        
+        // Save individual journal entries to a separate collection for better querying
+        if (mockProcessedData.extractedData.double_entry_bookkeeping?.journal_entry_set?.[0]?.entries) {
+          const journalEntries = mockProcessedData.extractedData.double_entry_bookkeeping.journal_entry_set[0].entries;
+          const batch = db.batch();
+          
+          journalEntries.forEach((entry: any, index: number) => {
+            const journalRef = db.collection('journal_entries').doc();
+            batch.set(journalRef, {
+              invoiceId: invoiceDocRef.id,
+              invoiceNumber: mockProcessedData.extractedData.invoice_number,
+              vendor: mockProcessedData.extractedData.vendor_name,
+              entryIndex: index,
+              date: entry.date || mockProcessedData.extractedData.invoice_date,
+              accountName: entry.account_name,
+              accountCode: entry.account_code,
+              accountType: entry.account_type,
+              debitAmount: entry.debit_amount || 0,
+              creditAmount: entry.credit_amount || 0,
+              narration: entry.narration,
+              userId: user.uid,
+              createdAt: admin.firestore.FieldValue.serverTimestamp()
+            });
+          });
+          
+          await batch.commit();
+          console.log(`Saved ${journalEntries.length} journal entries to Firestore`);
+        }
+        
       } catch (firestoreError) {
         console.error('Firestore save failed:', firestoreError);
         // Continue without Firestore for now
