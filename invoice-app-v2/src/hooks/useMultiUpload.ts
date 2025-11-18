@@ -137,7 +137,7 @@ export const useMultiUpload = () => {
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
 
-      const uploadResponse = await fetch('https://initial-api-812016027146.asia-south1.run.app/upload', {
+      const uploadResponse = await fetch('https://initial-api-812016027146.asia-south1.run.app/upload_invoice', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`
