@@ -166,15 +166,18 @@ OUTPUT FORMAT
         
         try:
             # Parse bucket and path from bucket_path
+            logger.info(f"Received bucket_path: {bucket_path}")
             if '/' in bucket_path:
                 # Format: bucket_name/path/to/file
                 parts = bucket_path.split('/', 1)
                 bucket_name = parts[0]
                 blob_path = parts[1]
+                logger.info(f"Parsed bucket_name: {bucket_name}, blob_path: {blob_path}")
             else:
-                # Fallback to hardcoded bucket
-                bucket_name = 'invoice_uploads'
+                # Fallback to hardcoded bucket (this should not happen with proper setup)
+                bucket_name = 'watch-mail-trial-invoice-raw-files'  # Use correct bucket name
                 blob_path = bucket_path
+                logger.warning(f"No '/' found in bucket_path, using fallback bucket: {bucket_name}")
             
             logger.info(f"Processing file: bucket={bucket_name}, path={blob_path}")
             

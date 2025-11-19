@@ -68,16 +68,15 @@ class FirestoreService {
       return
     }
 
-    // Listen to invoices collection for the current user
-    const invoicesQuery = query(
-      collection(db, 'invoices'),
-      where('userId', '==', user.uid),
-      where('jobId', 'in', jobIds),
-      orderBy('createdAt', 'desc')
+    // Listen to invoice_results collection for the current user
+    const resultsQuery = query(
+      collection(db, 'invoice_results'),
+      where('user_email', '==', user.email),
+      where('job_id', 'in', jobIds)
     )
 
     const unsubscribe = onSnapshot(
-      invoicesQuery,
+      resultsQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
         const results: InvoiceProcessingResult[] = []
         
@@ -86,18 +85,18 @@ class FirestoreService {
           if (data) {
             results.push({
               id: doc.id,
-              fileName: data.fileName || '',
-              fileSize: data.fileSize || 0,
-              status: data.status || 'queued',
+              fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+              fileSize: 0, // Not stored in backend
+              status: this.mapBackendStatus(data.status),
               progress: this.calculateProgress(data.status),
-              processedAt: data.processedAt,
-              userEmail: data.userEmail || '',
-              extractedData: data.extractedData,
+              processedAt: data.completed_at || data.updated_at,
+              userEmail: data.user_email || '',
+              extractedData: data.result, // Complete OpenAI response with journal entries
               error: data.error,
-              jobId: data.jobId,
-              gcsPath: data.gcsPath,
-              createdAt: data.createdAt,
-              updatedAt: data.updatedAt || data.createdAt
+              jobId: data.job_id,
+              gcsPath: data.bucket_path,
+              createdAt: this.stringToTimestamp(data.created_at),
+              updatedAt: this.stringToTimestamp(data.updated_at || data.created_at)
             })
           }
         })
@@ -114,69 +113,82 @@ class FirestoreService {
   }
 
   /**
-   * Listen to journal entries in real-time
+   * Extract journal entries from invoice results
+   * Since all data is in invoice_results, we extract journal entries from there
    */
-  listenToJournalEntries(
-    invoiceIds: string[],
-    onUpdate: (entries: JournalEntryData[]) => void,
-    onError: (error: Error) => void
-  ) {
-    const user = authService.getCurrentUser()
-    if (!user) {
-      onError(new Error('User not authenticated'))
-      return
-    }
-
-    if (invoiceIds.length === 0) {
-      onUpdate([])
-      return
-    }
-
-    // Listen to journal_entries collection
-    const journalQuery = query(
-      collection(db, 'journal_entries'),
-      where('userId', '==', user.uid),
-      where('invoiceId', 'in', invoiceIds),
-      orderBy('invoiceId'),
-      orderBy('entryIndex')
-    )
-
-    const unsubscribe = onSnapshot(
-      journalQuery,
-      (snapshot: QuerySnapshot<DocumentData>) => {
-        const entries: JournalEntryData[] = []
+  extractJournalEntriesFromResults(
+    results: InvoiceProcessingResult[]
+  ): JournalEntryData[] {
+    const entries: JournalEntryData[] = []
+    
+    results.forEach((result) => {
+      if (result.extractedData && result.extractedData.double_entry_bookkeeping) {
+        const journalSets = result.extractedData.double_entry_bookkeeping.journal_entry_set || []
         
-        snapshot.forEach((doc: DocumentSnapshot<DocumentData>) => {
-          const data = doc.data()
-          if (data) {
+        journalSets.forEach((journalSet: any, setIndex: number) => {
+          const journalEntries = journalSet.entries || []
+          
+          journalEntries.forEach((entry: any, entryIndex: number) => {
             entries.push({
-              id: doc.id,
-              invoiceId: data.invoiceId,
-              invoiceNumber: data.invoiceNumber,
-              vendor: data.vendor,
-              entryIndex: data.entryIndex,
-              date: data.date,
-              accountName: data.accountName,
-              accountCode: data.accountCode,
-              accountType: data.accountType,
-              debitAmount: data.debitAmount || 0,
-              creditAmount: data.creditAmount || 0,
-              narration: data.narration,
-              userId: data.userId,
-              createdAt: data.createdAt
+              id: `${result.jobId}_${setIndex}_${entryIndex}`,
+              invoiceId: result.id,
+              invoiceNumber: result.extractedData.invoice_number || '',
+              vendor: result.extractedData.vendor_name || '',
+              entryIndex: entryIndex,
+              date: entry.date || journalSet.date || result.extractedData.invoice_date || '',
+              accountName: entry.account_name || '',
+              accountCode: entry.account_code || '',
+              accountType: entry.account_type || '',
+              debitAmount: entry.debit_amount || 0,
+              creditAmount: entry.credit_amount || 0,
+              narration: entry.narration || journalSet.entry_description || '',
+              userId: result.userEmail,
+              createdAt: result.createdAt
             })
-          }
+          })
         })
-
-        onUpdate(entries)
-      },
-      (error) => {
-        console.error('Journal entries listener error:', error)
-        onError(error)
       }
-    )
+    })
+    
+    return entries
+  }
 
-    this.unsubscribers.push(unsubscribe)
+  /**
+   * Helper method to extract filename from bucket path
+   */
+  private extractFileNameFromPath(bucketPath: string): string {
+    if (!bucketPath) return ''
+    const parts = bucketPath.split('/')
+    return parts[parts.length - 1] || ''
+  }
+
+  /**
+   * Map backend status to frontend status
+   */
+  private mapBackendStatus(backendStatus: string): 'queued' | 'processing' | 'completed' | 'error' {
+    switch (backendStatus) {
+      case 'completed':
+        return 'completed'
+      case 'failed':
+        return 'error'
+      case 'processing':
+        return 'processing'
+      default:
+        return 'queued'
+    }
+  }
+
+  /**
+   * Convert string timestamp to Firestore Timestamp
+   */
+  private stringToTimestamp(dateString: string): Timestamp {
+    if (!dateString) return Timestamp.now()
+    try {
+      const date = new Date(dateString)
+      return Timestamp.fromDate(date)
+    } catch {
+      return Timestamp.now()
+    }
   }
 
   /**

@@ -37,7 +37,7 @@ from flask_cors import CORS
 CORS(app, 
      resources={
          r"/*": {
-             "origins": ["https://invoiceparse.netlify.app"],
+             "origins": ["https://invoiceparse.netlify.app", "http://localhost:3000", "http://localhost:3001"],
              "methods": ["GET", "POST", "PUT", "OPTIONS"],
              "allow_headers": ["Authorization", "Content-Type"],
              "supports_credentials": True,

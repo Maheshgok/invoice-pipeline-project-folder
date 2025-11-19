@@ -67,7 +67,25 @@ export const useMultiUpload = () => {
       firestoreService.listenToInvoiceResults(
         activeJobIds,
         (results) => {
+          console.log('🔥 Received invoice results:', results)
           setInvoiceResults(results)
+          
+          // Extract and set journal entries from the same results
+          const entries = firestoreService.extractJournalEntriesFromResults(results)
+          const journalEntries = entries.map(entry => ({
+            id: entry.id,
+            invoiceId: entry.invoiceId,
+            date: entry.date,
+            accountName: entry.accountName,
+            accountCode: entry.accountCode,
+            description: entry.narration,
+            debitAmount: entry.debitAmount,
+            creditAmount: entry.creditAmount,
+            reference: entry.invoiceNumber,
+            vendor: entry.vendor
+          }))
+          setJournalEntries(journalEntries)
+          
           // Update file statuses based on results
           setUploadedFiles(prev => prev.map(file => {
             const result = results.find(r => r.jobId === file.jobId)
@@ -88,33 +106,6 @@ export const useMultiUpload = () => {
           toast.error('Real-time updates failed')
         }
       )
-
-      // Listen to journal entries
-      const invoiceIds = invoiceResults.map(r => r.id).filter(Boolean)
-      if (invoiceIds.length > 0) {
-        firestoreService.listenToJournalEntries(
-          invoiceIds,
-          (entries) => {
-            // Convert Firestore entries to JournalEntry format
-            const journalEntries = entries.map(entry => ({
-              id: entry.id,
-              invoiceId: entry.invoiceId,
-              date: entry.date,
-              accountName: entry.accountName,
-              accountCode: entry.accountCode,
-              description: entry.narration,
-              debitAmount: entry.debitAmount,
-              creditAmount: entry.creditAmount,
-              reference: entry.invoiceNumber,
-              vendor: entry.vendor
-            }))
-            setJournalEntries(journalEntries)
-          },
-          (error) => {
-            console.error('Journal entries listener error:', error)
-          }
-        )
-      }
     }
 
     // Cleanup listeners on unmount
@@ -133,7 +124,23 @@ export const useMultiUpload = () => {
 
       updateFileProgress(uploadedFile.id, 'uploading', 20)
 
-      // Step 2: Upload file to GCP initial-api (your existing Cloud Run service)
+      // Step 2: First check if Cloud Run service is healthy
+      try {
+        const healthCheck = await fetch('https://initial-api-812016027146.asia-south1.run.app/health', {
+          method: 'GET',
+          headers: { 'Authorization': `Bearer ${idToken}` }
+        })
+        
+        if (!healthCheck.ok) {
+          throw new Error(`Cloud Run service health check failed: ${healthCheck.status}`)
+        }
+        console.log('✅ Cloud Run service is healthy')
+      } catch (healthError) {
+        console.error('❌ Cloud Run service health check failed:', healthError)
+        throw new Error('Cloud Run service is not responding. Please check if the service is running.')
+      }
+
+      // Step 3: Upload file to GCP initial-api (your existing Cloud Run service)
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
 
@@ -146,8 +153,25 @@ export const useMultiUpload = () => {
       })
 
       if (!uploadResponse.ok) {
-        const errorData = await uploadResponse.json()
-        throw new Error(errorData.error || 'Upload failed')
+        console.error('Upload failed:', uploadResponse.status, uploadResponse.statusText)
+        let errorMessage = `Upload failed: ${uploadResponse.status} ${uploadResponse.statusText}`
+        
+        try {
+          const errorData = await uploadResponse.json()
+          errorMessage = errorData.error || errorMessage
+        } catch (jsonError) {
+          // Response is not JSON, likely HTML error page
+          const errorText = await uploadResponse.text()
+          console.error('Non-JSON error response:', errorText.substring(0, 500))
+          if (uploadResponse.status === 502) {
+            errorMessage = 'Cloud Run service unavailable (502). Service may be starting up or down.'
+          } else if (uploadResponse.status === 503) {
+            errorMessage = 'Cloud Run service temporarily unavailable (503). Please try again.'
+          } else {
+            errorMessage = `Service error (${uploadResponse.status}). Please check if the Cloud Run service is running.`
+          }
+        }
+        throw new Error(errorMessage)
       }
 
       const uploadResult = await uploadResponse.json()
@@ -164,18 +188,16 @@ export const useMultiUpload = () => {
       setActiveJobIds(prev => [...prev, jobId])
 
       // Step 5: Trigger queue processing
-      const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/add-job', {
+      const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/process-file', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          job_id: jobId,
           bucket_path: uploadResult.bucket_path,
           gcs_path: uploadResult.gcsPath,
-          filename: uploadedFile.file.name,
-          user_email: authService.getCurrentUser()?.email
+          filename: uploadedFile.file.name
         })
       })
 
