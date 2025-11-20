@@ -185,7 +185,11 @@ export const useMultiUpload = () => {
       ))
 
       // Step 4: Add job ID to active jobs for real-time monitoring
-      setActiveJobIds(prev => [...prev, jobId])
+      setActiveJobIds(prev => {
+        const newJobIds = [...prev, jobId]
+        console.log('📝 Updated active job IDs:', newJobIds)
+        return newJobIds
+      })
 
       // Step 5: Trigger queue processing
       const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/process-file', {

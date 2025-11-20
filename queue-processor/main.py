@@ -1,4 +1,12 @@
-﻿import os
+﻿"""
+Queue Processor Main Application
+Handles invoice processing with OpenAI Vision API integration
+
+Docker Image: asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/queue-processor@sha256:fe48a8dac90b5ef3e824bbc32d2a4b00d81c349250e16e1f5453820f6c319ab3
+Last Updated: 2025-11-20 09:52 UTC
+Changes: OpenAI library ≥1.50.0, improved error handling, Flask 3.0.0
+"""
+import os
 import logging
 from datetime import datetime
 from flask import Flask, request, jsonify

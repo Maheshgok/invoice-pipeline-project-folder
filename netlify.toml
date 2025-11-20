@@ -1,10 +1,12 @@
 [build]
-  base = "invoice-bolt"
-  publish = "invoice-bolt/dist"
+  base = "invoice-app-v2"
+  publish = "invoice-app-v2/dist"
   command = "npm run build"
 
 [build.environment]
-  SECRETS_SCAN_OMIT_KEYS = "VITE_GOOGLE_CLIENT_ID,VITE_API_BASE_URL"
+  NODE_VERSION = "18"
+  NPM_FLAGS = "--prefer-offline --no-audit"
+  SECRETS_SCAN_OMIT_KEYS = "VITE_GOOGLE_CLIENT_ID,VITE_API_BASE_URL,VITE_FIREBASE_API_KEY,VITE_FIREBASE_AUTH_DOMAIN,VITE_FIREBASE_PROJECT_ID,VITE_FIREBASE_STORAGE_BUCKET,VITE_FIREBASE_MESSAGING_SENDER_ID,VITE_FIREBASE_APP_ID"
 
 [[redirects]]
   from = "/oauth2/callback"

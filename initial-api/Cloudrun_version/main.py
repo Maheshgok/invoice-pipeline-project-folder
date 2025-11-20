@@ -1,3 +1,11 @@
+"""
+Initial API Service - File Upload and Authentication Handler
+Handles file uploads to Google Cloud Storage and user authentication
+
+Docker Image: asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/initial-api@sha256:5d41d5dc1d60134a1e61b940cd7f5d1fecf6716ce17013a1703792b5744c5474
+Last Updated: 2025-11-13 09:34 UTC  
+Status: Stable - Flask 2.3.0, Google Cloud Storage integration
+"""
 import os
 import json
 import logging

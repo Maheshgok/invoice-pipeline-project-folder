@@ -68,39 +68,65 @@ class FirestoreService {
       return
     }
 
-    // Listen to invoice_results collection for the current user
+    console.log('🔍 Setting up Firestore listener for:', {
+      userEmail: user.email,
+      jobIds: jobIds,
+      collection: 'invoice_results'
+    })
+
+    // Try a simpler query first - just by user_email, then filter in memory
+    // This helps debug if the compound query is the issue
     const resultsQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      where('job_id', 'in', jobIds)
+      orderBy('updated_at', 'desc')
     )
 
     const unsubscribe = onSnapshot(
       resultsQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
+        console.log('📄 Firestore snapshot received:', {
+          docCount: snapshot.docs.length,
+          empty: snapshot.empty,
+          metadata: snapshot.metadata
+        })
+        
         const results: InvoiceProcessingResult[] = []
         
         snapshot.forEach((doc: DocumentSnapshot<DocumentData>) => {
           const data = doc.data()
+          console.log('📋 Processing document:', {
+            docId: doc.id,
+            data: data
+          })
+          
           if (data) {
-            results.push({
-              id: doc.id,
-              fileName: this.extractFileNameFromPath(data.bucket_path) || '',
-              fileSize: 0, // Not stored in backend
-              status: this.mapBackendStatus(data.status),
-              progress: this.calculateProgress(data.status),
-              processedAt: data.completed_at || data.updated_at,
-              userEmail: data.user_email || '',
-              extractedData: data.result, // Complete OpenAI response with journal entries
-              error: data.error,
-              jobId: data.job_id,
-              gcsPath: data.bucket_path,
-              createdAt: this.stringToTimestamp(data.created_at),
-              updatedAt: this.stringToTimestamp(data.updated_at || data.created_at)
-            })
+            // Filter by job_id in memory since compound queries can be tricky
+            const docJobId = data.job_id
+            if (jobIds.includes(docJobId)) {
+              console.log('✅ Document matches job ID:', docJobId)
+              results.push({
+                id: doc.id,
+                fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+                fileSize: 0, // Not stored in backend
+                status: this.mapBackendStatus(data.status),
+                progress: this.calculateProgress(data.status),
+                processedAt: data.completed_at || data.updated_at,
+                userEmail: data.user_email || '',
+                extractedData: data.result, // Complete OpenAI response with journal entries
+                error: data.error,
+                jobId: data.job_id,
+                gcsPath: data.bucket_path,
+                createdAt: this.stringToTimestamp(data.created_at),
+                updatedAt: this.stringToTimestamp(data.updated_at || data.created_at)
+              })
+            } else {
+              console.log('❌ Document job ID does not match:', { docJobId, expectedJobIds: jobIds })
+            }
           }
         })
 
+        console.log('✅ Final processed results:', results)
         onUpdate(results)
       },
       (error) => {

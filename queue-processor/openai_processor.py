@@ -1,6 +1,11 @@
 """
 OpenAI Processing Module
 Handles image analysis with OpenAI Vision API
+
+Latest Deployment: 2025-11-20 09:52 UTC
+OpenAI Library: ≥1.50.0 (latest compatible version)
+Key Improvements: Enhanced error handling, timeout configuration, retry logic
+Docker Image: queue-processor@sha256:fe48a8dac90b5ef3e824bbc32d2a4b00d81c349250e16e1f5453820f6c319ab3
 """
 import os
 import json
@@ -8,7 +13,7 @@ import base64
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any
-import openai
+from openai import OpenAI
 from google.cloud import storage
 from pdf2image import convert_from_bytes
 from PIL import Image
@@ -26,7 +31,17 @@ class OpenAIProcessor:
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable not set")
         
-        openai.api_key = self.api_key
+        # Initialize OpenAI client with explicit configuration
+        try:
+            self.client = OpenAI(
+                api_key=self.api_key,
+                timeout=60.0,
+                max_retries=2
+            )
+            logger.info("OpenAI client initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize OpenAI client: {e}")
+            raise
         
         # Initialize storage client with explicit project ID
         project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
@@ -241,7 +256,7 @@ OUTPUT FORMAT
             
             # Call OpenAI Vision API
             logger.info(f"Calling OpenAI Vision API with model gpt-4o")
-            response = openai.ChatCompletion.create(
+            response = self.client.chat.completions.create(
                 model="gpt-4o",  # Updated to current vision model
                 messages=[
                     {
