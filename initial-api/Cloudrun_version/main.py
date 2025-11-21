@@ -105,6 +105,10 @@ def upload_file():
         return jsonify({"error": "No file selected"}), 400
     
     try:
+        # Generate production-ready job ID with customer tracking
+        import hashlib
+        import secrets
+        
         # Generate unique path with timestamp
         timestamp = datetime.utcnow().strftime('%Y/%m/%d/%H-%M-%S')
         filename = f"raw/{timestamp}_{file.filename}"
@@ -119,8 +123,20 @@ def upload_file():
         blob.upload_from_file(file)
         logger.info(f"Successfully uploaded file to {filename}")
         
-        # Generate a job ID from the timestamp
-        job_id = f"job_{timestamp.replace('/', '_')}"
+        # Generate production-ready job ID: {CUST_NUM}-{ASSET_REF}-{TOKEN}
+        # 1. Customer number (3-char alphanumeric from email hash)
+        email_hash = hashlib.md5(user_email.encode()).hexdigest()
+        cust_num = f"{email_hash[:2].upper()}{ord(email_hash[2]) % 10}"
+        
+        # 2. Asset reference (6-char from bucket path + sequence)
+        path_hash = hashlib.sha256(filename.encode()).hexdigest()
+        asset_ref = f"{path_hash[:4].upper()}{timestamp[-2:]}"
+        
+        # 3. Security token (4-char random)
+        token = secrets.token_hex(2).upper()
+        
+        # Combine into production job ID
+        job_id = f"{cust_num}-{asset_ref}-{token}"
         
         # Note: Queue processor call is now handled by the Netlify function
         # No need to call queue processor from initial-api anymore

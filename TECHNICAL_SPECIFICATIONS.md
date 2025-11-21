@@ -398,6 +398,36 @@ gcloud run services describe initial-api \
 ### Database Performance
 - **Firestore Read/Write Limits**: 1 million operations per day (free tier)
 - **Real-time Listeners**: Optimized with compound indices
+
+### Job ID Structure (Production-Ready)
+
+**Format**: `{CUST_NUM}-{ASSET_REF}-{TOKEN}`
+
+#### Components:
+- **CUST_NUM** (3 chars): Customer identifier derived from email hash (e.g., `A7B`)
+  - First 2 chars: Uppercase hex from user email MD5 hash  
+  - 3rd char: Numeric from email hash modulo 10
+  - Provides user identification while maintaining privacy
+
+- **ASSET_REF** (6 chars): Asset reference for bucket tracking (e.g., `4F2A53`)
+  - First 4 chars: Uppercase hex from filename SHA256 hash
+  - Last 2 chars: Timestamp suffix for uniqueness
+  - Avoids variable-length filename issues in production
+
+- **TOKEN** (4 chars): Security token to prevent tampering (e.g., `8C9D`)
+  - Random hex for security and collision prevention
+  - Uppercase for consistency
+
+#### Example Job IDs:
+- `A7B-4F2A53-8C9D` (Customer A7B, Asset 4F2A53, Token 8C9D)
+- `C3E-7A8B12-5F6A` (Customer C3E, Asset 7A8B12, Token 5F6A)
+
+#### Benefits:
+✅ **Multi-user scalable** - Unique customer identification  
+✅ **Asset tracking** - Proxy reference without exposing filenames  
+✅ **Security** - Random tokens prevent ID guessing  
+✅ **Fixed length** - Consistent 13-character format  
+✅ **Human readable** - Dash-separated for easy parsing
 - **Offline Support**: 5MB local cache per client
 
 ---

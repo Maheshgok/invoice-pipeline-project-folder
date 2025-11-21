@@ -112,10 +112,29 @@ def process_file():
         bucket_path = data.get('bucket_path')
         if not bucket_path:
             return jsonify({"error": "Missing bucket_path"}), 400
+            
+        # Check if job_id is provided from initial-api (preferred)
+        job_id = data.get('job_id')
         
-        # Generate job ID
-        timestamp = datetime.now().strftime('%Y_%m_%d_%H-%M-%S')
-        job_id = f"job_{timestamp}_{hash(bucket_path) % 10000}"
+        if not job_id:
+            # Fallback: Generate production-ready job ID if not provided
+            import hashlib
+            import secrets
+            
+            # Generate same format as initial-api for consistency
+            email_hash = hashlib.md5(user_email.encode()).hexdigest()
+            cust_num = f"{email_hash[:2].upper()}{ord(email_hash[2]) % 10}"
+            
+            path_hash = hashlib.sha256(bucket_path.encode()).hexdigest()
+            timestamp = datetime.now().strftime('%H%M')
+            asset_ref = f"{path_hash[:4].upper()}{timestamp[-2:]}"
+            
+            token = secrets.token_hex(2).upper()
+            job_id = f"{cust_num}-{asset_ref}-{token}"
+            
+            logger.warning(f"Generated fallback job_id: {job_id} for bucket_path: {bucket_path}")
+        else:
+            logger.info(f"Using provided job_id: {job_id} from initial-api")
         
         # Create and add job to queue
         job = QueueJob(

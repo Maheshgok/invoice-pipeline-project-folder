@@ -177,6 +177,9 @@ export const useMultiUpload = () => {
       const uploadResult = await uploadResponse.json()
       const jobId = uploadResult.job_id
 
+      console.log('🎯 Upload response:', uploadResult)
+      console.log('🆔 Job ID received from backend:', jobId)
+
       // Step 3: Update file with job ID and set to processing
       setUploadedFiles(prev => prev.map(file => 
         file.id === uploadedFile.id 
@@ -191,7 +194,7 @@ export const useMultiUpload = () => {
         return newJobIds
       })
 
-      // Step 5: Trigger queue processing
+      // Step 5: Trigger queue processing with job ID from initial-api
       const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/process-file', {
         method: 'POST',
         headers: {
@@ -201,7 +204,8 @@ export const useMultiUpload = () => {
         body: JSON.stringify({
           bucket_path: uploadResult.bucket_path,
           gcs_path: uploadResult.gcsPath,
-          filename: uploadedFile.file.name
+          filename: uploadedFile.file.name,
+          job_id: jobId  // Pass the production job ID from initial-api
         })
       })
 

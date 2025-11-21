@@ -102,6 +102,12 @@ class FirestoreService {
           if (data) {
             // Filter by job_id in memory since compound queries can be tricky
             const docJobId = data.job_id
+            console.log('🔍 Job ID comparison:', {
+              docJobId: docJobId,
+              expectedJobIds: jobIds,
+              match: jobIds.includes(docJobId)
+            })
+            
             if (jobIds.includes(docJobId)) {
               console.log('✅ Document matches job ID:', docJobId)
               results.push({
