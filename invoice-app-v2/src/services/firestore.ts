@@ -74,12 +74,11 @@ class FirestoreService {
       collection: 'invoice_results'
     })
 
-    // Try a simpler query first - just by user_email, then filter in memory
-    // This helps debug if the compound query is the issue
+    // Simple query by user_email only - no orderBy to avoid index requirements
+    // Filter by job_id in memory to avoid compound query complexity
     const resultsQuery = query(
       collection(db, 'invoice_results'),
-      where('user_email', '==', user.email),
-      orderBy('updated_at', 'desc')
+      where('user_email', '==', user.email)
     )
 
     const unsubscribe = onSnapshot(
