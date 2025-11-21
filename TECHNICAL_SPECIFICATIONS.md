@@ -372,6 +372,8 @@ gcloud run services describe initial-api \
 
 | Date | Service | Image SHA | Changes |
 |------|---------|-----------|---------|
+| 2025-11-21 | initial-api | `31d58044...` | **Production Job ID System** - Customer tracking, asset proxy, security tokens |
+| 2025-11-21 | queue-processor | `Latest` | **Production Job ID System** - Unified job ID handling, enhanced multi-user support |
 | 2025-11-20 | queue-processor | `fe48a8da...` | OpenAI ≥1.50.0, error handling improvements |
 | 2025-11-13 | initial-api | `5d41d5dc...` | Stable deployment with Flask 2.3.0 |
 
@@ -382,12 +384,13 @@ gcloud run services describe initial-api \
 ### Cloud Run Configuration
 | Service | Memory | CPU | Timeout | Concurrency | Latest Image |
 |---------|--------|-----|---------|-------------|--------------|
-| initial-api | 1GB | 1 vCPU | 600s | 1000 | `asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/initial-api@sha256:5d41d5dc1d60134a1e61b940cd7f5d1fecf6716ce17013a1703792b5744c5474` |
-| queue-processor | 2GB | 2 vCPU | 900s | 100 | `asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/queue-processor@sha256:fe48a8dac90b5ef3e824bbc32d2a4b00d81c349250e16e1f5453820f6c319ab3` |
+| initial-api | 1GB | 1 vCPU | 600s | 100 | `asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/initial-api@sha256:31d58044c871c44891281ada6e5d4515c16602dcb218c24dce18490c324f3ad8` |
+| queue-processor | 2GB | 2 vCPU | 900s | 100 | `asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/queue-processor@sha256:[Latest-2025-11-21]` |
 
 **Image Update Log:**
-- **queue-processor**: Updated 2025-11-20 09:52 UTC - OpenAI library ≥1.50.0, improved error handling
-- **initial-api**: Stable deployment from 2025-11-13 09:34 UTC
+- **initial-api**: Updated 2025-11-21 05:04 UTC - **Production Job ID System** with customer tracking & security
+- **queue-processor**: Updated 2025-11-21 05:27 UTC - **Unified Job ID handling** for multi-user production
+- **Both services**: Now implement `{CUST_NUM}-{ASSET_REF}-{TOKEN}` job ID format
 
 ### File Upload Limits
 - **Maximum File Size**: 10MB per file
