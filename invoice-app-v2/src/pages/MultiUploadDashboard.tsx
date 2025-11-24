@@ -2,20 +2,19 @@ import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User } from 'lucide-react'
 import toast from 'react-hot-toast'
-import { useMultiUpload } from '../hooks'
+// Import the new real-time hook instead of the old one
+import { useRealtimeUpload } from '../hooks/useRealtimeUpload'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, logout } = useAuth()
   const { 
     uploadedFiles, 
     journalEntries,
-    invoiceResults, 
-    addFile, 
+    allInvoiceResults,  // Changed from invoiceResults to allInvoiceResults
+    uploadFiles,        // Changed from addFile to uploadFiles  
     removeFile, 
-    updateJournalEntry, 
-    downloadCSV,
     clearAll
-  } = useMultiUpload()
+  } = useRealtimeUpload()  // Use the new real-time hook
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -46,14 +45,23 @@ const MultiUploadDashboard: React.FC = () => {
       return
     }
 
-    files.forEach(file => {
+    // Filter valid files
+    const validFiles = files.filter(file => {
       if (file.type.includes('image') || file.type === 'application/pdf') {
-        addFile(file)
+        return true
       } else {
         toast.error(`Unsupported file type: ${file.name}`)
+        return false
       }
     })
-  }, [addFile, uploadedFiles.length])
+    
+    // Upload all valid files at once using the real-time system
+    if (validFiles.length > 0) {
+      const fileList = new DataTransfer()
+      validFiles.forEach(file => fileList.items.add(file))
+      uploadFiles(fileList.files)
+    }
+  }, [uploadFiles, uploadedFiles.length])
 
   const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
@@ -63,17 +71,24 @@ const MultiUploadDashboard: React.FC = () => {
       return
     }
 
-    files.forEach(file => {
+    // Filter valid files
+    const validFiles = files.filter(file => {
       if (file.type.includes('image') || file.type === 'application/pdf') {
-        addFile(file)
+        return true
       } else {
         toast.error(`Unsupported file type: ${file.name}`)
+        return false
       }
     })
     
+    // Upload all valid files at once using the real-time system
+    if (validFiles.length > 0) {
+      uploadFiles(e.target.files)
+    }
+    
     // Reset input
     e.target.value = ''
-  }, [addFile, uploadedFiles.length])
+  }, [uploadFiles, uploadedFiles.length])
 
   const getStatusIcon = (status: string) => {
     switch (status) {
