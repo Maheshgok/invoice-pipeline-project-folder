@@ -102,13 +102,21 @@ class FirestoreService {
           if (data) {
             // Filter by job_id in memory since compound queries can be tricky
             const docJobId = data.job_id
+            
+            // IMPORTANT: Filter out old format job IDs to prevent mismatch
+            // New format: {CUST_NUM}-{ASSET_REF}-{TOKEN} (e.g., DD7-A33845-19DD)
+            // Old format: job_2025_11_21_03-44-51_1135 
+            const isNewFormat = docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)
+            
             console.log('🔍 Job ID comparison:', {
               docJobId: docJobId,
               expectedJobIds: jobIds,
+              isNewFormat: isNewFormat,
               match: jobIds.includes(docJobId)
             })
             
-            if (jobIds.includes(docJobId)) {
+            // Only process documents with new format job IDs that match our expected list
+            if (isNewFormat && jobIds.includes(docJobId)) {
               console.log('✅ Document matches job ID:', docJobId)
               results.push({
                 id: doc.id,
