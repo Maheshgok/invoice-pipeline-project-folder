@@ -116,6 +116,9 @@ def process_file():
         # Check if job_id is provided from initial-api (preferred)
         job_id = data.get('job_id')
         
+        logger.info(f"📋 QUEUE PROCESSOR REQUEST DATA: {data}")
+        logger.info(f"🆔 RECEIVED JOB ID: {job_id}")
+        
         if not job_id:
             # Fallback: Generate production-ready job ID if not provided
             import hashlib
@@ -132,9 +135,9 @@ def process_file():
             token = secrets.token_hex(2).upper()
             job_id = f"{cust_num}-{asset_ref}-{token}"
             
-            logger.warning(f"Generated fallback job_id: {job_id} for bucket_path: {bucket_path}")
+            logger.warning(f"⚠️ GENERATED FALLBACK JOB_ID: {job_id} for bucket_path: {bucket_path}")
         else:
-            logger.info(f"Using provided job_id: {job_id} from initial-api")
+            logger.info(f"✅ USING PROVIDED JOB_ID: {job_id} from initial-api")
         
         # Create and add job to queue
         job = QueueJob(

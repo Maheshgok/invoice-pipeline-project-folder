@@ -138,6 +138,9 @@ def upload_file():
         # Combine into production job ID
         job_id = f"{cust_num}-{asset_ref}-{token}"
         
+        logger.info(f"🆔 GENERATED JOB ID: {job_id} for user: {user_email}")
+        logger.info(f"🧩 Job ID components: cust={cust_num}, asset={asset_ref}, token={token}")
+        
         # Note: Queue processor call is now handled by the Netlify function
         # No need to call queue processor from initial-api anymore
         logger.info(f"File uploaded successfully. Job ID: {job_id}, Bucket path: {BUCKET_NAME}/{filename}")
