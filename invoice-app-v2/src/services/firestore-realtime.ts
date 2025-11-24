@@ -4,7 +4,6 @@ import {
   onSnapshot, 
   query, 
   where, 
-  orderBy, 
   Timestamp,
   DocumentData,
   QuerySnapshot,
@@ -45,17 +44,24 @@ class RealtimeFirestoreService {
   ) {
     const user = authService.getCurrentUser()
     if (!user) {
+      console.log('❌ No authenticated user for Firestore listener')
       onError(new Error('User not authenticated'))
+      return
+    }
+
+    if (!user.email) {
+      console.log('❌ User has no email for Firestore listener')
+      onError(new Error('User email not available'))
       return
     }
 
     console.log('🔥 Setting up REAL-TIME listener for user:', user.email)
 
-    // Listen to ALL invoice_results for current user, ordered by creation time
+    // Listen to ALL invoice_results for current user
+    // Removed orderBy to prevent index requirement issues
     const resultsQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      orderBy('created_at', 'desc'),
       limit(50) // Limit to recent 50 results for performance
     )
 

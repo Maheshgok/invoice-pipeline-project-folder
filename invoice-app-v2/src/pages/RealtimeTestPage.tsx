@@ -1,7 +1,10 @@
 import React from 'react'
 import { useRealtimeUpload } from '../hooks/useRealtimeUpload'
+import { debugRealtimeConnection } from '../utils/debugRealtime'
+import { useAuth } from '../contexts/AuthContext'
 
 const RealtimeTestPage: React.FC = () => {
+  const { user } = useAuth()
   const { 
     uploadedFiles, 
     journalEntries, 
@@ -15,11 +18,15 @@ const RealtimeTestPage: React.FC = () => {
     }
   }
 
+  const testRealtimeConnection = () => {
+    debugRealtimeConnection()
+  }
+
   return (
     <div className="p-8 max-w-6xl mx-auto">
       <div className="mb-8">
         <h1 className="text-3xl font-bold mb-4">🔥 Real-time Invoice Processing Test</h1>
-        <div className="bg-blue-100 p-4 rounded-lg">
+        <div className="bg-blue-100 p-4 rounded-lg mb-4">
           <h2 className="text-lg font-semibold mb-2">How Real-time Updates Work:</h2>
           <ul className="list-disc list-inside space-y-1 text-sm">
             <li><strong>Event-driven:</strong> Firestore pushes updates automatically when documents change</li>
@@ -27,6 +34,19 @@ const RealtimeTestPage: React.FC = () => {
             <li><strong>Real-time notifications:</strong> Toast messages appear as processing completes</li>
             <li><strong>Live status updates:</strong> File progress updates in real-time</li>
           </ul>
+        </div>
+        
+        {/* Debug Section */}
+        <div className="bg-yellow-100 p-4 rounded-lg">
+          <h3 className="font-semibold mb-2">Debug Real-time Connection</h3>
+          <p className="text-sm mb-2">User: {user?.email || 'Not authenticated'}</p>
+          <button
+            onClick={testRealtimeConnection}
+            className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
+          >
+            Test Real-time Connection
+          </button>
+          <p className="text-xs mt-2 text-gray-600">Check browser console for detailed logs</p>
         </div>
       </div>
 

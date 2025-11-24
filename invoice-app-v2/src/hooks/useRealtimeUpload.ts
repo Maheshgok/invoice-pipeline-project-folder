@@ -64,10 +64,21 @@ export const useRealtimeUpload = () => {
   useEffect(() => {
     console.log('🔥 Setting up REAL-TIME Firestore listener for all user results...')
     
-    realtimeFirestoreService.listenToAllUserResults(
-      (results) => {
-        console.log('📡 Real-time update received:', results.length, 'results')
-        setAllInvoiceResults(results)
+    // Wait for user authentication before setting up listener
+    const setupListener = () => {
+      const user = authService.getCurrentUser()
+      if (!user) {
+        console.log('⏳ User not authenticated yet, waiting...')
+        setTimeout(setupListener, 1000) // Retry in 1 second
+        return
+      }
+      
+      console.log('✅ User authenticated, setting up real-time listener for:', user.email)
+      
+      realtimeFirestoreService.listenToAllUserResults(
+        (results) => {
+          console.log('📡 Real-time update received:', results.length, 'results')
+          setAllInvoiceResults(results)
         
         // Extract and set journal entries
         const entries = realtimeFirestoreService.extractJournalEntriesFromResults(results)
@@ -116,14 +127,15 @@ export const useRealtimeUpload = () => {
             toast.error(`❌ Processing failed: ${result.fileName}`)
           }
         })
-      },
-      (error) => {
-        console.error('❌ Real-time listener error:', error)
-        toast.error('Real-time updates failed')
-      }
-    )
-
-    // Cleanup on unmount
+        },
+        (error) => {
+          console.error('❌ Real-time listener error:', error)
+          toast.error('Unable to get real-time updates')
+        }
+      )
+    }
+    
+    setupListener()    // Cleanup on unmount
     return () => {
       console.log('🧹 Cleaning up real-time listeners...')
       realtimeFirestoreService.cleanup()
@@ -234,9 +246,10 @@ export const useRealtimeUpload = () => {
 
     } catch (error) {
       console.error('❌ File processing error:', error)
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
       updateFileProgress(uploadedFile.id, 'error', 0)
-      setFileError(uploadedFile.id, error.message)
-      toast.error(`Upload failed: ${error.message}`)
+      setFileError(uploadedFile.id, errorMessage)
+      toast.error(`Upload failed: ${errorMessage}`)
     }
   }, [updateFileProgress, setFileError])
 
