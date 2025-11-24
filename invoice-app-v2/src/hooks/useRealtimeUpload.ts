@@ -99,7 +99,7 @@ export const useRealtimeUpload = () => {
             
             return {
               ...file,
-              status: result.status,
+              status: result.status === 'queued' ? 'processing' : result.status,
               progress: result.progress,
               result: result,
               error: result.error
@@ -265,6 +265,51 @@ export const useRealtimeUpload = () => {
     setJournalEntries([])
   }, [])
 
+  const downloadCSV = useCallback(() => {
+    if (journalEntries.length === 0) {
+      toast.error('No journal entries to download')
+      return
+    }
+
+    // Create CSV content
+    const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor']
+    const csvContent = [
+      headers.join(','),
+      ...journalEntries.map(entry => [
+        entry.date,
+        `"${entry.accountName}"`,
+        entry.accountCode,
+        `"${entry.description}"`,
+        entry.debitAmount,
+        entry.creditAmount,
+        `"${entry.reference}"`,
+        `"${entry.vendor || ''}"`
+      ].join(','))
+    ].join('\n')
+
+    // Create and download file
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+    const link = document.createElement('a')
+    const url = URL.createObjectURL(blob)
+    link.setAttribute('href', url)
+    link.setAttribute('download', `journal_entries_${new Date().toISOString().split('T')[0]}.csv`)
+    link.style.visibility = 'hidden'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    toast.success(`Downloaded ${journalEntries.length} journal entries`)
+  }, [journalEntries])
+
+  const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
+    setJournalEntries(prev => prev.map(entry => 
+      entry.id === entryId 
+        ? { ...entry, [field]: value }
+        : entry
+    ))
+    toast.success('Journal entry updated')
+  }, [])
+
   return {
     uploadedFiles,
     journalEntries,
@@ -272,6 +317,8 @@ export const useRealtimeUpload = () => {
     uploadFiles,
     removeFile,
     clearAll,
+    downloadCSV,  // Add downloadCSV to exports
+    updateJournalEntry,  // Add updateJournalEntry to exports
     processFile,
     updateFileProgress,
     setFileResult,

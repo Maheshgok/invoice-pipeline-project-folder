@@ -13,7 +13,9 @@ const MultiUploadDashboard: React.FC = () => {
     allInvoiceResults,  // Changed from invoiceResults to allInvoiceResults
     uploadFiles,        // Changed from addFile to uploadFiles  
     removeFile, 
-    clearAll
+    clearAll,
+    downloadCSV,        // Add downloadCSV from the hook
+    updateJournalEntry  // Add updateJournalEntry from the hook
   } = useRealtimeUpload()  // Use the new real-time hook
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
