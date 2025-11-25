@@ -345,6 +345,9 @@ class RealtimeFirestoreService {
     return Array.from(combined.values())
       .sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
   }
+
+  /**
+   * Track specific job IDs for targeted updates
    * This allows monitoring specific uploads while still getting all user data
    */
   trackJobIds(jobIds: string[]) {
