@@ -57,15 +57,11 @@ class RealtimeFirestoreService {
 
     console.log('🎨 Setting up ACTIVE-ONLY real-time listener for:', user.email)
 
-    // ⚙️ Simplified query to avoid index requirements during development
-    // TODO: Add compound index for production optimization
+    // ⚙️ ULTRA-SIMPLIFIED query to work immediately without any indexes
     const activeQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      // Temporarily removing status_category filter to avoid index requirement
-      // where('status_category', 'in', ['active', 'processing', 'recent']),
-      orderBy('created_at', 'desc'),
-      limit(20)  // Slightly larger limit since we'll filter client-side temporarily
+      limit(30)  // No orderBy, no compound filters - works immediately
     )
 
     const unsubscribe = onSnapshot(
@@ -109,16 +105,11 @@ class RealtimeFirestoreService {
 
     console.log('🗓️ Setting up RECENT results listener for:', user.email)
 
-    // ⚙️ Simplified query to avoid index requirements during development  
-    // TODO: Add compound index for production optimization
+    // ⚙️ ULTRA-SIMPLIFIED query to work immediately without any indexes
     const recentQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      // Temporarily removing complex filters to avoid index requirements
-      // where('frontend_status', '==', 'displayed'),
-      // where('displayed_at', '>=', sevenDaysAgo.toISOString()),
-      orderBy('created_at', 'desc'),
-      limit(30)  // Will filter client-side temporarily
+      limit(40)  // No orderBy, no compound filters - works immediately
     )
 
     const unsubscribe = onSnapshot(
@@ -297,6 +288,9 @@ class RealtimeFirestoreService {
         }
       }
     })
+    
+    // Client-side sorting by creation date (newest first)
+    results.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
     
     console.log(`📊 Filtered ${results.length} active/recent items from ${snapshot.docs.length} total`)
     return results
