@@ -19,13 +19,13 @@ export const debugRealtimeConnection = () => {
   try {
     console.log('🔥 DEBUG: Setting up test listener...')
     
-    realtimeFirestoreService.listenToAllUserResults(
+    realtimeFirestoreService.listenToActiveResults(
       (results) => {
-        console.log('📡 DEBUG: Received results:', results)
-        toast.success(`Real-time working! Found ${results.length} results`)
+        console.log('📡 DEBUG: Received active results:', results)
+        toast.success(`Real-time working! Found ${results.length} active results`)
       },
       (error) => {
-        console.error('❌ DEBUG: Listener error:', error)
+        console.error('❌ DEBUG: Active listener error:', error)
         toast.error(`Real-time error: ${error.message}`)
       }
     )

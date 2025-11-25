@@ -8,7 +8,9 @@ import {
   DocumentData,
   QuerySnapshot,
   DocumentSnapshot,
-  limit
+  limit,
+  writeBatch,
+  getDocs
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
@@ -17,7 +19,7 @@ export interface InvoiceProcessingResult {
   id: string
   fileName: string
   fileSize: number
-  status: 'queued' | 'processing' | 'completed' | 'error'
+  status: 'queued' | 'processing' | 'completed' | 'error' | 'displayed'
   progress: number
   processedAt?: string
   userEmail: string
@@ -27,12 +29,114 @@ export interface InvoiceProcessingResult {
   gcsPath?: string
   createdAt: Timestamp
   updatedAt: Timestamp
+  displayedAt?: string
+  frontendStatus?: 'displayed' | 'downloaded' | 'archived'
 }
 
 class RealtimeFirestoreService {
   private unsubscribers: (() => void)[] = []
   private activeJobIds: Set<string> = new Set()
   private resultsCache: Map<string, InvoiceProcessingResult> = new Map()
+  private activeResultsCache: Map<string, InvoiceProcessingResult> = new Map()
+  private recentResultsCache: Map<string, InvoiceProcessingResult> = new Map()
+
+  /**
+   * OPTIMIZED: Listen only to ACTIVE processing results (no client filtering)
+   * This eliminates performance issues with large result sets
+   */
+  listenToActiveResults(
+    onUpdate: (results: InvoiceProcessingResult[]) => void,
+    onError: (error: Error) => void
+  ) {
+    const user = authService.getCurrentUser()
+    if (!user?.email) {
+      onError(new Error('User not authenticated'))
+      return
+    }
+
+    console.log('🎨 Setting up ACTIVE-ONLY real-time listener for:', user.email)
+
+    // ⚙️ Server-side filtering: Only active/processing documents
+    const activeQuery = query(
+      collection(db, 'invoice_results'),
+      where('user_email', '==', user.email),
+      where('status_category', 'in', ['active', 'processing', 'recent']),  // Server-side filter
+      orderBy('created_at', 'desc'),
+      limit(15)  // Small result set for fast loading
+    )
+
+    const unsubscribe = onSnapshot(
+      activeQuery,
+      (snapshot) => {
+        console.log('⚡ ACTIVE results snapshot:', snapshot.docs.length, 'documents')
+        
+        const results = this.processActiveSnapshot(snapshot)
+        
+        // Cache active results
+        results.forEach(result => {
+          if (result.jobId) {
+            this.activeResultsCache.set(result.jobId, result)
+          }
+        })
+        
+        onUpdate(results)
+      },
+      onError
+    )
+
+    this.unsubscribers.push(unsubscribe)
+  }
+
+  /**
+   * OPTIMIZED: Listen to recently displayed results (separate query)
+   * Only loads when user explicitly wants to see recent history
+   */
+  listenToRecentResults(
+    onUpdate: (results: InvoiceProcessingResult[]) => void,
+    onError: (error: Error) => void
+  ) {
+    const user = authService.getCurrentUser()
+    if (!user?.email) {
+      onError(new Error('User not authenticated'))
+      return
+    }
+
+    const sevenDaysAgo = new Date()
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+
+    console.log('🗓️ Setting up RECENT results listener for:', user.email)
+
+    // ⚙️ Server-side filtering: Only recent displayed results
+    const recentQuery = query(
+      collection(db, 'invoice_results'),
+      where('user_email', '==', user.email),
+      where('frontend_status', '==', 'displayed'),
+      where('displayed_at', '>=', sevenDaysAgo.toISOString()),
+      orderBy('displayed_at', 'desc'),
+      limit(25)
+    )
+
+    const unsubscribe = onSnapshot(
+      recentQuery,
+      (snapshot) => {
+        console.log('🗓️ RECENT results snapshot:', snapshot.docs.length, 'documents')
+        
+        const results = this.processRecentSnapshot(snapshot)
+        
+        // Cache recent results
+        results.forEach(result => {
+          if (result.jobId) {
+            this.recentResultsCache.set(result.jobId, result)
+          }
+        })
+        
+        onUpdate(results)
+      },
+      onError
+    )
+
+    this.unsubscribers.push(unsubscribe)
+  }
 
   /**
    * Real-time listener for ALL new invoice results for current user
@@ -92,13 +196,16 @@ class RealtimeFirestoreService {
             
             // Filter for new format job IDs only
             const isNewFormat = docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)
+            const isAlreadyDisplayed = data.frontend_status === 'displayed'
             
             if (isNewFormat) {
+              // Always include in results, but mark display status
+              const shouldShowInNotifications = !isAlreadyDisplayed
               const result: InvoiceProcessingResult = {
                 id: doc.id,
                 fileName: this.extractFileNameFromPath(data.bucket_path) || '',
                 fileSize: 0,
-                status: this.mapBackendStatus(data.status),
+                status: isAlreadyDisplayed ? 'displayed' : this.mapBackendStatus(data.status),
                 progress: this.calculateProgress(data.status),
                 processedAt: data.completed_at || data.updated_at,
                 userEmail: data.user_email || '',
@@ -107,8 +214,13 @@ class RealtimeFirestoreService {
                 jobId: data.job_id,
                 gcsPath: data.bucket_path,
                 createdAt: this.stringToTimestamp(data.created_at),
-                updatedAt: this.stringToTimestamp(data.updated_at || data.created_at)
+                updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
+                displayedAt: data.displayed_at,
+                frontendStatus: data.frontend_status
               }
+              
+              // Add metadata for notification filtering
+              ;(result as any).shouldShowInNotifications = shouldShowInNotifications
               
               // Cache the result
               this.resultsCache.set(docJobId, result)
@@ -138,7 +250,101 @@ class RealtimeFirestoreService {
   }
 
   /**
-   * Track specific job IDs for targeted updates
+   * Process active results snapshot with minimal filtering
+   */
+  private processActiveSnapshot(snapshot: QuerySnapshot<DocumentData>): InvoiceProcessingResult[] {
+    const results: InvoiceProcessingResult[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      const docJobId = data.job_id
+      
+      // Minimal filtering - most filtering done server-side
+      if (docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)) {
+        const result: InvoiceProcessingResult = {
+          id: doc.id,
+          fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+          fileSize: 0,
+          status: this.mapBackendStatus(data.status),
+          progress: this.calculateProgress(data.status),
+          processedAt: data.completed_at || data.updated_at,
+          userEmail: data.user_email || '',
+          extractedData: data.result,
+          error: data.error,
+          jobId: data.job_id,
+          gcsPath: data.bucket_path,
+          createdAt: this.stringToTimestamp(data.created_at),
+          updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
+          displayedAt: data.displayed_at,
+          frontendStatus: data.frontend_status
+        }
+        
+        results.push(result)
+      }
+    })
+    
+    return results
+  }
+
+  /**
+   * Process recent results snapshot
+   */
+  private processRecentSnapshot(snapshot: QuerySnapshot<DocumentData>): InvoiceProcessingResult[] {
+    const results: InvoiceProcessingResult[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      const docJobId = data.job_id
+      
+      if (docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)) {
+        const result: InvoiceProcessingResult = {
+          id: doc.id,
+          fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+          fileSize: 0,
+          status: 'displayed' as const,
+          progress: 100,
+          processedAt: data.completed_at || data.updated_at,
+          userEmail: data.user_email || '',
+          extractedData: data.result,
+          error: data.error,
+          jobId: data.job_id,
+          gcsPath: data.bucket_path,
+          createdAt: this.stringToTimestamp(data.created_at),
+          updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
+          displayedAt: data.displayed_at,
+          frontendStatus: data.frontend_status
+        }
+        
+        results.push(result)
+      }
+    })
+    
+    return results
+  }
+
+  /**
+   * Get combined active and recent results from cache
+   */
+  getCombinedCachedResults(): InvoiceProcessingResult[] {
+    const activeResults = Array.from(this.activeResultsCache.values())
+    const recentResults = Array.from(this.recentResultsCache.values())
+    
+    // Deduplicate and combine
+    const combined = new Map<string, InvoiceProcessingResult>()
+    
+    activeResults.forEach(result => {
+      if (result.jobId) combined.set(result.jobId, result)
+    })
+    
+    recentResults.forEach(result => {
+      if (result.jobId && !combined.has(result.jobId)) {
+        combined.set(result.jobId, result)
+      }
+    })
+    
+    return Array.from(combined.values())
+      .sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
+  }
    * This allows monitoring specific uploads while still getting all user data
    */
   trackJobIds(jobIds: string[]) {
@@ -320,6 +526,61 @@ class RealtimeFirestoreService {
     return jobIds
       .map(jobId => this.resultsCache.get(jobId))
       .filter(Boolean) as InvoiceProcessingResult[]
+  }
+
+  /**
+   * Mark results as displayed to prevent future notifications
+   * This creates a communication channel back to the backend
+   */
+  async markAsDisplayed(jobIds: string[]) {
+    const user = authService.getCurrentUser()
+    if (!user?.email) {
+      console.error('❌ No authenticated user for marking displayed status')
+      return
+    }
+
+    console.log('📤 Marking as displayed:', jobIds)
+    
+    const batch = writeBatch(db)
+    let updateCount = 0
+
+    for (const jobId of jobIds) {
+      try {
+        // Query for the document with this job_id
+        const resultsQuery = query(
+          collection(db, 'invoice_results'),
+          where('job_id', '==', jobId),
+          where('user_email', '==', user.email),
+          limit(1)
+        )
+
+        const querySnapshot = await getDocs(resultsQuery)
+        
+        if (!querySnapshot.empty) {
+          const docRef = querySnapshot.docs[0].ref
+          batch.update(docRef, {
+            frontend_status: 'displayed',
+            displayed_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          updateCount++
+          console.log('✅ Queued display update for:', jobId)
+        } else {
+          console.warn('⚠️ Document not found for job ID:', jobId)
+        }
+      } catch (error) {
+        console.error('❌ Error queuing display update for', jobId, error)
+      }
+    }
+
+    if (updateCount > 0) {
+      try {
+        await batch.commit()
+        console.log('🎯 Successfully marked', updateCount, 'results as displayed')
+      } catch (error) {
+        console.error('❌ Failed to commit display updates:', error)
+      }
+    }
   }
 
   /**

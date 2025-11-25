@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Eye } from 'lucide-react'
 import toast from 'react-hot-toast'
 // Import the new real-time hook instead of the old one
 import { useRealtimeUpload } from '../hooks/useRealtimeUpload'
@@ -15,7 +15,9 @@ const MultiUploadDashboard: React.FC = () => {
     removeFile, 
     clearAll,
     downloadCSV,        // Add downloadCSV from the hook
-    updateJournalEntry  // Add updateJournalEntry from the hook
+    updateJournalEntry, // Add updateJournalEntry from the hook
+    markAsDisplayed,    // Add markAsDisplayed for individual results
+    markAllDisplayed    // Add markAllDisplayed for batch operations
   } = useRealtimeUpload()  // Use the new real-time hook
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -283,14 +285,25 @@ const MultiUploadDashboard: React.FC = () => {
         <div className="xl:col-span-2 bg-white rounded-lg shadow-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Journal Entries</h2>
-            <button
-              onClick={downloadCSV}
-              disabled={journalEntries.length === 0}
-              className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Download className="w-4 h-4 mr-2" />
-              Download CSV
-            </button>
+            <div className="flex space-x-3">
+              <button
+                onClick={markAllDisplayed}
+                disabled={allInvoiceResults.filter(r => r.status === 'completed' && r.frontendStatus !== 'displayed').length === 0}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Mark all completed results as displayed to prevent future notifications"
+              >
+                <Eye className="w-4 h-4 mr-2" />
+                Mark as Displayed ({allInvoiceResults.filter(r => r.status === 'completed' && r.frontendStatus !== 'displayed').length})
+              </button>
+              <button
+                onClick={downloadCSV}
+                disabled={journalEntries.length === 0}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <Download className="w-4 h-4 mr-2" />
+                Download CSV
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto max-h-96 overflow-y-auto">

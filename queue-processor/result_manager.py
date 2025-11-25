@@ -22,6 +22,44 @@ class ResultManager:
         project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
         self.firestore_client = firestore.Client(project=project_id)
         logger.info(f"Result Manager initialized with project: {project_id}")
+    
+    def _compute_status_category(self, status: str) -> str:
+        """
+        Compute status category for efficient server-side filtering
+        """
+        if status in ['queued', 'processing']:
+            return 'active'
+        elif status == 'completed':
+            return 'recent'  # Will be updated to 'displayed' by frontend
+        else:
+            return 'old'
+    
+    def _compute_priority_score(self, status: str) -> int:
+        """
+        Compute priority score for efficient ordering
+        Higher score = higher priority
+        """
+        import time
+        base_score = int(time.time())
+        
+        if status == 'processing':
+            return base_score + 1000  # Highest priority
+        elif status == 'queued':
+            return base_score + 500   # High priority
+        else:
+            return base_score         # Normal priority
+    
+    def _compute_display_tier(self, status: str) -> int:
+        """
+        Compute display tier for UI optimization
+        1=active, 2=recent, 3=archive
+        """
+        if status in ['queued', 'processing']:
+            return 1  # Active tier - real-time display
+        elif status == 'completed':
+            return 2  # Recent tier - recent completions
+        else:
+            return 3  # Archive tier - old/failed items
 
     def store_result(self, job: QueueJob, success: bool, result_data: Optional[Dict] = None, error: Optional[str] = None) -> bool:
         """
@@ -31,14 +69,20 @@ class ResultManager:
         try:
             doc_ref = self.firestore_client.collection('invoice_results').document(job.job_id)
             
-            # Base document data
+            # Base document data with optimization fields
+            status = 'completed' if success else 'failed'
             doc_data = {
                 'job_id': job.job_id,
                 'user_email': job.user_email,
                 'bucket_path': job.bucket_path,
                 'created_at': job.created_at.isoformat() if hasattr(job.created_at, 'isoformat') else str(job.created_at),
                 'updated_at': datetime.now().isoformat(),
-                'retry_count': job.retry_count
+                'retry_count': job.retry_count,
+                # ⚙️ Performance optimization fields
+                'status_category': self._compute_status_category(status),
+                'priority_score': self._compute_priority_score(status),
+                'display_tier': self._compute_display_tier(status),
+                'frontend_status': None  # Will be set by frontend when displayed
             }
             
             if success:

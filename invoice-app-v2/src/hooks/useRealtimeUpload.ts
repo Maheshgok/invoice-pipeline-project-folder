@@ -7,7 +7,7 @@ import type { InvoiceProcessingResult } from '../services/firestore-realtime'
 interface UploadedFile {
   id: string
   file: File
-  status: 'uploading' | 'processing' | 'completed' | 'error'
+  status: 'uploading' | 'processing' | 'completed' | 'error' | 'displayed'
   progress: number
   result?: InvoiceProcessingResult
   error?: string
@@ -62,101 +62,100 @@ export const useRealtimeUpload = () => {
     )
   }, [])
 
-  // Set up real-time listener for ALL user results
-  useEffect(() => {
-    console.log('🔥 Setting up REAL-TIME Firestore listener for all user results...')
+  // Mark results as displayed to prevent future notifications
+  const markAsDisplayed = useCallback(async (jobIds: string[]) => {
+    try {
+      await realtimeFirestoreService.markAsDisplayed(jobIds)
+      console.log('📤 Marked as displayed:', jobIds)
+    } catch (error) {
+      console.error('❌ Failed to mark as displayed:', error)
+    }
+  }, [])
+
+  // Mark all completed results as displayed
+  const markAllDisplayed = useCallback(async () => {
+    const completedJobIds = allInvoiceResults
+      .filter(result => result.status === 'completed' && result.jobId && result.frontendStatus !== 'displayed')
+      .map(result => result.jobId!)
     
-    // Wait for user authentication before setting up listener
-    const setupListener = () => {
+    if (completedJobIds.length > 0) {
+      await markAsDisplayed(completedJobIds)
+      toast.success(`🏠 Marked ${completedJobIds.length} results as displayed`)
+    } else {
+      toast.success('📋 No new results to mark as displayed')
+    }
+  }, [allInvoiceResults, markAsDisplayed])
+
+  // Set up OPTIMIZED real-time listeners (eliminates client-side filtering)
+  useEffect(() => {
+    console.log('🚀 Setting up OPTIMIZED real-time listeners...')
+    
+    // Wait for user authentication before setting up listeners
+    const setupOptimizedListeners = () => {
       const user = authService.getCurrentUser()
       if (!user) {
         console.log('⏳ User not authenticated yet, waiting...')
-        setTimeout(setupListener, 1000) // Retry in 1 second
+        setTimeout(setupOptimizedListeners, 1000)
         return
       }
       
-      console.log('✅ User authenticated, setting up real-time listener for:', user.email)
+      console.log('✅ User authenticated, setting up optimized listeners for:', user.email)
       
-      realtimeFirestoreService.listenToAllUserResults(
-        (results) => {
-          console.log('📡 Real-time update received:', results.length, 'results')
-          setAllInvoiceResults(results)
-        
-        // Extract and set journal entries
-        const entries = realtimeFirestoreService.extractJournalEntriesFromResults(results)
-        const journalEntries = entries.map(entry => ({
-          id: entry.id,
-          invoiceId: entry.invoiceId,
-          date: entry.date,
-          accountName: entry.accountName,
-          accountCode: entry.accountCode,
-          description: entry.narration,
-          debitAmount: entry.debitAmount,
-          creditAmount: entry.creditAmount,
-          reference: entry.invoiceNumber,
-          vendor: entry.vendor
-        }))
-        setJournalEntries(journalEntries)
-        
-        console.log('📊 Journal entries updated:', journalEntries.length, 'entries')
-        
-        // Update file statuses based on real-time results
-        setUploadedFiles(prev => prev.map(file => {
-          if (!file.jobId) return file
+      // ⚡ Tier 1: Active processing results (real-time, small dataset)
+      realtimeFirestoreService.listenToActiveResults(
+        (activeResults) => {
+          console.log('🎨 Active results update:', activeResults.length, 'active items')
           
-          const result = results.find(r => r.jobId === file.jobId)
-          if (result) {
-            console.log(`📄 Updating file ${file.id} status:`, {
-              oldStatus: file.status,
-              newStatus: result.status,
-              progress: result.progress
-            })
-            
-            return {
-              ...file,
-              status: result.status === 'queued' ? 'processing' : result.status,
-              progress: result.progress,
-              result: result,
-              error: result.error
-            }
-          }
-          return file
-        }))
-        
-        // Show toast notifications only for NEW completions (not historical data)
-        if (isInitialLoad) {
-          console.log('📚 Initial load - skipping notifications for', results.length, 'historical results')
-          setIsInitialLoad(false)
-          // Store all existing job IDs to avoid future duplicate notifications
-          const existingJobIds = new Set(results.map(r => r.jobId).filter((jobId): jobId is string => Boolean(jobId)))
-          setProcessedJobIds(existingJobIds)
-        } else {
-          // Only notify for truly new results
-          results.forEach(result => {
-            if (result.jobId && !processedJobIds.has(result.jobId)) {
-              if (result.status === 'completed') {
-                toast.success(`✅ Invoice processed: ${result.fileName}`)
-                console.log('🎉 NEW completion notification for:', result.jobId)
-              } else if (result.status === 'error') {
-                toast.error(`❌ Processing failed: ${result.fileName}`)
-                console.log('❌ NEW error notification for:', result.jobId)
+          // Extract journal entries from active results only
+          const entries = realtimeFirestoreService.extractJournalEntriesFromResults(activeResults)
+          const journalEntries = entries.map(entry => ({
+            id: entry.id,
+            invoiceId: entry.invoiceId,
+            date: entry.date,
+            accountName: entry.accountName,
+            accountCode: entry.accountCode,
+            description: entry.narration,
+            debitAmount: entry.debitAmount,
+            creditAmount: entry.creditAmount,
+            reference: entry.invoiceNumber,
+            vendor: entry.vendor
+          }))
+          
+          // Update state with active results
+          setAllInvoiceResults(activeResults)
+          setJournalEntries(journalEntries)
+          
+          // Handle notifications for NEW active results only
+          if (isInitialLoad) {
+            console.log('📚 Initial active load - skipping notifications')
+            setIsInitialLoad(false)
+            const existingJobIds = new Set(activeResults.map(r => r.jobId).filter((jobId): jobId is string => Boolean(jobId)))
+            setProcessedJobIds(existingJobIds)
+          } else {
+            // Only notify for truly new active results
+            activeResults.forEach(result => {
+              if (result.jobId && !processedJobIds.has(result.jobId)) {
+                if (result.status === 'completed') {
+                  toast.success(`✅ Invoice processed: ${result.fileName}`)
+                  console.log('🎉 NEW completion notification for:', result.jobId)
+                }
+                setProcessedJobIds((prev: Set<string>) => new Set(prev).add(result.jobId!))
               }
-              // Track this job ID as processed
-              setProcessedJobIds((prev: Set<string>) => new Set(prev).add(result.jobId!))
-            }
-          })
-        }
+            })
+          }
         },
         (error) => {
-          console.error('❌ Real-time listener error:', error)
-          toast.error('Unable to get real-time updates')
+          console.error('❌ Active results listener error:', error)
+          toast.error('Unable to get real-time updates for active processing')
         }
       )
     }
     
-    setupListener()    // Cleanup on unmount
+    setupOptimizedListeners()
+    
+    // Cleanup on unmount
     return () => {
-      console.log('🧹 Cleaning up real-time listeners...')
+      console.log('🧹 Cleaning up optimized listeners...')
       realtimeFirestoreService.cleanup()
     }
   }, []) // Empty dependency array - set up once on mount
@@ -351,6 +350,8 @@ export const useRealtimeUpload = () => {
     clearAll,
     downloadCSV,  // Add downloadCSV to exports
     updateJournalEntry,  // Add updateJournalEntry to exports
+    markAsDisplayed,  // Add markAsDisplayed to exports
+    markAllDisplayed,  // Add markAllDisplayed to exports
     processFile,
     updateFileProgress,
     setFileResult,
