@@ -35,6 +35,8 @@ export const useRealtimeUpload = () => {
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([])
   const [allInvoiceResults, setAllInvoiceResults] = useState<InvoiceProcessingResult[]>([])
+  const [isInitialLoad, setIsInitialLoad] = useState(true)
+  const [processedJobIds, setProcessedJobIds] = useState<Set<string>>(new Set())
 
   const updateFileProgress = useCallback((fileId: string, status: UploadedFile['status'], progress: number) => {
     setUploadedFiles(prev =>
@@ -96,6 +98,8 @@ export const useRealtimeUpload = () => {
         }))
         setJournalEntries(journalEntries)
         
+        console.log('📊 Journal entries updated:', journalEntries.length, 'entries')
+        
         // Update file statuses based on real-time results
         setUploadedFiles(prev => prev.map(file => {
           if (!file.jobId) return file
@@ -119,14 +123,29 @@ export const useRealtimeUpload = () => {
           return file
         }))
         
-        // Show toast notifications for status changes
-        results.forEach(result => {
-          if (result.status === 'completed') {
-            toast.success(`✅ Invoice processed: ${result.fileName}`)
-          } else if (result.status === 'error') {
-            toast.error(`❌ Processing failed: ${result.fileName}`)
-          }
-        })
+        // Show toast notifications only for NEW completions (not historical data)
+        if (isInitialLoad) {
+          console.log('📚 Initial load - skipping notifications for', results.length, 'historical results')
+          setIsInitialLoad(false)
+          // Store all existing job IDs to avoid future duplicate notifications
+          const existingJobIds = new Set(results.map(r => r.jobId).filter((jobId): jobId is string => Boolean(jobId)))
+          setProcessedJobIds(existingJobIds)
+        } else {
+          // Only notify for truly new results
+          results.forEach(result => {
+            if (result.jobId && !processedJobIds.has(result.jobId)) {
+              if (result.status === 'completed') {
+                toast.success(`✅ Invoice processed: ${result.fileName}`)
+                console.log('🎉 NEW completion notification for:', result.jobId)
+              } else if (result.status === 'error') {
+                toast.error(`❌ Processing failed: ${result.fileName}`)
+                console.log('❌ NEW error notification for:', result.jobId)
+              }
+              // Track this job ID as processed
+              setProcessedJobIds((prev: Set<string>) => new Set(prev).add(result.jobId!))
+            }
+          })
+        }
         },
         (error) => {
           console.error('❌ Real-time listener error:', error)
