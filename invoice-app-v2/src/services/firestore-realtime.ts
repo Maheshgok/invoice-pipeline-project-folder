@@ -57,13 +57,15 @@ class RealtimeFirestoreService {
 
     console.log('🎨 Setting up ACTIVE-ONLY real-time listener for:', user.email)
 
-    // ⚙️ Server-side filtering: Only active/processing documents
+    // ⚙️ Simplified query to avoid index requirements during development
+    // TODO: Add compound index for production optimization
     const activeQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      where('status_category', 'in', ['active', 'processing', 'recent']),  // Server-side filter
+      // Temporarily removing status_category filter to avoid index requirement
+      // where('status_category', 'in', ['active', 'processing', 'recent']),
       orderBy('created_at', 'desc'),
-      limit(15)  // Small result set for fast loading
+      limit(20)  // Slightly larger limit since we'll filter client-side temporarily
     )
 
     const unsubscribe = onSnapshot(
@@ -107,14 +109,16 @@ class RealtimeFirestoreService {
 
     console.log('🗓️ Setting up RECENT results listener for:', user.email)
 
-    // ⚙️ Server-side filtering: Only recent displayed results
+    // ⚙️ Simplified query to avoid index requirements during development  
+    // TODO: Add compound index for production optimization
     const recentQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      where('frontend_status', '==', 'displayed'),
-      where('displayed_at', '>=', sevenDaysAgo.toISOString()),
-      orderBy('displayed_at', 'desc'),
-      limit(25)
+      // Temporarily removing complex filters to avoid index requirements
+      // where('frontend_status', '==', 'displayed'),
+      // where('displayed_at', '>=', sevenDaysAgo.toISOString()),
+      orderBy('created_at', 'desc'),
+      limit(30)  // Will filter client-side temporarily
     )
 
     const unsubscribe = onSnapshot(
@@ -251,7 +255,7 @@ class RealtimeFirestoreService {
   }
 
   /**
-   * Process active results snapshot with minimal filtering
+   * Process active results snapshot with basic client-side filtering
    */
   private processActiveSnapshot(snapshot: QuerySnapshot<DocumentData>): InvoiceProcessingResult[] {
     const results: InvoiceProcessingResult[] = []
@@ -260,30 +264,41 @@ class RealtimeFirestoreService {
       const data = doc.data()
       const docJobId = data.job_id
       
-      // Minimal filtering - most filtering done server-side
+      // Filter for production job ID format
       if (docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)) {
-        const result: InvoiceProcessingResult = {
-          id: doc.id,
-          fileName: this.extractFileNameFromPath(data.bucket_path) || '',
-          fileSize: 0,
-          status: this.mapBackendStatus(data.status),
-          progress: this.calculateProgress(data.status),
-          processedAt: data.completed_at || data.updated_at,
-          userEmail: data.user_email || '',
-          extractedData: data.result,
-          error: data.error,
-          jobId: data.job_id,
-          gcsPath: data.bucket_path,
-          createdAt: this.stringToTimestamp(data.created_at),
-          updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
-          displayedAt: data.displayed_at,
-          frontendStatus: data.frontend_status
-        }
+        // Basic client-side filtering for active/recent items
+        const status = data.status || 'unknown'
+        const frontendStatus = data.frontend_status
         
-        results.push(result)
+        // Show active processing items and recent completions
+        const isActiveProcessing = ['queued', 'processing'].includes(status)
+        const isRecentCompletion = status === 'completed' && frontendStatus !== 'displayed'
+        
+        if (isActiveProcessing || isRecentCompletion) {
+          const result: InvoiceProcessingResult = {
+            id: doc.id,
+            fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+            fileSize: 0,
+            status: this.mapBackendStatus(data.status),
+            progress: this.calculateProgress(data.status),
+            processedAt: data.completed_at || data.updated_at,
+            userEmail: data.user_email || '',
+            extractedData: data.result,
+            error: data.error,
+            jobId: data.job_id,
+            gcsPath: data.bucket_path,
+            createdAt: this.stringToTimestamp(data.created_at),
+            updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
+            displayedAt: data.displayed_at,
+            frontendStatus: data.frontend_status
+          }
+          
+          results.push(result)
+        }
       }
     })
     
+    console.log(`📊 Filtered ${results.length} active/recent items from ${snapshot.docs.length} total`)
     return results
   }
 

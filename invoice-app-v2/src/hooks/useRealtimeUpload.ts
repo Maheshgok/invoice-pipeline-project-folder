@@ -37,6 +37,8 @@ export const useRealtimeUpload = () => {
   const [allInvoiceResults, setAllInvoiceResults] = useState<InvoiceProcessingResult[]>([])
   const [isInitialLoad, setIsInitialLoad] = useState(true)
   const [processedJobIds, setProcessedJobIds] = useState<Set<string>>(new Set())
+  const [hasActiveUploads, setHasActiveUploads] = useState(false)
+  const [listenersActive, setListenersActive] = useState(false)
 
   const updateFileProgress = useCallback((fileId: string, status: UploadedFile['status'], progress: number) => {
     setUploadedFiles(prev =>
@@ -86,79 +88,81 @@ export const useRealtimeUpload = () => {
     }
   }, [allInvoiceResults, markAsDisplayed])
 
-  // Set up OPTIMIZED real-time listeners (eliminates client-side filtering)
-  useEffect(() => {
-    console.log('🚀 Setting up OPTIMIZED real-time listeners...')
+  // Function to start listeners on-demand (after first upload)
+  const startRealtimeListeners = useCallback(() => {
+    if (listenersActive) {
+      console.log('🔥 Real-time listeners already active')
+      return
+    }
+
+    const user = authService.getCurrentUser()
+    if (!user) {
+      console.log('⚠️ Cannot start listeners - user not authenticated')
+      return
+    }
+
+    console.log('🚀 STARTING real-time listeners after upload for:', user.email)
+    setListenersActive(true)
     
-    // Wait for user authentication before setting up listeners
-    const setupOptimizedListeners = () => {
-      const user = authService.getCurrentUser()
-      if (!user) {
-        console.log('⏳ User not authenticated yet, waiting...')
-        setTimeout(setupOptimizedListeners, 1000)
-        return
-      }
-      
-      console.log('✅ User authenticated, setting up optimized listeners for:', user.email)
-      
-      // ⚡ Tier 1: Active processing results (real-time, small dataset)
-      realtimeFirestoreService.listenToActiveResults(
-        (activeResults) => {
-          console.log('🎨 Active results update:', activeResults.length, 'active items')
-          
-          // Extract journal entries from active results only
-          const entries = realtimeFirestoreService.extractJournalEntriesFromResults(activeResults)
-          const journalEntries = entries.map(entry => ({
-            id: entry.id,
-            invoiceId: entry.invoiceId,
-            date: entry.date,
-            accountName: entry.accountName,
-            accountCode: entry.accountCode,
-            description: entry.narration,
-            debitAmount: entry.debitAmount,
-            creditAmount: entry.creditAmount,
-            reference: entry.invoiceNumber,
-            vendor: entry.vendor
-          }))
-          
-          // Update state with active results
-          setAllInvoiceResults(activeResults)
-          setJournalEntries(journalEntries)
-          
-          // Handle notifications for NEW active results only
-          if (isInitialLoad) {
-            console.log('📚 Initial active load - skipping notifications')
-            setIsInitialLoad(false)
-            const existingJobIds = new Set(activeResults.map(r => r.jobId).filter((jobId): jobId is string => Boolean(jobId)))
-            setProcessedJobIds(existingJobIds)
-          } else {
-            // Only notify for truly new active results
-            activeResults.forEach(result => {
-              if (result.jobId && !processedJobIds.has(result.jobId)) {
-                if (result.status === 'completed') {
-                  toast.success(`✅ Invoice processed: ${result.fileName}`)
-                  console.log('🎉 NEW completion notification for:', result.jobId)
-                }
-                setProcessedJobIds((prev: Set<string>) => new Set(prev).add(result.jobId!))
+    // ⚡ Tier 1: Active processing results (real-time, small dataset)
+    realtimeFirestoreService.listenToActiveResults(
+      (activeResults) => {
+        console.log('🎨 Active results update:', activeResults.length, 'active items')
+        
+        // Extract journal entries from active results only
+        const entries = realtimeFirestoreService.extractJournalEntriesFromResults(activeResults)
+        const journalEntries = entries.map(entry => ({
+          id: entry.id,
+          invoiceId: entry.invoiceId,
+          date: entry.date,
+          accountName: entry.accountName,
+          accountCode: entry.accountCode,
+          description: entry.narration,
+          debitAmount: entry.debitAmount,
+          creditAmount: entry.creditAmount,
+          reference: entry.invoiceNumber,
+          vendor: entry.vendor
+        }))
+        
+        // Update state with active results
+        setAllInvoiceResults(activeResults)
+        setJournalEntries(journalEntries)
+        
+        // Handle notifications for NEW active results only
+        if (isInitialLoad) {
+          console.log('📚 Initial active load - skipping notifications')
+          setIsInitialLoad(false)
+          const existingJobIds = new Set(activeResults.map(r => r.jobId).filter((jobId): jobId is string => Boolean(jobId)))
+          setProcessedJobIds(existingJobIds)
+        } else {
+          // Only notify for truly new active results
+          activeResults.forEach(result => {
+            if (result.jobId && !processedJobIds.has(result.jobId)) {
+              if (result.status === 'completed') {
+                toast.success(`✅ Invoice processed: ${result.fileName}`)
+                console.log('🎉 NEW completion notification for:', result.jobId)
               }
-            })
-          }
-        },
-        (error) => {
-          console.error('❌ Active results listener error:', error)
-          toast.error('Unable to get real-time updates for active processing')
+              setProcessedJobIds((prev: Set<string>) => new Set(prev).add(result.jobId!))
+            }
+          })
         }
-      )
-    }
-    
-    setupOptimizedListeners()
-    
-    // Cleanup on unmount
+      },
+      (error) => {
+        console.error('❌ Active results listener error:', error)
+        toast.error('Unable to get real-time updates for active processing')
+      }
+    )
+  }, [listenersActive, isInitialLoad, processedJobIds])
+
+  // Cleanup listeners on unmount
+  useEffect(() => {
     return () => {
-      console.log('🧹 Cleaning up optimized listeners...')
-      realtimeFirestoreService.cleanup()
+      if (listenersActive) {
+        console.log('🧹 Cleaning up real-time listeners on unmount...')
+        realtimeFirestoreService.cleanup()
+      }
     }
-  }, []) // Empty dependency array - set up once on mount
+  }, [listenersActive]) // Empty dependency array - set up once on mount
 
   const processFile = useCallback(async (uploadedFile: UploadedFile) => {
     try {
@@ -280,12 +284,19 @@ export const useRealtimeUpload = () => {
     }))
 
     setUploadedFiles(prev => [...prev, ...newFiles])
+    setHasActiveUploads(true)
+    
+    // 🚀 START real-time listeners after first upload
+    if (!listenersActive) {
+      console.log('🎯 First upload detected - starting real-time listeners')
+      startRealtimeListeners()
+    }
 
     // Process files one by one
     for (const file of newFiles) {
       await processFile(file)
     }
-  }, [processFile])
+  }, [processFile, listenersActive, startRealtimeListeners])
 
   const removeFile = useCallback((fileId: string) => {
     setUploadedFiles(prev => prev.filter(f => f.id !== fileId))
