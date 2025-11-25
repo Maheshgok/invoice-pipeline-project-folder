@@ -459,21 +459,57 @@ class RealtimeFirestoreService {
   extractJournalEntriesFromResults(results: InvoiceProcessingResult[]) {
     const entries: any[] = []
     
-    results.forEach((result) => {
-      if (result.extractedData && result.extractedData.double_entry_bookkeeping) {
-        const journalSets = result.extractedData.double_entry_bookkeeping.journal_entry_set || []
+    console.log('🔍 Extracting journal entries from', results.length, 'results')
+    
+    results.forEach((result, resultIndex) => {
+      console.log(`📋 Processing result ${resultIndex + 1}:`, {
+        jobId: result.jobId,
+        hasExtractedData: !!result.extractedData,
+        extractedDataKeys: result.extractedData ? Object.keys(result.extractedData) : []
+      })
+
+      // Check both possible data structures
+      let journalData = null
+      
+      // Structure 1: extractedData.double_entry_bookkeeping (original structure)
+      if (result.extractedData?.double_entry_bookkeeping) {
+        journalData = result.extractedData.double_entry_bookkeeping
+        console.log('📊 Found journal data in extractedData.double_entry_bookkeeping')
+      }
+      // Structure 2: extractedData.extracted_data.double_entry_bookkeeping (new structure)
+      else if (result.extractedData?.extracted_data?.double_entry_bookkeeping) {
+        journalData = result.extractedData.extracted_data.double_entry_bookkeeping
+        console.log('📊 Found journal data in extractedData.extracted_data.double_entry_bookkeeping')
+      }
+      
+      if (journalData) {
+        const journalSets = journalData.journal_entry_set || []
+        console.log('📝 Found', journalSets.length, 'journal entry sets')
         
         journalSets.forEach((journalSet: any, setIndex: number) => {
           const journalEntries = journalSet.entries || []
+          console.log(`🔢 Set ${setIndex + 1} has`, journalEntries.length, 'entries')
           
           journalEntries.forEach((entry: any, entryIndex: number) => {
-            entries.push({
+            const invoiceNumber = result.extractedData?.extracted_data?.invoice_number || 
+                                  result.extractedData?.invoice_number || 
+                                  'N/A'
+            const vendorName = result.extractedData?.extracted_data?.vendor_name || 
+                               result.extractedData?.vendor_name || 
+                               'Unknown'
+            const invoiceDate = result.extractedData?.extracted_data?.invoice_date || 
+                                result.extractedData?.invoice_date || 
+                                entry.date || 
+                                journalSet.date || 
+                                ''
+
+            const journalEntry = {
               id: `${result.jobId}_${setIndex}_${entryIndex}`,
               invoiceId: result.id,
-              invoiceNumber: result.extractedData.invoice_number || '',
-              vendor: result.extractedData.vendor_name || '',
+              invoiceNumber: invoiceNumber,
+              vendor: vendorName,
               entryIndex: entryIndex,
-              date: entry.date || journalSet.date || result.extractedData.invoice_date || '',
+              date: invoiceDate,
               accountName: entry.account_name || '',
               accountCode: entry.account_code || '',
               accountType: entry.account_type || '',
@@ -482,12 +518,25 @@ class RealtimeFirestoreService {
               narration: entry.narration || journalSet.entry_description || '',
               userId: result.userEmail,
               createdAt: result.createdAt
+            }
+            
+            console.log(`✅ Added journal entry:`, {
+              id: journalEntry.id,
+              accountName: journalEntry.accountName,
+              debitAmount: journalEntry.debitAmount,
+              creditAmount: journalEntry.creditAmount
             })
+            
+            entries.push(journalEntry)
           })
         })
+      } else {
+        console.log('⚠️ No journal data found for job:', result.jobId)
+        console.log('Available data structure:', result.extractedData)
       }
     })
     
+    console.log('🎯 Total journal entries extracted:', entries.length)
     return entries
   }
 
