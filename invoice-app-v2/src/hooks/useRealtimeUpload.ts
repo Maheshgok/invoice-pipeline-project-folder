@@ -104,6 +104,9 @@ export const useRealtimeUpload = () => {
     console.log('🚀 STARTING real-time listeners after upload for:', user.email)
     setListenersActive(true)
     
+    // Track if this specific listener has had its first load
+    let listenerInitialLoad = true
+    
     // ⚡ Tier 1: Active processing results (real-time, small dataset)
     realtimeFirestoreService.listenToActiveResults(
       (activeResults) => {
@@ -129,19 +132,24 @@ export const useRealtimeUpload = () => {
         setJournalEntries(journalEntries)
         
         // Handle notifications for NEW active results only
-        if (isInitialLoad) {
-          console.log('📚 Initial active load - skipping notifications')
-          setIsInitialLoad(false)
+        if (listenerInitialLoad) {
+          console.log('📚 Initial listener load - setting baseline job IDs')
+          listenerInitialLoad = false
           const existingJobIds = new Set(activeResults.map(r => r.jobId).filter((jobId): jobId is string => Boolean(jobId)))
           setProcessedJobIds(existingJobIds)
         } else {
-          // Only notify for truly new active results
+          // Check for NEW completed results and notify
+          console.log('🔍 Checking for new completions...')
           activeResults.forEach(result => {
             if (result.jobId && !processedJobIds.has(result.jobId)) {
+              console.log('🆔 Found new job:', result.jobId, 'Status:', result.status)
               if (result.status === 'completed') {
                 toast.success(`✅ Invoice processed: ${result.fileName}`)
                 console.log('🎉 NEW completion notification for:', result.jobId)
+              } else if (result.status === 'processing') {
+                console.log('⚡ New job processing:', result.jobId)
               }
+              // Track this job ID to avoid duplicate notifications
               setProcessedJobIds((prev: Set<string>) => new Set(prev).add(result.jobId!))
             }
           })
@@ -152,7 +160,7 @@ export const useRealtimeUpload = () => {
         toast.error('Unable to get real-time updates for active processing')
       }
     )
-  }, [listenersActive, isInitialLoad, processedJobIds])
+  }, [listenersActive, processedJobIds])
 
   // Cleanup listeners on unmount
   useEffect(() => {
