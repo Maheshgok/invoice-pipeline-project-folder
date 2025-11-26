@@ -397,6 +397,32 @@ export const useRealtimeUpload = () => {
     }
   }, [])
 
+  const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
+    setJournalEntries(prev => prev.map(entry => 
+      entry.id === entryId 
+        ? { ...entry, [field]: value }
+        : entry
+    ))
+    toast.success('Journal entry updated')
+  }, [])
+
+  // Check if full batch is processed and ready for download
+  const isBatchReadyForDownload = useCallback(() => {
+    if (uploadedFiles.length === 0) return false
+    
+    // All files must be either completed or error (no uploading/processing)
+    const allFilesProcessed = uploadedFiles.every(file => 
+      file.status === 'completed' || file.status === 'displayed' || file.status === 'error'
+    )
+    
+    // At least one file must be completed
+    const hasCompletedFiles = uploadedFiles.some(file => 
+      file.status === 'completed' || file.status === 'displayed'
+    )
+    
+    return allFilesProcessed && hasCompletedFiles
+  }, [uploadedFiles])
+
   // Enhanced download CSV with batch completion check and archiving
   const downloadCSV = useCallback(async () => {
     try {
@@ -448,32 +474,6 @@ export const useRealtimeUpload = () => {
       toast.error('Failed to download CSV')
     }
   }, [journalEntries, isBatchReadyForDownload, archiveCompletedResults])
-
-  const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
-    setJournalEntries(prev => prev.map(entry => 
-      entry.id === entryId 
-        ? { ...entry, [field]: value }
-        : entry
-    ))
-    toast.success('Journal entry updated')
-  }, [])
-
-  // Check if full batch is processed and ready for download
-  const isBatchReadyForDownload = useCallback(() => {
-    if (uploadedFiles.length === 0) return false
-    
-    // All files must be either completed or error (no uploading/processing)
-    const allFilesProcessed = uploadedFiles.every(file => 
-      file.status === 'completed' || file.status === 'displayed' || file.status === 'error'
-    )
-    
-    // At least one file must be completed
-    const hasCompletedFiles = uploadedFiles.some(file => 
-      file.status === 'completed' || file.status === 'displayed'
-    )
-    
-    return allFilesProcessed && hasCompletedFiles
-  }, [uploadedFiles])
 
   return {
     uploadedFiles,
