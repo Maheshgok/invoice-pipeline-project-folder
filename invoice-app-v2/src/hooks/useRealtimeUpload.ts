@@ -144,6 +144,11 @@ export const useRealtimeUpload = () => {
           activeResults.forEach(result => {
             if (result.jobId && !processedJobIds.has(result.jobId)) {
               console.log('🆔 Found new job:', result.jobId, 'Status:', result.status)
+              
+              // Update file progress when backend completes
+              updateFileProgress(result.jobId, result.status as UploadedFile['status'], 
+                result.status === 'completed' ? 100 : result.status === 'processing' ? 80 : 60)
+              
               if (result.status === 'completed') {
                 toast.success(`✅ Invoice processed: ${result.fileName}`)
                 console.log('🎉 NEW completion notification for:', result.jobId)
@@ -316,6 +321,31 @@ export const useRealtimeUpload = () => {
     setJournalEntries([])
   }, [])
 
+  // Archive only old results (older than 1 hour) to preserve recent completions
+  const archiveOldResults = useCallback(async () => {
+    try {
+      console.log('📦 Starting archive of old results (>1 hour)...')
+      const result = await archiveService.archiveOldResults()
+      console.log('📦 Archive old completed:', result.archived_count, 'items archived')
+      
+      // Restart listeners after archive to get fresh data
+      if (listenersActive) {
+        console.log('🔄 Restarting listeners after archive...')
+        realtimeFirestoreService.cleanup()
+        setListenersActive(false)
+        // Small delay before restarting
+        setTimeout(() => {
+          startRealtimeListeners()
+        }, 1000)
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Archive old results failed:', error)
+      throw error
+    }
+  }, [listenersActive, startRealtimeListeners])
+
   // Archive completed results to clean up the active collection
   const archiveCompletedResults = useCallback(async () => {
     try {
@@ -367,18 +397,24 @@ export const useRealtimeUpload = () => {
     }
   }, [])
 
-  // Enhanced download CSV with automatic archiving
+  // Enhanced download CSV with batch completion check and archiving
   const downloadCSV = useCallback(async () => {
-    if (journalEntries.length === 0) {
-      toast.error('No journal entries to download')
-      return
-    }
-
     try {
-      // First, archive completed results to clean up the active collection
-      console.log('📦 Auto-archiving before CSV download...')
-      await archiveCompletedResults()
+      // Check if full batch is ready for download
+      if (!isBatchReadyForDownload()) {
+        toast.error('⏳ Please wait for all files to complete processing before downloading')
+        return
+      }
 
+      if (journalEntries.length === 0) {
+        toast.error('No journal entries to download')
+        return
+      }
+
+      console.log('📦 Pre-download archive - archiving completed results...')
+      // Archive completed results before download to clean up interface
+      await archiveCompletedResults()
+      
       // Create CSV content
       const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor']
       const csvContent = [
@@ -411,7 +447,7 @@ export const useRealtimeUpload = () => {
       console.error('❌ Download CSV failed:', error)
       toast.error('Failed to download CSV')
     }
-  }, [journalEntries, archiveCompletedResults])
+  }, [journalEntries, isBatchReadyForDownload, archiveCompletedResults])
 
   const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
     setJournalEntries(prev => prev.map(entry => 
@@ -422,6 +458,23 @@ export const useRealtimeUpload = () => {
     toast.success('Journal entry updated')
   }, [])
 
+  // Check if full batch is processed and ready for download
+  const isBatchReadyForDownload = useCallback(() => {
+    if (uploadedFiles.length === 0) return false
+    
+    // All files must be either completed or error (no uploading/processing)
+    const allFilesProcessed = uploadedFiles.every(file => 
+      file.status === 'completed' || file.status === 'displayed' || file.status === 'error'
+    )
+    
+    // At least one file must be completed
+    const hasCompletedFiles = uploadedFiles.some(file => 
+      file.status === 'completed' || file.status === 'displayed'
+    )
+    
+    return allFilesProcessed && hasCompletedFiles
+  }, [uploadedFiles])
+
   return {
     uploadedFiles,
     journalEntries,
@@ -429,12 +482,14 @@ export const useRealtimeUpload = () => {
     uploadFiles,
     removeFile,
     clearAll,
-    downloadCSV,  // Enhanced with auto-archiving
+    downloadCSV,  // Enhanced with batch completion check
     updateJournalEntry,
     markAsDisplayed,
     markAllDisplayed,
-    archiveCompletedResults,  // NEW: Manual archive trigger
-    archiveDisplayedResults,  // NEW: Archive displayed results
+    archiveCompletedResults,  // Manual archive trigger (page refresh + download)
+    archiveDisplayedResults,  // Archive displayed results
+    archiveOldResults,        // Archive only old results (>1 hour)
+    isBatchReadyForDownload,  // NEW: Check if batch is ready for download
     processFile,
     updateFileProgress,
     setFileResult,

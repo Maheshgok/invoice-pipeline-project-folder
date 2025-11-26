@@ -16,10 +16,11 @@ const MultiUploadDashboard: React.FC = () => {
     clearAll,
     downloadCSV,        // Enhanced with auto-archiving
     updateJournalEntry, // Add updateJournalEntry from the hook
-    markAsDisplayed,    // Add markAsDisplayed for individual results
+    markAsDisplayed,    // Add markAsDisplayed for individual items
     markAllDisplayed,   // Add markAllDisplayed for batch operations
     archiveCompletedResults,  // NEW: Archive completed results
-    archiveDisplayedResults   // NEW: Archive displayed results
+    archiveDisplayedResults,   // NEW: Archive displayed results
+    isBatchReadyForDownload    // NEW: Check if batch is ready for download
   } = useRealtimeUpload()  // Use the new real-time hook
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -29,21 +30,22 @@ const MultiUploadDashboard: React.FC = () => {
 
   const MAX_QUEUE_SIZE = 100
 
-  // Archive completed results on page load/refresh for clean real-time experience
+  // Archive only on page refresh/load - preserve recent results for viewing
   useEffect(() => {
-    const performInitialArchive = async () => {
+    const performPageRefreshArchive = async () => {
       try {
-        console.log('🔄 Page loaded - checking for completed results to archive...')
+        console.log('🔄 Page refresh detected - archiving old completed results...')
+        // Archive completed results to keep interface clean on page refresh
         await archiveCompletedResults()
       } catch (error) {
-        console.error('❌ Initial archive failed:', error)
+        console.error('❌ Page refresh archive failed:', error)
         // Don't show toast error on page load, just log it
       }
     }
 
-    // Only archive on initial mount if user is authenticated
+    // Archive on page refresh only if user is authenticated
     if (user?.email) {
-      performInitialArchive()
+      performPageRefreshArchive()
     }
   }, [user?.email, archiveCompletedResults])  // Only run when user changes
 
@@ -317,11 +319,17 @@ const MultiUploadDashboard: React.FC = () => {
               </button>
               <button
                 onClick={downloadCSV}
-                disabled={journalEntries.length === 0}
+                disabled={!isBatchReadyForDownload() || journalEntries.length === 0}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={!isBatchReadyForDownload() ? "Please wait for all files to complete processing" : "Download journal entries as CSV"}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Download CSV
+                {!isBatchReadyForDownload() && uploadedFiles.length > 0 && (
+                  <span className="ml-2 text-xs">
+                    (Processing...)
+                  </span>
+                )}
               </button>
             </div>
           </div>
