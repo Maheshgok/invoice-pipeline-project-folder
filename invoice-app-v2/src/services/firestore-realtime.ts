@@ -42,8 +42,8 @@ class RealtimeFirestoreService {
   private recentResultsCache: Map<string, InvoiceProcessingResult> = new Map()
 
   /**
-   * OPTIMIZED: Listen only to ACTIVE processing results (no client filtering)
-   * This eliminates performance issues with large result sets
+   * SIMPLIFIED: Listen only to ALL active results (no filtering needed after archive system)
+   * Archive system keeps the active collection clean, so we can display everything
    */
   listenToActiveResults(
     onUpdate: (results: InvoiceProcessingResult[]) => void,
@@ -55,21 +55,21 @@ class RealtimeFirestoreService {
       return
     }
 
-    console.log('🎨 Setting up ACTIVE-ONLY real-time listener for:', user.email)
+    console.log('🎨 Setting up SIMPLIFIED active listener for:', user.email)
 
-    // ⚙️ ULTRA-SIMPLIFIED query to work immediately without any indexes
+    // ⚡ ULTRA-SIMPLIFIED query - archive system keeps collection clean
     const activeQuery = query(
       collection(db, 'invoice_results'),
       where('user_email', '==', user.email),
-      limit(30)  // No orderBy, no compound filters - works immediately
+      limit(50)  // Higher limit since archive system keeps collection clean
     )
 
     const unsubscribe = onSnapshot(
       activeQuery,
       (snapshot) => {
-        console.log('⚡ ACTIVE results snapshot:', snapshot.docs.length, 'documents')
+        console.log('⚡ SIMPLIFIED active snapshot:', snapshot.docs.length, 'documents')
         
-        const results = this.processActiveSnapshot(snapshot)
+        const results = this.processSimplifiedSnapshot(snapshot)
         
         // Cache active results
         results.forEach(result => {
@@ -246,7 +246,48 @@ class RealtimeFirestoreService {
   }
 
   /**
-   * Process active results snapshot with basic client-side filtering
+   * Process simplified snapshot - no filtering needed since archive keeps collection clean
+   */
+  private processSimplifiedSnapshot(snapshot: QuerySnapshot<DocumentData>): InvoiceProcessingResult[] {
+    const results: InvoiceProcessingResult[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      const docJobId = data.job_id
+      
+      // Only filter for production job ID format
+      if (docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)) {
+        const result: InvoiceProcessingResult = {
+          id: doc.id,
+          fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+          fileSize: 0,
+          status: this.mapBackendStatus(data.status),
+          progress: this.calculateProgress(data.status),
+          processedAt: data.completed_at || data.updated_at,
+          userEmail: data.user_email || '',
+          extractedData: data.result,
+          error: data.error,
+          jobId: data.job_id,
+          gcsPath: data.bucket_path,
+          createdAt: this.stringToTimestamp(data.created_at),
+          updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
+          displayedAt: data.displayed_at,
+          frontendStatus: data.frontend_status
+        }
+        
+        results.push(result)
+      }
+    })
+    
+    // Client-side sorting by creation date (newest first)
+    results.sort((a, b) => b.createdAt.seconds - a.createdAt.seconds)
+    
+    console.log(`📊 Simplified processing: ${results.length} results from ${snapshot.docs.length} total`)
+    return results
+  }
+
+  /**
+   * Process active results snapshot with basic client-side filtering (LEGACY - kept for compatibility)
    */
   private processActiveSnapshot(snapshot: QuerySnapshot<DocumentData>): InvoiceProcessingResult[] {
     const results: InvoiceProcessingResult[] = []

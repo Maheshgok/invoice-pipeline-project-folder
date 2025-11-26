@@ -14,10 +14,12 @@ const MultiUploadDashboard: React.FC = () => {
     uploadFiles,        // Changed from addFile to uploadFiles  
     removeFile, 
     clearAll,
-    downloadCSV,        // Add downloadCSV from the hook
+    downloadCSV,        // Enhanced with auto-archiving
     updateJournalEntry, // Add updateJournalEntry from the hook
     markAsDisplayed,    // Add markAsDisplayed for individual results
-    markAllDisplayed    // Add markAllDisplayed for batch operations
+    markAllDisplayed,   // Add markAllDisplayed for batch operations
+    archiveCompletedResults,  // NEW: Archive completed results
+    archiveDisplayedResults   // NEW: Archive displayed results
   } = useRealtimeUpload()  // Use the new real-time hook
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -26,6 +28,24 @@ const MultiUploadDashboard: React.FC = () => {
   const [editValue, setEditValue] = useState('')
 
   const MAX_QUEUE_SIZE = 100
+
+  // Archive completed results on page load/refresh for clean real-time experience
+  useEffect(() => {
+    const performInitialArchive = async () => {
+      try {
+        console.log('🔄 Page loaded - checking for completed results to archive...')
+        await archiveCompletedResults()
+      } catch (error) {
+        console.error('❌ Initial archive failed:', error)
+        // Don't show toast error on page load, just log it
+      }
+    }
+
+    // Only archive on initial mount if user is authenticated
+    if (user?.email) {
+      performInitialArchive()
+    }
+  }, [user?.email, archiveCompletedResults])  // Only run when user changes
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()

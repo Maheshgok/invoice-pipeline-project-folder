@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
 import { realtimeFirestoreService } from '../services/firestore-realtime'
+import { archiveService } from '../services/archive'
 import type { InvoiceProcessingResult } from '../services/firestore-realtime'
 
 interface UploadedFile {
@@ -315,41 +316,102 @@ export const useRealtimeUpload = () => {
     setJournalEntries([])
   }, [])
 
-  const downloadCSV = useCallback(() => {
+  // Archive completed results to clean up the active collection
+  const archiveCompletedResults = useCallback(async () => {
+    try {
+      console.log('📦 Starting archive of completed results...')
+      const result = await archiveService.archiveCompletedResults()
+      
+      if (result.archived_count > 0) {
+        toast.success(`📦 Archived ${result.archived_count} completed results`)
+        console.log('✅ Archive completed:', result)
+        
+        // Refresh real-time listeners after archiving to show updated active collection
+        if (listenersActive) {
+          console.log('🔄 Refreshing listeners after archive...')
+          realtimeFirestoreService.cleanup()
+          setTimeout(() => {
+            startRealtimeListeners()
+          }, 500)
+        }
+      } else {
+        console.log('📭 No completed results to archive')
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Archive failed:', error)
+      toast.error('Failed to archive completed results')
+      throw error
+    }
+  }, [listenersActive, startRealtimeListeners])
+
+  // Archive displayed results 
+  const archiveDisplayedResults = useCallback(async () => {
+    try {
+      console.log('📦 Starting archive of displayed results...')
+      const result = await archiveService.archiveDisplayedResults()
+      
+      if (result.archived_count > 0) {
+        toast.success(`📦 Archived ${result.archived_count} displayed results`)
+        console.log('✅ Archive completed:', result)
+      } else {
+        console.log('📭 No displayed results to archive')
+      }
+      
+      return result
+    } catch (error) {
+      console.error('❌ Archive failed:', error)
+      toast.error('Failed to archive displayed results')
+      throw error
+    }
+  }, [])
+
+  // Enhanced download CSV with automatic archiving
+  const downloadCSV = useCallback(async () => {
     if (journalEntries.length === 0) {
       toast.error('No journal entries to download')
       return
     }
 
-    // Create CSV content
-    const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor']
-    const csvContent = [
-      headers.join(','),
-      ...journalEntries.map(entry => [
-        entry.date,
-        `"${entry.accountName}"`,
-        entry.accountCode,
-        `"${entry.description}"`,
-        entry.debitAmount,
-        entry.creditAmount,
-        `"${entry.reference}"`,
-        `"${entry.vendor || ''}"`
-      ].join(','))
-    ].join('\n')
+    try {
+      // First, archive completed results to clean up the active collection
+      console.log('📦 Auto-archiving before CSV download...')
+      await archiveCompletedResults()
 
-    // Create and download file
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const link = document.createElement('a')
-    const url = URL.createObjectURL(blob)
-    link.setAttribute('href', url)
-    link.setAttribute('download', `journal_entries_${new Date().toISOString().split('T')[0]}.csv`)
-    link.style.visibility = 'hidden'
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    
-    toast.success(`Downloaded ${journalEntries.length} journal entries`)
-  }, [journalEntries])
+      // Create CSV content
+      const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor']
+      const csvContent = [
+        headers.join(','),
+        ...journalEntries.map(entry => [
+          entry.date,
+          `"${entry.accountName}"`,
+          entry.accountCode,
+          `"${entry.description}"`,
+          entry.debitAmount,
+          entry.creditAmount,
+          `"${entry.reference}"`,
+          `"${entry.vendor || ''}"`
+        ].join(','))
+      ].join('\n')
+
+      // Create and download file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
+      const link = document.createElement('a')
+      const url = URL.createObjectURL(blob)
+      link.setAttribute('href', url)
+      link.setAttribute('download', `journal_entries_${new Date().toISOString().split('T')[0]}.csv`)
+      link.style.visibility = 'hidden'
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      
+      toast.success(`📥 Downloaded ${journalEntries.length} journal entries`)
+    } catch (error) {
+      console.error('❌ Download CSV failed:', error)
+      toast.error('Failed to download CSV')
+    }
+  }, [journalEntries, archiveCompletedResults])
 
   const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
     setJournalEntries(prev => prev.map(entry => 
@@ -367,10 +429,12 @@ export const useRealtimeUpload = () => {
     uploadFiles,
     removeFile,
     clearAll,
-    downloadCSV,  // Add downloadCSV to exports
-    updateJournalEntry,  // Add updateJournalEntry to exports
-    markAsDisplayed,  // Add markAsDisplayed to exports
-    markAllDisplayed,  // Add markAllDisplayed to exports
+    downloadCSV,  // Enhanced with auto-archiving
+    updateJournalEntry,
+    markAsDisplayed,
+    markAllDisplayed,
+    archiveCompletedResults,  // NEW: Manual archive trigger
+    archiveDisplayedResults,  // NEW: Archive displayed results
     processFile,
     updateFileProgress,
     setFileResult,
