@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Eye } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Eye, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
 // Import the new real-time hook instead of the old one
 import { useRealtimeUpload } from '../hooks/useRealtimeUpload'
@@ -31,27 +31,71 @@ const MultiUploadDashboard: React.FC = () => {
 
   const MAX_QUEUE_SIZE = 100
 
-  // Archive only on specific user actions: hard refresh, download, or window close
+  // Handle window close/refresh - reliable archive trigger
   useEffect(() => {
     if (!user?.email) return
 
-    // Detect hard refresh (F5, Ctrl+R, or browser refresh button)
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      console.log('🔄 Window closing/refreshing - triggering archive...')
-      // Note: async operations in beforeunload are limited, but we'll attempt it
-      // The main archiving will happen on download click
-      archiveCompletedResults().catch(err => 
-        console.error('❌ Before unload archive failed:', err)
-      )
+    // Use visibilitychange instead of beforeunload for better reliability
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        // Page is becoming hidden (likely closing/navigating away)
+        if (allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
+          console.log('🔄 Window becoming hidden - triggering archive for cleanup...')
+          // Send archive request immediately (synchronous where possible)
+          archiveCompletedResults().catch(err => 
+            console.error('❌ Visibility change archive failed:', err)
+          )
+        }
+      }
     }
 
-    // Add event listener for page unload/refresh
+    // Also use beforeunload as backup (though less reliable)
+    const handleBeforeUnload = () => {
+      if (allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
+        console.log('🔄 Window unloading - triggering archive...')
+        // Use navigator.sendBeacon for more reliable delivery
+        const archiveData = JSON.stringify({ trigger: 'window_close' })
+        navigator.sendBeacon('/api/archive-hint', archiveData)
+        
+        // Still attempt normal archive as fallback
+        archiveCompletedResults().catch(err => 
+          console.error('❌ Before unload archive failed:', err)
+        )
+      }
+    }
+
+    // Add both event listeners for maximum reliability
+    document.addEventListener('visibilitychange', handleVisibilityChange)
     window.addEventListener('beforeunload', handleBeforeUnload)
     
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [user?.email, archiveCompletedResults])
+  }, [user?.email, allInvoiceResults, archiveCompletedResults])
+
+  // Handle user logout - clean up listeners and optionally archive
+  useEffect(() => {
+    // Only set up logout cleanup if user exists
+    if (!user?.email) {
+      console.log('🎯 No user - skipping archive setup')
+      return
+    }
+
+    console.log('🔐 Setting up logout cleanup for user:', user.email)
+
+    // Archive on explicit user logout (when auth state changes from authenticated to null)
+    return () => {
+      console.log('🔄 User state cleanup - checking if archive needed')
+      // Only archive if we have data to archive
+      if (allInvoiceResults.length > 0) {
+        console.log('📦 User logout detected - archiving completed results')
+        archiveCompletedResults().catch(err => 
+          console.error('❌ Logout archive failed:', err)
+        )
+      }
+    }
+  }, [user?.email]) // This will trigger cleanup when user changes (including logout)
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -320,6 +364,19 @@ const MultiUploadDashboard: React.FC = () => {
               >
                 <Eye className="w-4 h-4 mr-2" />
                 Mark as Displayed ({allInvoiceResults.filter(r => r.status === 'completed' && r.frontendStatus !== 'displayed').length})
+              </button>
+              <button
+                onClick={() => {
+                  archiveCompletedResults().catch(err => 
+                    console.error('Manual archive failed:', err)
+                  )
+                }}
+                disabled={allInvoiceResults.filter(r => r.status === 'completed').length === 0}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Manually archive completed results to clean the interface"
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                Archive ({allInvoiceResults.filter(r => r.status === 'completed').length})
               </button>
               <button
                 onClick={downloadCSV}
