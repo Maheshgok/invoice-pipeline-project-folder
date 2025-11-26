@@ -89,7 +89,7 @@ export const useRealtimeUpload = () => {
     }
   }, [allInvoiceResults, markAsDisplayed])
 
-  // Function to start listeners on-demand (after first upload)
+  // Function to start listeners on-demand (lazy loading for auth safety and error prevention)
   const startRealtimeListeners = useCallback(() => {
     if (listenersActive) {
       console.log('🔥 Real-time listeners already active')
@@ -102,7 +102,7 @@ export const useRealtimeUpload = () => {
       return
     }
 
-    console.log('🚀 STARTING real-time listeners after upload for:', user.email)
+    console.log('🚀 STARTING real-time listeners after first upload (lazy loaded):', user.email)
     setListenersActive(true)
     
     // Track if this specific listener has had its first load
@@ -300,9 +300,9 @@ export const useRealtimeUpload = () => {
     setUploadedFiles(prev => [...prev, ...newFiles])
     setHasActiveUploads(true)
     
-    // 🚀 START real-time listeners after first upload
+    // 🚀 START real-time listeners after first upload (lazy loading for auth/collection safety)
     if (!listenersActive) {
-      console.log('🎯 First upload detected - starting real-time listeners')
+      console.log('🎯 First upload detected - starting real-time listeners (lazy loading)')
       startRealtimeListeners()
     }
 
@@ -486,10 +486,11 @@ export const useRealtimeUpload = () => {
     updateJournalEntry,
     markAsDisplayed,
     markAllDisplayed,
-    archiveCompletedResults,  // Manual archive trigger (page refresh + download)
+    archiveCompletedResults,  // Manual archive trigger (download + window close)
     archiveDisplayedResults,  // Archive displayed results
     archiveOldResults,        // Archive only old results (>1 hour)
-    isBatchReadyForDownload,  // NEW: Check if batch is ready for download
+    isBatchReadyForDownload,  // Check if batch is ready for download
+    startRealtimeListeners,   // Manual listener control
     processFile,
     updateFileProgress,
     setFileResult,

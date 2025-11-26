@@ -20,7 +20,8 @@ const MultiUploadDashboard: React.FC = () => {
     markAllDisplayed,   // Add markAllDisplayed for batch operations
     archiveCompletedResults,  // NEW: Archive completed results
     archiveDisplayedResults,   // NEW: Archive displayed results
-    isBatchReadyForDownload    // NEW: Check if batch is ready for download
+    isBatchReadyForDownload,    // NEW: Check if batch is ready for download
+    startRealtimeListeners      // NEW: Manual listener control
   } = useRealtimeUpload()  // Use the new real-time hook
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -30,24 +31,27 @@ const MultiUploadDashboard: React.FC = () => {
 
   const MAX_QUEUE_SIZE = 100
 
-  // Archive only on page refresh/load - preserve recent results for viewing
+  // Archive only on specific user actions: hard refresh, download, or window close
   useEffect(() => {
-    const performPageRefreshArchive = async () => {
-      try {
-        console.log('🔄 Page refresh detected - archiving old completed results...')
-        // Archive completed results to keep interface clean on page refresh
-        await archiveCompletedResults()
-      } catch (error) {
-        console.error('❌ Page refresh archive failed:', error)
-        // Don't show toast error on page load, just log it
-      }
+    if (!user?.email) return
+
+    // Detect hard refresh (F5, Ctrl+R, or browser refresh button)
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      console.log('🔄 Window closing/refreshing - triggering archive...')
+      // Note: async operations in beforeunload are limited, but we'll attempt it
+      // The main archiving will happen on download click
+      archiveCompletedResults().catch(err => 
+        console.error('❌ Before unload archive failed:', err)
+      )
     }
 
-    // Archive on page refresh only if user is authenticated
-    if (user?.email) {
-      performPageRefreshArchive()
+    // Add event listener for page unload/refresh
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [user?.email, archiveCompletedResults])  // Only run when user changes
+  }, [user?.email, archiveCompletedResults])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
