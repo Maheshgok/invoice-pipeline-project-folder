@@ -18,12 +18,18 @@ from typing import Dict, List, Optional
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import firestore
-from google.auth.transport import requests
-from google.oauth2 import id_token
+import firebase_admin
+from firebase_admin import auth as firebase_auth, credentials
 
 # Initialize Flask app
 app = Flask(__name__)
 CORS(app, origins=["*"])
+
+# Initialize Firebase Admin SDK
+if not firebase_admin._apps:
+    # Use default application credentials in Cloud Run
+    cred = credentials.ApplicationDefault()
+    firebase_admin.initialize_app(cred)
 
 # Initialize Firestore
 db = firestore.Client()
@@ -38,29 +44,41 @@ PROJECT_ID = os.getenv('GOOGLE_CLOUD_PROJECT', 'watch-mail-trial')
 def verify_firebase_token(auth_header: str) -> Optional[Dict]:
     """Verify Firebase ID token and return user info"""
     try:
-        if not auth_header or not auth_header.startswith('Bearer '):
+        if not auth_header:
+            print("❌ No authorization header provided")
+            return None
+            
+        if not auth_header.startswith('Bearer '):
+            print(f"❌ Invalid authorization header format: {auth_header[:20]}...")
             return None
         
         id_token_str = auth_header.split('Bearer ')[1]
-        decoded_token = id_token.verify_firebase_token(
-            id_token_str, 
-            requests.Request(),
-            audience=PROJECT_ID
-        )
+        print(f"🔍 Attempting to verify token for project: {PROJECT_ID}")
+        
+        # Use Firebase Admin SDK to verify the token
+        decoded_token = firebase_auth.verify_id_token(id_token_str)
+        
+        print(f"✅ Token verified successfully for user: {decoded_token.get('email', 'unknown')}")
         return decoded_token
     except Exception as e:
         print(f"❌ Token verification failed: {e}")
+        print(f"❌ Token verification error type: {type(e)}")
         return None
 
 def get_user_email_from_request() -> Optional[str]:
     """Extract user email from Authorization header"""
     auth_header = request.headers.get('Authorization')
+    print(f"🔍 Processing request with auth header: {bool(auth_header)}")
+    
     user_info = verify_firebase_token(auth_header)
     
     if not user_info:
+        print("❌ No valid user info from token")
         return None
     
-    return user_info.get('email')
+    email = user_info.get('email')
+    print(f"✅ Authenticated user: {email}")
+    return email
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -69,7 +87,28 @@ def health_check():
         'status': 'healthy',
         'service': 'archive-manager',
         'timestamp': datetime.utcnow().isoformat(),
-        'version': '1.0.0'
+        'version': '1.0.1',
+        'project_id': PROJECT_ID
+    })
+
+@app.route('/test-auth', methods=['POST'])
+def test_auth():
+    """Test authentication endpoint"""
+    print("🧪 Test auth request received")
+    
+    auth_header = request.headers.get('Authorization')
+    print(f"🔍 Auth header present: {bool(auth_header)}")
+    
+    if auth_header:
+        print(f"🔍 Auth header format: {auth_header[:20]}...")
+    
+    user_email = get_user_email_from_request()
+    
+    return jsonify({
+        'authenticated': bool(user_email),
+        'user_email': user_email,
+        'timestamp': datetime.utcnow().isoformat(),
+        'has_auth_header': bool(auth_header)
     })
 
 @app.route('/archive-completed', methods=['POST'])
@@ -78,9 +117,14 @@ def archive_completed_results():
     Archive all completed results for the authenticated user
     This moves completed items from active collection to archive
     """
+    print("🔄 Archive completed request received")
+    
     user_email = get_user_email_from_request()
     if not user_email:
+        print("❌ Authentication failed - returning 401")
         return jsonify({'error': 'Authentication required'}), 401
+    
+    print(f"🔍 Processing archive request for user: {user_email}")
     
     try:
         # Query for completed results for this user
@@ -88,9 +132,13 @@ def archive_completed_results():
         completed_query = active_ref.where('user_email', '==', user_email)\
                                    .where('status', '==', 'completed')
         
+        print(f"🔍 Querying for completed results...")
         completed_docs = completed_query.get()
         
+        print(f"📊 Found {len(completed_docs)} completed documents")
+        
         if not completed_docs:
+            print("ℹ️ No completed results to archive")
             return jsonify({
                 'message': 'No completed results to archive',
                 'archived_count': 0,

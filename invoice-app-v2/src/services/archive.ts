@@ -20,10 +20,21 @@ export interface ArchiveError {
 
 class ArchiveService {
   private async getAuthHeaders() {
-    const token = await authService.getIdToken()
-    return {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
+    try {
+      const token = await authService.getIdToken()
+      console.log('🔍 Archive service - Getting token:', token ? 'Token received' : 'No token')
+      
+      if (!token) {
+        throw new Error('No authentication token available')
+      }
+      
+      return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    } catch (error) {
+      console.error('❌ Archive service - Failed to get auth headers:', error)
+      throw error
     }
   }
 
@@ -33,16 +44,34 @@ class ArchiveService {
    */
   async archiveCompletedResults(): Promise<ArchiveResponse> {
     try {
+      console.log('📦 Archive service - Starting archive completed results...')
       const headers = await this.getAuthHeaders()
+      
+      console.log('📦 Archive service - Making request to:', `${ARCHIVE_SERVICE_URL}/archive-completed`)
+      console.log('📦 Archive service - Headers:', { 
+        'Authorization': headers.Authorization ? 'Bearer [TOKEN_PRESENT]' : 'No auth header',
+        'Content-Type': headers['Content-Type'] 
+      })
       
       const response = await fetch(`${ARCHIVE_SERVICE_URL}/archive-completed`, {
         method: 'POST',
         headers
       })
 
+      console.log('📦 Archive service - Response status:', response.status, response.statusText)
+
       if (!response.ok) {
-        const errorData: ArchiveError = await response.json()
-        throw new Error(errorData.error || `Archive failed: ${response.status}`)
+        const errorText = await response.text()
+        console.error('❌ Archive service - Error response:', errorText)
+        
+        let errorData: ArchiveError
+        try {
+          errorData = JSON.parse(errorText)
+        } catch {
+          errorData = { error: errorText || `HTTP ${response.status}` }
+        }
+        
+        throw new Error(`Archive failed: ${response.status} ${errorData.error}`)
       }
 
       const result: ArchiveResponse = await response.json()
