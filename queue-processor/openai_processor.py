@@ -27,9 +27,27 @@ class OpenAIProcessor:
     """
     
     def __init__(self):
+        # Try to get API key directly from environment first
         self.api_key = os.environ.get('OPENAI_API_KEY')
+        
+        # If not found, try to get from Secret Manager
         if not self.api_key:
-            raise ValueError("OPENAI_API_KEY environment variable not set")
+            secret_name = os.environ.get('OPENAI_API_KEY_SECRET')
+            if secret_name:
+                try:
+                    from google.cloud import secretmanager
+                    client = secretmanager.SecretManagerServiceClient()
+                    project_id = os.environ.get('PROJECT_ID', 'watch-mail-trial')
+                    secret_path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+                    
+                    response = client.access_secret_version(request={"name": secret_path})
+                    self.api_key = response.payload.data.decode("UTF-8")
+                    logger.info("OpenAI API key loaded from Secret Manager")
+                except Exception as e:
+                    logger.error(f"Failed to load API key from Secret Manager: {e}")
+        
+        if not self.api_key:
+            raise ValueError("OPENAI_API_KEY environment variable or OPENAI_API_KEY_SECRET not set")
         
         # Initialize OpenAI client with explicit configuration
         try:

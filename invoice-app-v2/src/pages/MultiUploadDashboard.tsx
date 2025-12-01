@@ -35,41 +35,34 @@ const MultiUploadDashboard: React.FC = () => {
   useEffect(() => {
     if (!user?.email) return
 
-    // Use visibilitychange instead of beforeunload for better reliability
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden') {
-        // Page is becoming hidden (likely closing/navigating away)
-        if (allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
-          console.log('🔄 Window becoming hidden - triggering archive for cleanup...')
-          // Send archive request immediately (synchronous where possible)
-          archiveCompletedResults().catch(err => 
-            console.error('❌ Visibility change archive failed:', err)
-          )
-        }
+    // Use pagehide instead of visibilitychange for actual page unload detection
+    const handlePageHide = (e: PageTransitionEvent) => {
+      // Only archive if page is actually being unloaded (not just cached)
+      if (!e.persisted && allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
+        console.log('🔄 Page unloading - triggering archive for cleanup...')
+        archiveCompletedResults().catch(err => 
+          console.error('❌ Page hide archive failed:', err)
+        )
       }
     }
 
-    // Also use beforeunload as backup (though less reliable)
-    const handleBeforeUnload = () => {
+    // More conservative beforeunload - only for actual navigation/close
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
       if (allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
         console.log('🔄 Window unloading - triggering archive...')
-        // Use navigator.sendBeacon for more reliable delivery
-        const archiveData = JSON.stringify({ trigger: 'window_close' })
-        navigator.sendBeacon('/api/archive-hint', archiveData)
-        
-        // Still attempt normal archive as fallback
+        // Don't use sendBeacon to an endpoint that doesn't exist
         archiveCompletedResults().catch(err => 
           console.error('❌ Before unload archive failed:', err)
         )
       }
     }
 
-    // Add both event listeners for maximum reliability
-    document.addEventListener('visibilitychange', handleVisibilityChange)
+    // Add more reliable event listeners
+    window.addEventListener('pagehide', handlePageHide)
     window.addEventListener('beforeunload', handleBeforeUnload)
     
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('pagehide', handlePageHide)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
   }, [user?.email, allInvoiceResults, archiveCompletedResults])

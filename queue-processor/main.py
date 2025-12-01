@@ -1,10 +1,7 @@
-﻿"""
-Queue Processor Main Application
-Handles invoice processing with OpenAI Vision API integration
-
-Docker Image: asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/queue-processor@sha256:fe48a8dac90b5ef3e824bbc32d2a4b00d81c349250e16e1f5453820f6c319ab3
-Last Updated: 2025-11-20 09:52 UTC
-Changes: OpenAI library ≥1.50.0, improved error handling, Flask 3.0.0
+"""
+Cloud Tasks Invoice Processor
+Handles Cloud Tasks callbacks for invoice processing
+Replaces the in-memory queue system with GCP-managed tasks
 """
 import os
 import logging
@@ -13,11 +10,9 @@ from flask import Flask, request, jsonify
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 
-# Import our modules
-from queue_manager import QueueManager, QueueJob
+# Import existing modules
 from openai_processor import OpenAIProcessor
 from result_manager import ResultManager
-from background_processor import BackgroundProcessor
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -35,16 +30,11 @@ if not firebase_admin._apps:
 # Configuration
 PROJECT_ID = os.environ.get('PROJECT_ID', 'watch-mail-trial')
 
-# Initialize all components
-queue_manager = QueueManager()
+# Initialize processing components (no more queue manager needed)
 openai_processor = OpenAIProcessor()
 result_manager = ResultManager()
-background_processor = BackgroundProcessor(queue_manager, openai_processor, result_manager)
 
-# Start background processing
-background_processor.start()
-
-logger.info("Queue Processor application initialized")
+logger.info("Cloud Tasks Invoice Processor initialized")
 
 # CORS headers
 @app.after_request
@@ -92,81 +82,190 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.now().isoformat(),
-        "queue_status": queue_manager.get_queue_status(),
-        "processor_stats": background_processor.get_processing_stats()
+        "service": "cloud-tasks-queue-processor",
+        "mode": "cloud_tasks_managed"
     })
 
-@app.route('/process-file', methods=['POST'])
-def process_file():
-    """Add file to processing queue"""
+@app.route('/process-task', methods=['POST'])
+def process_task():
+    """
+    Process a Cloud Tasks callback for invoice processing
+    This replaces the old /process-file endpoint and queue management
+    """
     try:
         # Verify authentication
         auth_header = request.headers.get('Authorization')
         user_email = verify_auth_token(auth_header)
         
-        # Get request data
+        # Get Cloud Tasks payload
         data = request.get_json()
         if not data:
+            logger.error("No data provided in Cloud Tasks callback")
             return jsonify({"error": "No data provided"}), 400
         
-        bucket_path = data.get('bucket_path')
-        if not bucket_path:
-            return jsonify({"error": "Missing bucket_path"}), 400
-            
-        # Check if job_id is provided from initial-api (preferred)
         job_id = data.get('job_id')
+        bucket_path = data.get('bucket_path')
+        source = data.get('source', 'unknown')
         
-        logger.info(f"📋 QUEUE PROCESSOR REQUEST DATA: {data}")
-        logger.info(f"🆔 RECEIVED JOB ID: {job_id}")
+        if not job_id or not bucket_path:
+            logger.error(f"Missing required fields: job_id={job_id}, bucket_path={bucket_path}")
+            return jsonify({"error": "Missing required fields: job_id and bucket_path"}), 400
         
-        if not job_id:
-            # Fallback: Generate production-ready job ID if not provided
-            import hashlib
-            import secrets
+        logger.info(f"🚀 Processing Cloud Task: {job_id}")
+        logger.info(f"📁 Bucket path: {bucket_path}")
+        logger.info(f"👤 User: {user_email}")
+        logger.info(f"🔍 Source: {source}")
+        
+        # Track processing start in Firestore
+        _track_processing_start(job_id, bucket_path, user_email)
+        
+        try:
+            # Process the invoice using OpenAI
+            logger.info(f"🔄 Starting OpenAI processing for job {job_id}")
             
-            # Generate same format as initial-api for consistency
-            email_hash = hashlib.md5(user_email.encode()).hexdigest()
-            cust_num = f"{email_hash[:2].upper()}{ord(email_hash[2]) % 10}"
+            # Call the OpenAI processor
+            processing_result = openai_processor.process_invoice(bucket_path, job_id)
             
-            path_hash = hashlib.sha256(bucket_path.encode()).hexdigest()
-            timestamp = datetime.now().strftime('%H%M')
-            asset_ref = f"{path_hash[:4].upper()}{timestamp[-2:]}"
+            if processing_result.get('success', False):
+                # Store successful result
+                extracted_data = processing_result.get('data', {})
+                
+                result_manager.store_result(
+                    job_id=job_id,
+                    user_email=user_email,
+                    extracted_data=extracted_data,
+                    status='completed',
+                    bucket_path=bucket_path
+                )
+                
+                logger.info(f"✅ Successfully processed job {job_id}")
+                
+                # Track processing completion
+                _track_processing_completion(job_id, True, extracted_data)
+                
+                return jsonify({
+                    "status": "success",
+                    "job_id": job_id,
+                    "message": "Invoice processed successfully",
+                    "data": extracted_data
+                }), 200
+                
+            else:
+                # Handle processing failure
+                error_message = processing_result.get('error', 'Unknown processing error')
+                
+                result_manager.store_result(
+                    job_id=job_id,
+                    user_email=user_email,
+                    extracted_data={},
+                    status='failed',
+                    bucket_path=bucket_path,
+                    error=error_message
+                )
+                
+                logger.error(f"❌ Processing failed for job {job_id}: {error_message}")
+                
+                # Track processing failure
+                _track_processing_completion(job_id, False, None, error_message)
+                
+                # Return 200 to prevent Cloud Tasks retry for processing errors
+                return jsonify({
+                    "status": "processed_with_error",
+                    "job_id": job_id,
+                    "message": "Invoice processing completed with errors",
+                    "error": error_message
+                }), 200
+        
+        except Exception as processing_error:
+            # Handle unexpected processing errors
+            error_message = f"Unexpected processing error: {str(processing_error)}"
             
-            token = secrets.token_hex(2).upper()
-            job_id = f"{cust_num}-{asset_ref}-{token}"
+            result_manager.store_result(
+                job_id=job_id,
+                user_email=user_email,
+                extracted_data={},
+                status='failed',
+                bucket_path=bucket_path,
+                error=error_message
+            )
             
-            logger.warning(f"⚠️ GENERATED FALLBACK JOB_ID: {job_id} for bucket_path: {bucket_path}")
-        else:
-            logger.info(f"✅ USING PROVIDED JOB_ID: {job_id} from initial-api")
-        
-        # Create and add job to queue
-        job = QueueJob(
-            job_id=job_id,
-            bucket_path=bucket_path,
-            user_email=user_email,
-            created_at=datetime.now()
-        )
-        
-        queue_manager.add_job(job)
-        
-        logger.info(f"Added job {job_id} to queue for user {user_email}")
-        
-        return jsonify({
-            "status": "queued",
-            "job_id": job_id,
-            "message": "File added to processing queue",
-            "queue_position": queue_manager.get_queue_status()["pending"]
-        })
+            logger.error(f"💥 Unexpected error processing job {job_id}: {processing_error}", exc_info=True)
+            
+            # Track processing failure
+            _track_processing_completion(job_id, False, None, error_message)
+            
+            # Return 500 to trigger Cloud Tasks retry
+            return jsonify({
+                "status": "error",
+                "job_id": job_id,
+                "message": "Unexpected processing error occurred",
+                "error": error_message
+            }), 500
         
     except ValueError as e:
+        logger.error(f"Authentication error: {e}")
         return jsonify({"error": str(e)}), 401
     except Exception as e:
-        logger.error(f"Error in process_file: {e}")
+        logger.error(f"Error in process_task: {e}", exc_info=True)
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
+
+def _track_processing_start(job_id: str, bucket_path: str, user_email: str):
+    """Track processing start in Firestore"""
+    try:
+        from google.cloud import firestore
+        
+        firestore_client = firestore.Client(project=PROJECT_ID)
+        
+        # Update task tracking
+        task_ref = firestore_client.collection('cloud_tasks').document(job_id)
+        task_ref.update({
+            'status': 'processing',
+            'processing_started_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow()
+        })
+        
+        logger.info(f"📋 Updated task tracking: processing started for {job_id}")
+        
+    except Exception as e:
+        logger.warning(f"Failed to track processing start: {e}")
+
+def _track_processing_completion(job_id: str, success: bool, data: dict = None, error: str = None):
+    """Track processing completion in Firestore"""
+    try:
+        from google.cloud import firestore
+        
+        firestore_client = firestore.Client(project=PROJECT_ID)
+        
+        # Update task tracking
+        update_data = {
+            'status': 'completed' if success else 'failed',
+            'processing_completed_at': datetime.utcnow(),
+            'updated_at': datetime.utcnow()
+        }
+        
+        if error:
+            update_data['error_message'] = error
+        
+        if data:
+            update_data['result_preview'] = {
+                'has_data': bool(data),
+                'fields_extracted': len(data) if isinstance(data, dict) else 0
+            }
+        
+        task_ref = firestore_client.collection('cloud_tasks').document(job_id)
+        task_ref.update(update_data)
+        
+        logger.info(f"📋 Updated task tracking: processing completed for {job_id} (success={success})")
+        
+    except Exception as e:
+        logger.warning(f"Failed to track processing completion: {e}")
 
 @app.route('/get-results/<user_email>', methods=['GET'])
 def get_results(user_email):
-    """Get completed results for a user (at-most-once delivery)"""
+    """
+    Get completed results for a user
+    This endpoint maintains compatibility with the frontend
+    """
     try:
         # Verify authentication
         auth_header = request.headers.get('Authorization')
@@ -176,25 +275,17 @@ def get_results(user_email):
         if token_email != user_email:
             return jsonify({"error": "Unauthorized access"}), 403
         
-        # Get completed and failed jobs that haven't been sent yet
-        completed_jobs = queue_manager.get_completed_jobs_for_user(user_email)
-        failed_jobs = queue_manager.get_failed_jobs_for_user(user_email)
+        # Get results directly from ResultManager (no queue needed)
+        results = result_manager.get_latest_results_for_user(user_email)
         
-        if not completed_jobs and not failed_jobs:
+        if not results:
             return jsonify({
                 "status": "no_new_results",
                 "results": [],
                 "count": 0
             })
         
-        # Get results from Firestore
-        results = result_manager.get_results_for_user(user_email, completed_jobs, failed_jobs)
-        
-        # Mark all these results as sent (at-most-once delivery)
-        for job in completed_jobs + failed_jobs:
-            queue_manager.mark_result_sent(job.job_id)
-        
-        logger.info(f"Sent {len(results)} results to user {user_email}")
+        logger.info(f"📋 Retrieved {len(results)} results for user {user_email}")
         
         return jsonify({
             "status": "success",
@@ -210,19 +301,54 @@ def get_results(user_email):
 
 @app.route('/job-status/<job_id>', methods=['GET'])
 def get_job_status(job_id):
-    """Get status of a specific job"""
+    """Get status of a specific job from Cloud Tasks tracking"""
     try:
         # Verify authentication
         auth_header = request.headers.get('Authorization')
         user_email = verify_auth_token(auth_header)
         
-        # Get job status from queue manager
-        job_status = queue_manager.get_job_status(job_id, user_email)
+        from google.cloud import firestore
         
-        if job_status is None:
-            return jsonify({"error": "Job not found or access denied"}), 404
+        firestore_client = firestore.Client(project=PROJECT_ID)
         
-        return jsonify(job_status)
+        # Get job status from Cloud Tasks tracking
+        task_ref = firestore_client.collection('cloud_tasks').document(job_id)
+        task_doc = task_ref.get()
+        
+        if not task_doc.exists:
+            return jsonify({"error": "Job not found"}), 404
+        
+        task_data = task_doc.to_dict()
+        
+        # Verify user access
+        if task_data.get('user_email') != user_email:
+            return jsonify({"error": "Unauthorized access"}), 403
+        
+        status = task_data.get('status', 'unknown')
+        
+        # Map status to progress
+        progress_map = {
+            'created': 0.1,
+            'processing': 0.5,
+            'completed': 1.0,
+            'failed': 1.0
+        }
+        
+        response = {
+            "job_id": job_id,
+            "status": status,
+            "progress": progress_map.get(status, 0.0),
+            "created_at": task_data.get('created_at', datetime.utcnow()).isoformat() if task_data.get('created_at') else None,
+            "user_email": task_data.get('user_email')
+        }
+        
+        if status == 'failed' and 'error_message' in task_data:
+            response["error_message"] = task_data['error_message']
+        
+        if status == 'completed' and 'result_preview' in task_data:
+            response["result_preview"] = task_data['result_preview']
+        
+        return jsonify(response)
         
     except ValueError as e:
         return jsonify({"error": str(e)}), 401
@@ -230,17 +356,15 @@ def get_job_status(job_id):
         logger.error(f"Error in get_job_status: {e}")
         return jsonify({"error": "Internal server error", "details": str(e)}), 500
 
-@app.route('/queue-status', methods=['GET'])
-def get_queue_status():
-    """Get current queue status"""
-    try:
-        return jsonify({
-            "queue_status": queue_manager.get_queue_status(),
-            "processor_stats": background_processor.get_processing_stats()
-        })
-    except Exception as e:
-        logger.error(f"Error in queue_status: {e}")
-        return jsonify({"error": "Internal server error", "details": str(e)}), 500
+# Legacy endpoint for compatibility (now just redirects to Cloud Tasks mode)
+@app.route('/process-file', methods=['POST'])
+def process_file_legacy():
+    """Legacy endpoint - redirects to inform about Cloud Tasks migration"""
+    return jsonify({
+        "status": "deprecated",
+        "message": "This endpoint has been replaced by Cloud Tasks processing",
+        "new_flow": "Files are now automatically processed via Cloud Tasks when uploaded to initial-api"
+    }), 410
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))

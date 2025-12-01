@@ -194,28 +194,15 @@ export const useMultiUpload = () => {
         return newJobIds
       })
 
-      // Step 5: Trigger queue processing with job ID from initial-api
-      const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/process-file', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          bucket_path: uploadResult.bucket_path,
-          gcs_path: uploadResult.gcsPath,
-          filename: uploadedFile.file.name,
-          job_id: jobId  // Pass the production job ID from initial-api
-        })
-      })
-
-      if (!queueResponse.ok) {
-        const errorData = await queueResponse.json()
-        throw new Error(errorData.error || 'Queue processing failed')
-      }
+      // Step 5: Cloud Tasks will automatically process the file
+      // No need to call queue processor directly - Cloud Tasks handles this!
+      console.log('✅ File uploaded successfully - Cloud Tasks will handle processing')
+      console.log('📋 Job ID:', jobId)
+      console.log('📁 Bucket path:', uploadResult.bucket_path)
+      console.log('☁️ Cloud Tasks mode: Processing will be automatic')
 
       updateFileProgress(uploadedFile.id, 'processing', 50)
-      toast.success(`Started processing: ${uploadedFile.file.name}`)
+      toast.success(`Uploaded: ${uploadedFile.file.name} - Cloud Tasks processing...`)
       
       // Real-time updates will handle completion via Firestore listeners
       

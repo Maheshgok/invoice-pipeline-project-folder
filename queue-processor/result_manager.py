@@ -7,7 +7,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from google.cloud import firestore
-from queue_manager import QueueJob
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +60,58 @@ class ResultManager:
         else:
             return 3  # Archive tier - old/failed items
 
-    def store_result(self, job: QueueJob, success: bool, result_data: Optional[Dict] = None, error: Optional[str] = None) -> bool:
+    def store_result(self, job_id: str, user_email: str, extracted_data: Dict, status: str, bucket_path: str, error: Optional[str] = None) -> bool:
+        """
+        Store job result in Firestore (Cloud Tasks compatible version)
+        Returns: True if stored successfully, False otherwise
+        """
+        try:
+            doc_ref = self.firestore_client.collection('invoice_results').document(job_id)
+            
+            # Base document data with optimization fields
+            doc_data = {
+                'job_id': job_id,
+                'user_email': user_email,
+                'bucket_path': bucket_path,
+                'created_at': datetime.now().isoformat(),
+                'updated_at': datetime.now().isoformat(),
+                # ⚙️ Performance optimization fields
+                'status_category': self._compute_status_category(status),
+                'priority_score': self._compute_priority_score(status),
+                'display_tier': self._compute_display_tier(status),
+                'frontend_status': None,  # Will be set by frontend when displayed
+                'processing_mode': 'cloud_tasks'  # Track processing mode
+            }
+            
+            if status == 'completed':
+                # Sanitize result_data to ensure it's Firestore-compatible
+                logger.info(f"BEFORE SANITIZATION - Original result data: {extracted_data}")
+                sanitized_result = self._sanitize_for_firestore(extracted_data)
+                logger.info(f"AFTER SANITIZATION - Sanitized result: {sanitized_result}")
+                
+                doc_data.update({
+                    'status': 'completed',
+                    'result': sanitized_result,
+                    'completed_at': datetime.now().isoformat()
+                })
+                
+                logger.info(f"Storing successful result for job {job_id}")
+            else:
+                doc_data.update({
+                    'status': status,
+                    'error': error,
+                    'failed_at': datetime.now().isoformat()
+                })
+                logger.info(f"Storing failed result for job {job_id}: {error}")
+            
+            doc_ref.set(doc_data)
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error storing result for job {job_id}: {e}")
+            return False
+
+    def store_result_legacy(self, job: Any, success: bool, result_data: Optional[Dict] = None, error: Optional[str] = None) -> bool:
         """
         Store job result in Firestore
         Returns: True if stored successfully, False otherwise
@@ -118,7 +168,7 @@ class ResultManager:
             logger.error(f"Error storing result for job {job.job_id}: {e}")
             return False
 
-    def get_results_for_user(self, user_email: str, completed_jobs: List[QueueJob], failed_jobs: List[QueueJob]) -> List[Dict[str, Any]]:
+    def get_results_for_user(self, user_email: str, completed_jobs: List[Any], failed_jobs: List[Any]) -> List[Dict[str, Any]]:
         """
         Get results for completed and failed jobs from Firestore
         Returns: List of result dictionaries
@@ -170,6 +220,52 @@ class ResultManager:
                 logger.error(f"Error retrieving failed result for job {job.job_id}: {e}")
         
         return results
+
+    def get_latest_results_for_user(self, user_email: str, limit: int = 10) -> List[Dict[str, Any]]:
+        """
+        Get latest results for a user (Cloud Tasks compatible)
+        Returns: List of result dictionaries ordered by creation time
+        """
+        try:
+            # Query for user's results, ordered by creation time (newest first)
+            query = self.firestore_client.collection('invoice_results').where(
+                'user_email', '==', user_email
+            ).order_by('created_at', direction=firestore.Query.DESCENDING).limit(limit)
+            
+            docs = query.stream()
+            results = []
+            
+            for doc in docs:
+                doc_data = doc.to_dict()
+                result = {
+                    "job_id": doc_data.get('job_id'),
+                    "bucket_path": doc_data.get('bucket_path'),
+                    "status": doc_data.get('status', 'unknown'),
+                    "created_at": doc_data.get('created_at'),
+                    "updated_at": doc_data.get('updated_at'),
+                    "processing_mode": doc_data.get('processing_mode', 'legacy')
+                }
+                
+                # Add result-specific fields based on status
+                if doc_data.get('status') == 'completed':
+                    result.update({
+                        "result": doc_data.get('result'),
+                        "completed_at": doc_data.get('completed_at')
+                    })
+                elif doc_data.get('status') == 'failed':
+                    result.update({
+                        "error": doc_data.get('error'),
+                        "failed_at": doc_data.get('failed_at')
+                    })
+                
+                results.append(result)
+            
+            logger.info(f"Retrieved {len(results)} latest results for user {user_email}")
+            return results
+            
+        except Exception as e:
+            logger.error(f"Error getting latest results for user {user_email}: {e}")
+            return []
 
     def cleanup_old_results(self, days_old: int = 30) -> int:
         """

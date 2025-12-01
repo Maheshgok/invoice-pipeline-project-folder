@@ -145,9 +145,14 @@ export const useRealtimeUpload = () => {
             if (result.jobId && !processedJobIds.has(result.jobId)) {
               console.log('🆔 Found new job:', result.jobId, 'Status:', result.status)
               
-              // Update file progress when backend completes
-              updateFileProgress(result.jobId, result.status as UploadedFile['status'], 
-                result.status === 'completed' ? 100 : result.status === 'processing' ? 80 : 60)
+              // Find the uploaded file with matching jobId and update its progress
+              const matchingFile = uploadedFiles.find(file => file.jobId === result.jobId)
+              if (matchingFile) {
+                updateFileProgress(matchingFile.id, result.status as UploadedFile['status'], 
+                  result.status === 'completed' ? 100 : result.status === 'processing' ? 80 : 60)
+              } else {
+                console.log('🔍 No matching file found for jobId:', result.jobId)
+              }
               
               if (result.status === 'completed') {
                 toast.success(`✅ Invoice processed: ${result.fileName}`)
@@ -253,32 +258,17 @@ export const useRealtimeUpload = () => {
       // Step 5: Track this job ID for real-time updates
       realtimeFirestoreService.trackJobIds([jobId])
 
-      // Step 6: Trigger queue processing with job ID from initial-api
-      const queueResponse = await fetch('https://queue-processor-812016027146.asia-south1.run.app/process-file', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${idToken}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          bucket_path: uploadResult.bucket_path,
-          gcs_path: uploadResult.gcsPath,
-          filename: uploadedFile.file.name,
-          job_id: jobId  // Pass the production job ID from initial-api
-        })
-      })
-
-      if (!queueResponse.ok) {
-        throw new Error(`Queue processing failed: ${queueResponse.status}`)
-      }
-
-      const queueResult = await queueResponse.json()
-      console.log('🔄 Queue response:', queueResult)
-
+      // Step 6: Cloud Tasks will automatically process the file
+      // No need to call queue processor directly - Cloud Tasks handles this!
+      console.log('✅ File uploaded successfully - Cloud Tasks will handle processing')
+      console.log('📋 Job ID:', jobId)
+      console.log('📁 Bucket path:', uploadResult.bucket_path)
+      console.log('☁️ Cloud Tasks mode: Processing will be automatic')
+      
       updateFileProgress(uploadedFile.id, 'processing', 50)
-      toast.success('File uploaded and processing started!')
+      toast.success('File uploaded! Cloud Tasks is processing...')
 
-      // Real-time listener will handle the rest automatically!
+      // Real-time listener will handle completion automatically via Firestore!
 
     } catch (error) {
       console.error('❌ File processing error:', error)

@@ -15,6 +15,9 @@ from flask import Flask, Request, jsonify, request
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 
+# Import Cloud Tasks Manager
+from cloud_tasks_manager import CloudTasksManager
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -28,6 +31,9 @@ if not BUCKET_NAME:
 project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
 storage_client = storage.Client(project=project_id)
 firestore_client = firestore.Client(project=project_id)
+
+# Initialize Cloud Tasks Manager
+cloud_tasks_manager = CloudTasksManager()
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
@@ -141,8 +147,35 @@ def upload_file():
         logger.info(f"🆔 GENERATED JOB ID: {job_id} for user: {user_email}")
         logger.info(f"🧩 Job ID components: cust={cust_num}, asset={asset_ref}, token={token}")
         
-        # Note: Queue processor call is now handled by the Netlify function
-        # No need to call queue processor from initial-api anymore
+        # Create Cloud Task for processing instead of direct queue processor call
+        try:
+            auth_header = request.headers.get('Authorization')
+            if not auth_header:
+                logger.error("No authorization header for Cloud Tasks creation")
+                return jsonify({"error": "Authentication required for task creation"}), 401
+            
+            # Extract token from header for Cloud Tasks authentication
+            auth_token = auth_header.split(' ')[1] if auth_header.startswith('Bearer ') else auth_header
+            
+            # Create Cloud Task for invoice processing
+            task_name = cloud_tasks_manager.create_processing_task(
+                job_id=job_id,
+                bucket_path=f"{BUCKET_NAME}/{filename}",
+                user_email=user_email,
+                auth_token=auth_token,
+                delay_seconds=5  # Small delay to ensure file is fully uploaded
+            )
+            
+            logger.info(f"✅ Created Cloud Task: {task_name}")
+            logger.info(f"📋 File uploaded and queued for processing via Cloud Tasks")
+            
+        except Exception as task_error:
+            logger.error(f"Failed to create Cloud Task: {task_error}")
+            # Don't fail the upload, just log the error
+            # The job_id is still returned so users can potentially retry
+            logger.warning(f"Upload succeeded but task creation failed for job_id: {job_id}")
+        
+        # Return successful upload response
         logger.info(f"File uploaded successfully. Job ID: {job_id}, Bucket path: {BUCKET_NAME}/{filename}")
         
         return jsonify({
@@ -151,7 +184,9 @@ def upload_file():
             "filename": filename,
             "bucket": BUCKET_NAME,
             "gcsPath": f"gs://{BUCKET_NAME}/{filename}",
-            "bucket_path": f"{BUCKET_NAME}/{filename}"  # Add this for queue processor
+            "bucket_path": f"{BUCKET_NAME}/{filename}",  # Add this for queue processor
+            "task_queued": True,  # Indicate task was queued
+            "processing_mode": "cloud_tasks"  # Indicate we're using Cloud Tasks
         }), 200
         
     except Exception as e:
@@ -384,13 +419,96 @@ def trigger_processing(request_id):
         logger.error(f"Error triggering processing for {request_id}: {str(e)}", exc_info=True)
         return jsonify({"error": f"Failed to trigger processing: {str(e)}"}), 500
 
+@app.route('/cloud-tasks/status/<job_id>', methods=['GET'])
+def get_cloud_task_status(job_id):
+    """
+    Get Cloud Task status for a specific job
+    """
+    logger.info(f"Cloud Task status request for job ID: {job_id}")
+    
+    try:
+        # Verify authentication
+        auth_header = request.headers.get('Authorization')
+        user_email = verify_auth_token(auth_header)
+        
+        # Get task information from Firestore tracking
+        doc_ref = firestore_client.collection("cloud_tasks").document(job_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            logger.info(f"No Cloud Task tracking found for job_id: {job_id}")
+            return jsonify({
+                "status": "not_found",
+                "message": "Task not found or not queued via Cloud Tasks"
+            }), 404
+        
+        doc_data = doc.to_dict()
+        
+        # Verify user access
+        if doc_data.get('user_email') != user_email:
+            logger.warning(f"Unauthorized access to task {job_id} by user {user_email}")
+            return jsonify({"error": "Unauthorized access"}), 403
+        
+        task_name = doc_data.get('task_name')
+        if task_name:
+            # Get actual Cloud Task status
+            task_status = cloud_tasks_manager.get_task_status(task_name)
+            
+            return jsonify({
+                "status": "success",
+                "job_id": job_id,
+                "task_name": task_name,
+                "cloud_task_status": task_status,
+                "tracking_data": doc_data
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Task tracking data incomplete"
+            }), 500
+            
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        logger.error(f"Error getting Cloud Task status for {job_id}: {str(e)}")
+        return jsonify({"error": f"Failed to get task status: {str(e)}"}), 500
+
+@app.route('/cloud-tasks/queue-stats', methods=['GET'])
+def get_queue_stats():
+    """
+    Get Cloud Tasks queue statistics
+    """
+    try:
+        # Verify authentication
+        auth_header = request.headers.get('Authorization')
+        user_email = verify_auth_token(auth_header)
+        
+        # Get queue statistics
+        stats = cloud_tasks_manager.get_queue_stats()
+        
+        logger.info(f"Queue stats requested by user: {user_email}")
+        
+        return jsonify({
+            "status": "success",
+            "queue_stats": stats,
+            "timestamp": datetime.utcnow().isoformat()
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        logger.error(f"Error getting queue stats: {str(e)}")
+        return jsonify({"error": f"Failed to get queue stats: {str(e)}"}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint - standard Cloud Run health check"""
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "service": "initial-api"
+        "service": "initial-api",
+        "cloud_tasks_enabled": True,
+        "queue_path": cloud_tasks_manager.queue_path
     }), 200
 
 if __name__ == "__main__":
