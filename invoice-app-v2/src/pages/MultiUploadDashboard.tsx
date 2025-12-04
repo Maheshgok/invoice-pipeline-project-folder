@@ -2,27 +2,26 @@ import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Eye, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
-// Import the new real-time hook instead of the old one
-import { useRealtimeUpload } from '../hooks/useRealtimeUpload'
+// Import the new simplified hook
+import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, logout } = useAuth()
   const { 
     uploadedFiles, 
     journalEntries,
-    allInvoiceResults,  // Changed from invoiceResults to allInvoiceResults
-    uploadFiles,        // Changed from addFile to uploadFiles  
+    batchState,
+    isInitialized,
+    uploadFiles,
     removeFile, 
     clearAll,
-    downloadCSV,        // Enhanced with auto-archiving
-    updateJournalEntry, // Add updateJournalEntry from the hook
-    markAsDisplayed,    // Add markAsDisplayed for individual items
-    markAllDisplayed,   // Add markAllDisplayed for batch operations
-    archiveCompletedResults,  // NEW: Archive completed results
-    archiveDisplayedResults,   // NEW: Archive displayed results
-    isBatchReadyForDownload,    // NEW: Check if batch is ready for download
-    startRealtimeListeners      // NEW: Manual listener control
-  } = useRealtimeUpload()  // Use the new real-time hook
+    downloadCSV,
+    updateJournalEntry,
+    markAllDisplayed,
+    archiveCompletedResults,
+    isBatchReadyForDownload,
+    getBatchStats
+  } = useMultiUploadSimplified()
   
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
@@ -33,12 +32,12 @@ const MultiUploadDashboard: React.FC = () => {
 
   // Handle window close/refresh - reliable archive trigger
   useEffect(() => {
-    if (!user?.email) return
+    if (!user?.email || !isInitialized) return
 
-    // Use pagehide instead of visibilitychange for actual page unload detection
+    // Use pagehide for actual page unload detection
     const handlePageHide = (e: PageTransitionEvent) => {
       // Only archive if page is actually being unloaded (not just cached)
-      if (!e.persisted && allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
+      if (!e.persisted && batchState.completedFiles > 0) {
         console.log('🔄 Page unloading - triggering archive for cleanup...')
         archiveCompletedResults().catch(err => 
           console.error('❌ Page hide archive failed:', err)
@@ -46,18 +45,16 @@ const MultiUploadDashboard: React.FC = () => {
       }
     }
 
-    // More conservative beforeunload - only for actual navigation/close
+    // Conservative beforeunload - only for actual navigation/close
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (allInvoiceResults.filter(r => r.status === 'completed').length > 0) {
+      if (batchState.completedFiles > 0) {
         console.log('🔄 Window unloading - triggering archive...')
-        // Don't use sendBeacon to an endpoint that doesn't exist
         archiveCompletedResults().catch(err => 
           console.error('❌ Before unload archive failed:', err)
         )
       }
     }
 
-    // Add more reliable event listeners
     window.addEventListener('pagehide', handlePageHide)
     window.addEventListener('beforeunload', handleBeforeUnload)
     
@@ -65,13 +62,13 @@ const MultiUploadDashboard: React.FC = () => {
       window.removeEventListener('pagehide', handlePageHide)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [user?.email, allInvoiceResults, archiveCompletedResults])
+  }, [user?.email, isInitialized, batchState.completedFiles, archiveCompletedResults])
 
   // Handle user logout - clean up listeners and optionally archive
   useEffect(() => {
-    // Only set up logout cleanup if user exists
-    if (!user?.email) {
-      console.log('🎯 No user - skipping archive setup')
+    // Only set up logout cleanup if user exists and is initialized
+    if (!user?.email || !isInitialized) {
+      console.log('🎯 No user or not initialized - skipping archive setup')
       return
     }
 
@@ -81,14 +78,14 @@ const MultiUploadDashboard: React.FC = () => {
     return () => {
       console.log('🔄 User state cleanup - checking if archive needed')
       // Only archive if we have data to archive
-      if (allInvoiceResults.length > 0) {
+      if (batchState.completedFiles > 0) {
         console.log('📦 User logout detected - archiving completed results')
         archiveCompletedResults().catch(err => 
           console.error('❌ Logout archive failed:', err)
         )
       }
     }
-  }, [user?.email]) // This will trigger cleanup when user changes (including logout)
+  }, [user?.email, isInitialized, batchState.completedFiles, archiveCompletedResults])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -122,7 +119,7 @@ const MultiUploadDashboard: React.FC = () => {
       }
     })
     
-    // Upload all valid files at once using the real-time system
+    // Upload all valid files at once using the simplified system
     if (validFiles.length > 0) {
       const fileList = new DataTransfer()
       validFiles.forEach(file => fileList.items.add(file))
@@ -148,7 +145,7 @@ const MultiUploadDashboard: React.FC = () => {
       }
     })
     
-    // Upload all valid files at once using the real-time system
+    // Upload all valid files at once using the simplified system
     if (validFiles.length > 0) {
       uploadFiles(e.target.files)
     }
@@ -193,12 +190,12 @@ const MultiUploadDashboard: React.FC = () => {
     return 'bg-green-500'
   }
 
-  // Calculate queue statistics
+  // Calculate queue statistics using the new batch state
   const queueStats = {
-    total: uploadedFiles.length,
-    completed: uploadedFiles.filter(f => f.status === 'completed').length,
-    processing: uploadedFiles.filter(f => f.status === 'uploading' || f.status === 'processing').length,
-    errors: uploadedFiles.filter(f => f.status === 'error').length
+    total: batchState.totalFiles,
+    completed: batchState.completedFiles,
+    processing: batchState.processingFiles,
+    errors: batchState.errorFiles
   }
 
   return (
@@ -351,12 +348,12 @@ const MultiUploadDashboard: React.FC = () => {
             <div className="flex space-x-3">
               <button
                 onClick={markAllDisplayed}
-                disabled={allInvoiceResults.filter(r => r.status === 'completed' && r.frontendStatus !== 'displayed').length === 0}
+                disabled={batchState.completedFiles === 0}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Mark all completed results as displayed to prevent future notifications"
               >
                 <Eye className="w-4 h-4 mr-2" />
-                Mark as Displayed ({allInvoiceResults.filter(r => r.status === 'completed' && r.frontendStatus !== 'displayed').length})
+                Mark as Displayed ({batchState.completedFiles})
               </button>
               <button
                 onClick={() => {
@@ -364,22 +361,22 @@ const MultiUploadDashboard: React.FC = () => {
                     console.error('Manual archive failed:', err)
                   )
                 }}
-                disabled={allInvoiceResults.filter(r => r.status === 'completed').length === 0}
+                disabled={batchState.completedFiles === 0}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
                 title="Manually archive completed results to clean the interface"
               >
                 <Archive className="w-4 h-4 mr-2" />
-                Archive ({allInvoiceResults.filter(r => r.status === 'completed').length})
+                Archive ({batchState.completedFiles})
               </button>
               <button
                 onClick={downloadCSV}
-                disabled={!isBatchReadyForDownload() || journalEntries.length === 0}
+                disabled={!batchState.readyForDownload || journalEntries.length === 0}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={!isBatchReadyForDownload() ? "Please wait for all files to complete processing" : "Download journal entries as CSV"}
+                title={!batchState.readyForDownload ? "Please wait for all files to complete processing" : "Download journal entries as CSV"}
               >
                 <Download className="w-4 h-4 mr-2" />
                 Download CSV
-                {!isBatchReadyForDownload() && uploadedFiles.length > 0 && (
+                {!batchState.readyForDownload && batchState.totalFiles > 0 && (
                   <span className="ml-2 text-xs">
                     (Processing...)
                   </span>
