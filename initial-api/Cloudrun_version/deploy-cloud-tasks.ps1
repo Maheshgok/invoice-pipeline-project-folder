@@ -29,7 +29,7 @@ Write-Host "🔧 Service: $SERVICE_NAME" -ForegroundColor Cyan
 # Build and deploy to Cloud Run
 Write-Host "🔨 Building and deploying to Cloud Run..." -ForegroundColor Yellow
 
-$env_vars = "PROJECT_ID=$PROJECT_ID,BUCKET_NAME=ocr-invoice-raw-files-bucket,CLOUD_TASKS_LOCATION=asia-south1,CLOUD_TASKS_QUEUE=invoice-processing-queue,QUEUE_PROCESSOR_URL=https://queue-processor-812016027146.asia-south1.run.app"
+$env_vars = "PROJECT_ID=$PROJECT_ID,BUCKET_NAME=watch-mail-trial-invoice-raw-files,CLOUD_TASKS_LOCATION=asia-south1,CLOUD_TASKS_QUEUE=invoice-processing-queue,QUEUE_PROCESSOR_URL=https://queue-processor-812016027146.asia-south1.run.app"
 
 gcloud run deploy $SERVICE_NAME `
     --source . `

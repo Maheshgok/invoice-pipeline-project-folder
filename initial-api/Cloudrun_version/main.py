@@ -513,6 +513,6 @@ def health_check():
 
 if __name__ == "__main__":
     # Set default environment variables for local testing
-    os.environ.setdefault('BUCKET_NAME', 'ocr-invoice-raw-files-bucket')
+    os.environ.setdefault('BUCKET_NAME', 'watch-mail-trial-invoice-raw-files')
     
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=False)

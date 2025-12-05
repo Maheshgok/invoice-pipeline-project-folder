@@ -90,7 +90,7 @@ gcloud run deploy $SERVICE_NAME \
     --memory=1Gi \
     --timeout=600s \
     --allow-unauthenticated \
-    --set-env-vars="CORS_ORIGINS=https://invoiceparse.netlify.app,BUCKET_NAME=ocr-invoice-raw-files-bucket,PROJECT_ID=watch-mail-trial"
+    --set-env-vars="CORS_ORIGINS=https://invoiceparse.netlify.app,BUCKET_NAME=watch-mail-trial-invoice-raw-files,PROJECT_ID=watch-mail-trial"
 
 # Get the service URL
 SERVICE_URL=$(gcloud run services describe $SERVICE_NAME --region=$REGION --format='value(status.url)')
