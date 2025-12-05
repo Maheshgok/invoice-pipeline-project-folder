@@ -53,8 +53,8 @@ class OpenAIProcessor:
         try:
             self.client = OpenAI(
                 api_key=self.api_key,
-                timeout=60.0,
-                max_retries=2
+                timeout=120.0,  # Increased timeout for Cloud Run
+                max_retries=3   # Increased retries for better reliability
             )
             logger.info("OpenAI client initialized successfully")
         except Exception as e:
@@ -274,24 +274,32 @@ OUTPUT FORMAT
             
             # Call OpenAI Vision API
             logger.info(f"Calling OpenAI Vision API with model gpt-4o")
-            response = self.client.chat.completions.create(
-                model="gpt-4o",  # Updated to current vision model
-                messages=[
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": self.invoice_prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": data_url}
-                            }
-                        ]
-                    }
-                ],
-                max_tokens=2000
-            )
-            
-            logger.info(f"OpenAI API call successful, extracting response content")
+            try:
+                response = self.client.chat.completions.create(
+                    model="gpt-4o",  # Updated to current vision model
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": self.invoice_prompt},
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": data_url}
+                                }
+                            ]
+                        }
+                    ],
+                    max_tokens=2000
+                )
+                logger.info(f"OpenAI API call successful, extracting response content")
+            except Exception as api_error:
+                error_msg = f"OpenAI API connection failed: {str(api_error)}"
+                logger.error(error_msg)
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "data": None
+                }
             
             # Extract and parse response
             content = response.choices[0].message.content
