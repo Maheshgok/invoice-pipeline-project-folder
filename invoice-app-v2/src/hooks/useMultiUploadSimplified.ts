@@ -360,6 +360,9 @@ export const useMultiUploadSimplified = () => {
 
     // Computed state
     isBatchReadyForDownload: () => batchState.readyForDownload,
-    getBatchStats: () => batchManager.current?.getStats() || { total: 0, completed: 0, processing: 0, errors: 0, completionRate: 0 }
+    getBatchStats: () => batchManager.current?.getStats() || { total: 0, completed: 0, processing: 0, errors: 0, completionRate: 0 },
+    
+    // Access to services for advanced functionality
+    syncManager: syncManager.current
   }
 }
