@@ -314,7 +314,7 @@ const MultiUploadDashboard: React.FC = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-gray-900 truncate">
-                      {file.file.name}
+                      {file.fileName}
                     </p>
                     <div className="mt-1 bg-gray-200 rounded-full h-2">
                       <div 
