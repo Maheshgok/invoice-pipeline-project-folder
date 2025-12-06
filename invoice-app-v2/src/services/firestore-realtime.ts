@@ -563,6 +563,10 @@ class RealtimeFirestoreService {
             
             console.log(`✅ Added journal entry:`, {
               id: journalEntry.id,
+              invoiceId: journalEntry.invoiceId,
+              resultId: result.id,
+              resultJobId: result.jobId,
+              gcsPath: result.gcsPath,
               accountName: journalEntry.accountName,
               debitAmount: journalEntry.debitAmount,
               creditAmount: journalEntry.creditAmount

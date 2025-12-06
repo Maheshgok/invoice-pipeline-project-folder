@@ -53,7 +53,12 @@ const MultiUploadDashboard: React.FC = () => {
     }
     
     const results = syncManager.getAllResults()
+    console.log('🔍 DEBUG: Looking for invoice:', invoiceId)
+    console.log('🔍 DEBUG: Available results:', results.map(r => ({ id: r.id, jobId: r.jobId, gcsPath: r.gcsPath })))
+    
     const result = results.find(r => r.id === invoiceId || r.jobId === invoiceId)
+    console.log('🔍 DEBUG: Found result:', result ? { id: result.id, jobId: result.jobId, gcsPath: result.gcsPath } : 'Not found')
+    
     if (result?.gcsPath) {
       try {
         // Get authentication token
@@ -62,6 +67,8 @@ const MultiUploadDashboard: React.FC = () => {
           console.error('No authentication token available')
           return null
         }
+        
+        console.log('🔗 DEBUG: Requesting signed URL for path:', result.gcsPath)
         
         // Call the signed URL endpoint
         const response = await fetch(
@@ -77,10 +84,13 @@ const MultiUploadDashboard: React.FC = () => {
         
         if (!response.ok) {
           console.error(`Failed to get signed URL: ${response.status}`)
+          const errorText = await response.text()
+          console.error('Error response:', errorText)
           return null
         }
         
         const data = await response.json()
+        console.log('✅ DEBUG: Got signed URL successfully')
         return data.signed_url
         
       } catch (error) {
