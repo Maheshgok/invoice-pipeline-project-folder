@@ -46,14 +46,31 @@ const MultiUploadDashboard: React.FC = () => {
 
   // Get document URL for a given invoice ID
   const getDocumentUrlForInvoice = useCallback(async (invoiceId: string) => {
-    // Access results from the sync manager
+    console.log('🔍 DEBUG: Looking for document for invoiceId:', invoiceId)
+    console.log('🔍 DEBUG: Available batch files:', batchState.files.map(f => ({ 
+      id: f.id, 
+      jobId: f.jobId, 
+      fileName: f.fileName,
+      hasLocalPreview: !!f.localPreviewUrl 
+    })))
+    
+    // First, try to find local preview URL from batch files
+    const localFile = batchState.files.find(f => f.jobId === invoiceId || f.id === invoiceId)
+    if (localFile?.localPreviewUrl) {
+      console.log('✅ DEBUG: Using local preview URL for:', invoiceId, 'file:', localFile.fileName)
+      return localFile.localPreviewUrl
+    }
+    
+    console.log('⚠️ DEBUG: No local preview found, falling back to cloud storage')
+    
+    // If no local preview, fall back to cloud storage
     if (!syncManager) {
       console.error('Sync manager not available')
       return null
     }
     
     const results = syncManager.getAllResults()
-    console.log('🔍 DEBUG: Looking for invoice:', invoiceId)
+    console.log('🔍 DEBUG: Looking for invoice in cloud:', invoiceId)
     console.log('🔍 DEBUG: Available results:', results.map(r => ({ id: r.id, jobId: r.jobId, gcsPath: r.gcsPath })))
     
     const result = results.find(r => r.id === invoiceId || r.jobId === invoiceId)
@@ -99,7 +116,7 @@ const MultiUploadDashboard: React.FC = () => {
       }
     }
     return null
-  }, [syncManager])
+  }, [batchState.files, syncManager])
 
   // Handle window close/refresh - reliable archive trigger
   useEffect(() => {

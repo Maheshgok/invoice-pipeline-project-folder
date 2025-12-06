@@ -88,12 +88,17 @@ export const useMultiUploadSimplified = () => {
 
     const fileId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     
-    // Add file to batch
+    // Create local preview URL for immediate display
+    const localPreviewUrl = URL.createObjectURL(file)
+    
+    // Add file to batch with local preview
     const batchFile: BatchFile = {
       id: fileId,
       fileName: file.name,
       status: 'uploading',
-      progress: 0
+      progress: 0,
+      localPreviewUrl,
+      file
     }
     batchManager.current.addFile(batchFile)
 
@@ -318,6 +323,13 @@ export const useMultiUploadSimplified = () => {
 
   // Clear all
   const clearAll = useCallback(() => {
+    // Clean up local preview URLs to prevent memory leaks
+    batchState.files.forEach(file => {
+      if (file.localPreviewUrl) {
+        URL.revokeObjectURL(file.localPreviewUrl)
+      }
+    })
+    
     if (batchManager.current) {
       batchManager.current.clear()
     }
@@ -325,16 +337,23 @@ export const useMultiUploadSimplified = () => {
       syncManager.current.reset()
     }
     toast.success('Cleared all files and entries')
-  }, [])
+  }, [batchState.files])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      // Clean up local preview URLs
+      batchState.files.forEach(file => {
+        if (file.localPreviewUrl) {
+          URL.revokeObjectURL(file.localPreviewUrl)
+        }
+      })
+      
       if (syncManager.current) {
         syncManager.current.stopListening()
       }
     }
-  }, [])
+  }, [batchState.files])
 
   return {
     // State

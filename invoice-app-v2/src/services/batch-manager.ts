@@ -11,6 +11,8 @@ export interface BatchFile {
   status: 'uploading' | 'processing' | 'completed' | 'error' | 'displayed'
   progress: number
   error?: string
+  localPreviewUrl?: string
+  file?: File
 }
 
 export interface BatchState {
