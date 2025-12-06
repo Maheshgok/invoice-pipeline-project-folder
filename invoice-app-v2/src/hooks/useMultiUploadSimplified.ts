@@ -237,7 +237,7 @@ export const useMultiUploadSimplified = () => {
     try {
       console.log('📥 Starting CSV download...')
       
-      // Archive completed results after download
+      // Archive completed results after download (re-enabled for download-only archiving)
       try {
         const result = await archiveService.archiveCompletedResults()
         if (result.archived_count > 0) {
@@ -283,6 +283,12 @@ export const useMultiUploadSimplified = () => {
       URL.revokeObjectURL(url)
 
       toast.success(`📥 Downloaded ${journalEntries.length} journal entries`)
+      
+      // Refresh the page after successful download to clear displayed data
+      setTimeout(() => {
+        console.log('🔄 Refreshing page after download to clear data')
+        window.location.reload()
+      }, 1000) // Short delay to ensure download starts
 
     } catch (error) {
       console.error('❌ Download failed:', error)
@@ -291,18 +297,6 @@ export const useMultiUploadSimplified = () => {
   }, [batchState.readyForDownload, journalEntries])
 
   // Mark all as displayed
-  const markAllDisplayed = useCallback(async () => {
-    if (syncManager.current) {
-      try {
-        await syncManager.current.markAllDisplayed()
-        toast.success('All results marked as displayed')
-      } catch (error) {
-        console.error('❌ Failed to mark as displayed:', error)
-        toast.error('Failed to mark results as displayed')
-      }
-    }
-  }, [])
-
   // Archive completed results
   const archiveCompletedResults = useCallback(async () => {
     try {
@@ -354,7 +348,6 @@ export const useMultiUploadSimplified = () => {
     removeFile,
     updateJournalEntry,
     downloadCSV,
-    markAllDisplayed,
     archiveCompletedResults,
     clearAll,
 

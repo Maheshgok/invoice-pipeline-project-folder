@@ -1,9 +1,11 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Eye, Archive } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User } from 'lucide-react'
 import toast from 'react-hot-toast'
 // Import the new simplified hook
 import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
+import { authService } from '../services/auth'
+import { syncManager } from '../services/firestore-sync-manager'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, logout } = useAuth()
@@ -17,18 +19,72 @@ const MultiUploadDashboard: React.FC = () => {
     clearAll,
     downloadCSV,
     updateJournalEntry,
-    markAllDisplayed,
     archiveCompletedResults,
     isBatchReadyForDownload,
     getBatchStats
   } = useMultiUploadSimplified()
   
+  // Debug logging for archiving behavior
+  useEffect(() => {
+    console.log('🔍 DEBUG: Component state changed:', {
+      completedFiles: batchState.completedFiles,
+      totalFiles: batchState.totalFiles,
+      journalEntriesCount: journalEntries.length,
+      isInitialized,
+      userEmail: user?.email
+    })
+  }, [batchState.completedFiles, batchState.totalFiles, journalEntries.length, isInitialized, user?.email])
+
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
   const [dragActive, setDragActive] = useState(false)
   const [editingCell, setEditingCell] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
+  const [documentLoading, setDocumentLoading] = useState<Record<string, boolean>>({})
+  const [documentError, setDocumentError] = useState<string | null>(null)
 
   const MAX_QUEUE_SIZE = 100
+
+  // Get document URL for a given invoice ID
+  const getDocumentUrlForInvoice = useCallback(async (invoiceId: string) => {
+    // Access results from the sync manager
+    const results = syncManager.getAllResults()
+    const result = results.find(r => r.id === invoiceId || r.jobId === invoiceId)
+    if (result?.gcsPath) {
+      try {
+        // Get authentication token
+        const idToken = await authService.getIdToken()
+        if (!idToken) {
+          console.error('No authentication token available')
+          return null
+        }
+        
+        // Call the signed URL endpoint
+        const response = await fetch(
+          `https://initial-api-812016027146.asia-south1.run.app/signed-url?path=${encodeURIComponent(result.gcsPath)}`,
+          {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${idToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        )
+        
+        if (!response.ok) {
+          console.error(`Failed to get signed URL: ${response.status}`)
+          return null
+        }
+        
+        const data = await response.json()
+        return data.signed_url
+        
+      } catch (error) {
+        console.error('Error getting signed URL:', error)
+        return null
+      }
+    }
+    return null
+  }, [])
 
   // Handle window close/refresh - reliable archive trigger
   useEffect(() => {
@@ -62,7 +118,7 @@ const MultiUploadDashboard: React.FC = () => {
       window.removeEventListener('pagehide', handlePageHide)
       window.removeEventListener('beforeunload', handleBeforeUnload)
     }
-  }, [user?.email, isInitialized, batchState.completedFiles, archiveCompletedResults])
+  }, [user?.email, isInitialized, archiveCompletedResults])
 
   // Handle user logout - clean up listeners and optionally archive
   useEffect(() => {
@@ -85,7 +141,7 @@ const MultiUploadDashboard: React.FC = () => {
         )
       }
     }
-  }, [user?.email, isInitialized, batchState.completedFiles, archiveCompletedResults])
+  }, [user?.email, isInitialized, archiveCompletedResults])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -168,10 +224,34 @@ const MultiUploadDashboard: React.FC = () => {
     }
   }
 
-  const handleCellEdit = (entryId: string, field: string, currentValue: any) => {
+  const handleCellEdit = useCallback(async (entryId: string, field: string, currentValue: any) => {
+    const entry = journalEntries.find(e => e.id === entryId)
+    if (!entry) return
+
     setEditingCell(`${entryId}-${field}`)
     setEditValue(currentValue.toString())
-  }
+    
+    // Auto-load the document for this entry
+    try {
+      setSelectedImage(null) // Clear previous document
+      setDocumentError(null) // Clear any previous errors
+      setDocumentLoading(prev => ({ ...prev, [entryId]: true })) // Show loading state
+      
+      const docUrl = await getDocumentUrlForInvoice(entry.invoiceId)
+      if (docUrl) {
+        setSelectedImage(docUrl)
+        console.log('✅ Document loaded for invoice:', entry.invoiceId)
+      } else {
+        setDocumentError('Document not available')
+        console.warn('⚠️ No document URL found for invoice:', entry.invoiceId)
+      }
+    } catch (error) {
+      setDocumentError('Failed to load document')
+      console.error('❌ Error loading document:', error)
+    } finally {
+      setDocumentLoading(prev => ({ ...prev, [entryId]: false }))
+    }
+  }, [journalEntries, getDocumentUrlForInvoice])
 
   const handleCellSave = (entryId: string, field: string) => {
     updateJournalEntry(entryId, field, field.includes('Amount') ? parseFloat(editValue) || 0 : editValue)
@@ -347,35 +427,13 @@ const MultiUploadDashboard: React.FC = () => {
             <h2 className="text-xl font-semibold text-gray-800">Journal Entries</h2>
             <div className="flex space-x-3">
               <button
-                onClick={markAllDisplayed}
-                disabled={batchState.completedFiles === 0}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Mark all completed results as displayed to prevent future notifications"
-              >
-                <Eye className="w-4 h-4 mr-2" />
-                Mark as Displayed ({batchState.completedFiles})
-              </button>
-              <button
-                onClick={() => {
-                  archiveCompletedResults().catch(err => 
-                    console.error('Manual archive failed:', err)
-                  )
-                }}
-                disabled={batchState.completedFiles === 0}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Manually archive completed results to clean the interface"
-              >
-                <Archive className="w-4 h-4 mr-2" />
-                Archive ({batchState.completedFiles})
-              </button>
-              <button
                 onClick={downloadCSV}
                 disabled={!batchState.readyForDownload || journalEntries.length === 0}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={!batchState.readyForDownload ? "Please wait for all files to complete processing" : "Download journal entries as CSV"}
+                title={!batchState.readyForDownload ? "Please wait for all files to complete processing" : "Download journal entries as CSV and refresh page"}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Download CSV
+                Download CSV & Refresh
                 {!batchState.readyForDownload && batchState.totalFiles > 0 && (
                   <span className="ml-2 text-xs">
                     (Processing...)
@@ -396,11 +454,12 @@ const MultiUploadDashboard: React.FC = () => {
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Code</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account Name</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account Code</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Debit ₹</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit ₹</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GST ₹</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balanced</th>
@@ -473,6 +532,38 @@ const MultiUploadDashboard: React.FC = () => {
                           </div>
                         )}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {editingCell === `${entry.id}-accountCode` ? (
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="border rounded px-2 py-1 text-sm w-24"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleCellSave(entry.id, 'accountCode')}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={handleCellCancel}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div 
+                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
+                            onClick={() => handleCellEdit(entry.id, 'accountCode', entry.accountCode)}
+                          >
+                            {entry.accountCode}
+                          </div>
+                        )}
+                      </td>
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {editingCell === `${entry.id}-description` ? (
                           <div className="flex items-center space-x-2">
@@ -535,7 +626,7 @@ const MultiUploadDashboard: React.FC = () => {
                             className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
                             onClick={() => handleCellEdit(entry.id, 'debitAmount', entry.debitAmount)}
                           >
-                            ${entry.debitAmount.toFixed(2)}
+                            ₹{entry.debitAmount.toFixed(2)}
                           </div>
                         )}
                       </td>
@@ -568,7 +659,7 @@ const MultiUploadDashboard: React.FC = () => {
                             className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
                             onClick={() => handleCellEdit(entry.id, 'creditAmount', entry.creditAmount)}
                           >
-                            ${entry.creditAmount.toFixed(2)}
+                            ₹{entry.creditAmount.toFixed(2)}
                           </div>
                         )}
                       </td>
@@ -604,6 +695,78 @@ const MultiUploadDashboard: React.FC = () => {
                           </div>
                         )}
                       </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {editingCell === `${entry.id}-vendor` ? (
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="text"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="border rounded px-2 py-1 text-sm w-32"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleCellSave(entry.id, 'vendor')}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={handleCellCancel}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div 
+                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
+                            onClick={() => handleCellEdit(entry.id, 'vendor', entry.vendor || '')}
+                          >
+                            {entry.vendor || '-'}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {editingCell === `${entry.id}-gstAmount` ? (
+                          <div className="flex items-center space-x-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={editValue}
+                              onChange={(e) => setEditValue(e.target.value)}
+                              className="border rounded px-2 py-1 text-sm w-20"
+                              autoFocus
+                            />
+                            <button
+                              onClick={() => handleCellSave(entry.id, 'gstAmount')}
+                              className="text-green-600 hover:text-green-800"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={handleCellCancel}
+                              className="text-gray-500 hover:text-gray-700"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div 
+                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
+                            onClick={() => handleCellEdit(entry.id, 'gstAmount', entry.gstAmount || 0)}
+                          >
+                            ₹{(entry.gstAmount || 0).toFixed(2)}
+                          </div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                          entry.isBalanced ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                        }`}>
+                          {entry.isBalanced ? 'Balanced' : 'Unbalanced'}
+                        </div>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -616,7 +779,23 @@ const MultiUploadDashboard: React.FC = () => {
         <div className="bg-white rounded-lg shadow-lg p-6">
           <h2 className="text-xl font-semibold text-gray-800 mb-4">Image Viewer</h2>
           
-          {selectedImage ? (
+          {Object.values(documentLoading).some(loading => loading) ? (
+            <div className="text-center py-8 text-gray-500">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto mb-4"></div>
+              <p>Loading document...</p>
+            </div>
+          ) : documentError ? (
+            <div className="text-center py-8 text-red-500">
+              <AlertCircle className="mx-auto h-12 w-12 text-red-300 mb-2" />
+              <p>{documentError}</p>
+              <button
+                onClick={() => setDocumentError(null)}
+                className="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+              >
+                Clear Error
+              </button>
+            </div>
+          ) : selectedImage ? (
             <div className="space-y-4">
               <img 
                 src={selectedImage} 
@@ -634,7 +813,7 @@ const MultiUploadDashboard: React.FC = () => {
             <div className="text-center py-8 text-gray-500">
               <FileText className="mx-auto h-16 w-16 text-gray-300 mb-4" />
               <p>No image selected</p>
-              <p className="text-sm mt-2">Click on a processed file to view</p>
+              <p className="text-sm mt-2">Click on any table cell to view the corresponding document</p>
             </div>
           )}
         </div>

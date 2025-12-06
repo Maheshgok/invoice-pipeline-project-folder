@@ -500,6 +500,69 @@ def get_queue_stats():
         logger.error(f"Error getting queue stats: {str(e)}")
         return jsonify({"error": f"Failed to get queue stats: {str(e)}"}), 500
 
+@app.route('/signed-url', methods=['GET'])
+def generate_signed_url():
+    """
+    Generate a signed URL for viewing uploaded documents
+    """
+    logger.info("Signed URL request received")
+    
+    # Verify authentication first
+    try:
+        auth_header = request.headers.get('Authorization')
+        user_email = verify_auth_token(auth_header)
+        logger.info(f"Signed URL request authenticated for user: {user_email}")
+    except ValueError as e:
+        logger.error(f"Authentication failed: {e}")
+        return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401
+    
+    # Get the GCS path from query parameters
+    gcs_path = request.args.get('path')
+    if not gcs_path:
+        return jsonify({"error": "Missing 'path' query parameter"}), 400
+    
+    try:
+        # Parse bucket and blob path
+        if '/' in gcs_path:
+            # Format: bucket_name/path/to/file
+            parts = gcs_path.split('/', 1)
+            bucket_name = parts[0]
+            blob_path = parts[1]
+        else:
+            # Fallback to default bucket
+            bucket_name = BUCKET_NAME or 'watch-mail-trial-invoice-raw-files'
+            blob_path = gcs_path
+        
+        logger.info(f"Generating signed URL for bucket: {bucket_name}, path: {blob_path}")
+        
+        # Get the bucket and blob
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_path)
+        
+        # Check if blob exists
+        if not blob.exists():
+            logger.error(f"File not found: {bucket_name}/{blob_path}")
+            return jsonify({"error": "File not found"}), 404
+        
+        # Generate signed URL (valid for 1 hour)
+        signed_url = blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(hours=1),
+            method="GET"
+        )
+        
+        logger.info(f"Successfully generated signed URL for {bucket_name}/{blob_path}")
+        
+        return jsonify({
+            "signed_url": signed_url,
+            "expires_in": 3600,  # 1 hour in seconds
+            "file_path": f"{bucket_name}/{blob_path}"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error generating signed URL: {str(e)}")
+        return jsonify({"error": f"Failed to generate signed URL: {str(e)}"}), 500
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint - standard Cloud Run health check"""
