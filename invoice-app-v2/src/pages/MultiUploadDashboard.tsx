@@ -5,7 +5,6 @@ import toast from 'react-hot-toast'
 // Import the new simplified hook
 import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 import { authService } from '../services/auth'
-import { syncManager } from '../services/firestore-sync-manager'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, logout } = useAuth()
@@ -21,7 +20,8 @@ const MultiUploadDashboard: React.FC = () => {
     updateJournalEntry,
     archiveCompletedResults,
     isBatchReadyForDownload,
-    getBatchStats
+    getBatchStats,
+    syncManager
   } = useMultiUploadSimplified()
   
   // Debug logging for archiving behavior
@@ -47,6 +47,11 @@ const MultiUploadDashboard: React.FC = () => {
   // Get document URL for a given invoice ID
   const getDocumentUrlForInvoice = useCallback(async (invoiceId: string) => {
     // Access results from the sync manager
+    if (!syncManager) {
+      console.error('Sync manager not available')
+      return null
+    }
+    
     const results = syncManager.getAllResults()
     const result = results.find(r => r.id === invoiceId || r.jobId === invoiceId)
     if (result?.gcsPath) {
@@ -84,7 +89,7 @@ const MultiUploadDashboard: React.FC = () => {
       }
     }
     return null
-  }, [])
+  }, [syncManager])
 
   // Handle window close/refresh - reliable archive trigger
   useEffect(() => {
