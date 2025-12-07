@@ -14,8 +14,12 @@ const MultiUploadDashboard: React.FC = () => {
   const [dragActive, setDragActive] = useState(false)
   const [editingCell, setEditingCell] = useState<string | null>(null)
   const [editValue, setEditValue] = useState('')
-  const [documentLoading, setDocumentLoading] = useState<Record<string, boolean>>({})
+  const [documentLoading, setDocumentLoading] = useState<{ [key: string]: boolean }>({})
   const [documentError, setDocumentError] = useState<string | null>(null)
+  const [zoom, setZoom] = useState(1)
+  const [pan, setPan] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   
   const { 
     uploadedFiles, 
@@ -60,7 +64,21 @@ const MultiUploadDashboard: React.FC = () => {
     const localFile = batchState.files.find(f => f.jobId === invoiceId || f.id === invoiceId)
     if (localFile?.localPreviewUrl) {
       console.log('✅ DEBUG: Using local preview URL for:', invoiceId, 'file:', localFile.fileName)
-      return localFile.localPreviewUrl
+      console.log('📸 DEBUG: Local preview URL:', localFile.localPreviewUrl)
+      // Verify the URL is still valid
+      try {
+        const response = await fetch(localFile.localPreviewUrl, { method: 'HEAD' })
+        if (response.ok) {
+          console.log('✅ DEBUG: Local URL is valid')
+          return localFile.localPreviewUrl
+        } else {
+          console.warn('⚠️ DEBUG: Local URL seems invalid, status:', response.status)
+        }
+      } catch (error) {
+        console.warn('⚠️ DEBUG: Error checking local URL validity:', error)
+        // Still try to return it as browsers handle blob URLs differently
+        return localFile.localPreviewUrl
+      }
     }
     
     console.log('⚠️ DEBUG: No local preview found, falling back to cloud storage')
@@ -286,6 +304,9 @@ const MultiUploadDashboard: React.FC = () => {
       const docUrl = await getDocumentUrlForInvoice(entry.invoiceId)
       if (docUrl) {
         setSelectedImage(docUrl)
+        // Reset zoom and pan for new image
+        setZoom(1)
+        setPan({ x: 0, y: 0 })
         console.log('✅ Document loaded for invoice:', entry.invoiceId)
       } else {
         setDocumentError('Document not available')
@@ -308,6 +329,39 @@ const MultiUploadDashboard: React.FC = () => {
   const handleCellCancel = () => {
     setEditingCell(null)
     setEditValue('')
+  }
+
+  // Zoom and pan controls
+  const handleZoomIn = () => setZoom(prev => Math.min(prev * 1.2, 3))
+  const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.2, 0.5))
+  const handleResetZoom = () => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }
+
+  // Mouse handlers for panning
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true)
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y })
+  }
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return
+    setPan({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    })
+  }
+
+  const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  // Wheel handler for zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    setZoom(prev => Math.max(0.5, Math.min(3, prev * delta)))
   }
 
   const getProgressColor = (progress: number) => {
@@ -837,7 +891,41 @@ const MultiUploadDashboard: React.FC = () => {
 
         {/* Right - Image Display Panel (1/3 width) */}
         <div className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-xl font-semibold text-gray-800 mb-4">Image Viewer</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-800">Image Viewer</h2>
+            {selectedImage && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={handleZoomOut}
+                  className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                  title="Zoom out"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM13 10H7" />
+                  </svg>
+                </button>
+                <span className="text-sm text-gray-600 min-w-[50px] text-center">
+                  {Math.round(zoom * 100)}%
+                </span>
+                <button
+                  onClick={handleZoomIn}
+                  className="p-1.5 rounded hover:bg-gray-200 transition-colors"
+                  title="Zoom in"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleResetZoom}
+                  className="p-1.5 rounded hover:bg-gray-200 transition-colors text-xs"
+                  title="Reset zoom and pan"
+                >
+                  Reset
+                </button>
+              </div>
+            )}
+          </div>
           
           {Object.values(documentLoading).some(loading => loading) ? (
             <div className="text-center py-8 text-gray-500">
@@ -862,17 +950,67 @@ const MultiUploadDashboard: React.FC = () => {
             </div>
           ) : selectedImage ? (
             <div className="space-y-4">
-              <img 
-                src={selectedImage} 
-                alt="Selected document" 
-                className="w-full h-64 object-contain border rounded-lg"
-              />
-              <button
-                onClick={() => setSelectedImage(null)}
-                className="w-full px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+              <div 
+                className="border rounded-lg overflow-hidden bg-gray-50 relative"
+                style={{ height: '400px' }}
+                onWheel={handleWheel}
               >
-                Close Image
-              </button>
+                <div 
+                  className={`w-full h-full overflow-hidden ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                >
+                  <img 
+                    src={selectedImage} 
+                    alt="Selected document" 
+                    className="transition-transform duration-150"
+                    style={{
+                      transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                      transformOrigin: 'center',
+                      maxWidth: 'none',
+                      height: 'auto',
+                      userSelect: 'none',
+                      pointerEvents: 'none'
+                    }}
+                    onLoad={() => console.log('✅ Image loaded successfully:', selectedImage)}
+                    onError={(e) => {
+                      console.error('❌ Image load failed:', e)
+                      console.error('Failed URL:', selectedImage)
+                      setDocumentError('Failed to display document image')
+                      setSelectedImage(null)
+                    }}
+                    draggable={false}
+                  />
+                </div>
+                {/* Zoom/Pan instructions */}
+                <div className="absolute bottom-2 left-2 text-xs text-gray-500 bg-white bg-opacity-80 px-2 py-1 rounded">
+                  Scroll to zoom • Drag to pan
+                </div>
+              </div>
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setSelectedImage(null)}
+                  className="flex-1 px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700"
+                >
+                  Close Image
+                </button>
+                <button
+                  onClick={() => {
+                    if (selectedImage) {
+                      const link = document.createElement('a')
+                      link.href = selectedImage
+                      link.download = 'invoice-document'
+                      link.click()
+                    }
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                  title="Download document"
+                >
+                  Download
+                </button>
+              </div>
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">
