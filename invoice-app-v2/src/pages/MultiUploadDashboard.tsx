@@ -154,28 +154,30 @@ const MultiUploadDashboard: React.FC = () => {
     }
   }, [user?.email, isInitialized, archiveCompletedResults])
 
-  // Handle user logout - clean up listeners and optionally archive
-  useEffect(() => {
-    // Only set up logout cleanup if user exists and is initialized
-    if (!user?.email || !isInitialized) {
-      console.log('🎯 No user or not initialized - skipping archive setup')
-      return
-    }
-
-    console.log('🔐 Setting up logout cleanup for user:', user.email)
-
-    // Archive on explicit user logout (when auth state changes from authenticated to null)
-    return () => {
-      console.log('🔄 User state cleanup - checking if archive needed')
-      // Only archive if we have data to archive
-      if (batchState.completedFiles > 0) {
-        console.log('📦 User logout detected - archiving completed results')
-        archiveCompletedResults().catch(err => 
-          console.error('❌ Logout archive failed:', err)
-        )
+  // Handle user logout - always archive before logout
+  const handleLogout = useCallback(async () => {
+    console.log('🔐 Manual logout initiated')
+    
+    // Always archive completed results before logout
+    if (batchState.completedFiles > 0 || journalEntries.length > 0) {
+      try {
+        console.log('📦 Archiving data before manual logout')
+        await archiveCompletedResults()
+        console.log('✅ Archive before logout completed')
+      } catch (error) {
+        console.error('❌ Archive before logout failed:', error)
+        // Continue with logout even if archive fails
       }
     }
-  }, [user?.email, isInitialized, archiveCompletedResults])
+    
+    // Proceed with logout
+    try {
+      await logout()
+      console.log('✅ Manual logout completed')
+    } catch (error) {
+      console.error('❌ Manual logout failed:', error)
+    }
+  }, [logout, archiveCompletedResults, batchState.completedFiles, journalEntries.length])
 
   const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -342,7 +344,7 @@ const MultiUploadDashboard: React.FC = () => {
             <span>{user?.email}</span>
           </div>
           <button
-            onClick={logout}
+            onClick={handleLogout}
             className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
           >
             <LogOut className="w-4 h-4" />
@@ -816,9 +818,13 @@ const MultiUploadDashboard: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          entry.isBalanced ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                          entry.isBalanced === true ? 'bg-green-100 text-green-800' : 
+                          entry.isBalanced === false ? 'bg-red-100 text-red-800' : 
+                          'bg-gray-100 text-gray-800'
                         }`}>
-                          {entry.isBalanced ? 'Balanced' : 'Unbalanced'}
+                          {entry.isBalanced === true ? 'Balanced' : 
+                           entry.isBalanced === false ? 'Unbalanced' : 
+                           'Unknown'}
                         </div>
                       </td>
                     </tr>

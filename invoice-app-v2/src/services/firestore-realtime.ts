@@ -531,6 +531,15 @@ class RealtimeFirestoreService {
           const journalEntries = journalSet.entries || []
           console.log(`🔢 Set ${setIndex + 1} has`, journalEntries.length, 'entries')
           
+          // Calculate balance for this journal set
+          const totalDebits = journalEntries.reduce((sum: number, entry: any) => 
+            sum + (parseFloat(entry.debit_amount) || 0), 0)
+          const totalCredits = journalEntries.reduce((sum: number, entry: any) => 
+            sum + (parseFloat(entry.credit_amount) || 0), 0)
+          const isSetBalanced = Math.abs(totalDebits - totalCredits) < 0.01 // Allow for small rounding differences
+          
+          console.log(`⚖️ Set ${setIndex + 1} balance: Debits: ₹${totalDebits}, Credits: ₹${totalCredits}, Balanced: ${isSetBalanced}`)
+          
           journalEntries.forEach((entry: any, entryIndex: number) => {
             const invoiceNumber = result.extractedData?.extracted_data?.invoice_number || 
                                   result.extractedData?.invoice_number || 
@@ -554,9 +563,10 @@ class RealtimeFirestoreService {
               accountName: entry.account_name || '',
               accountCode: entry.account_code || '',
               accountType: entry.account_type || '',
-              debitAmount: entry.debit_amount || 0,
-              creditAmount: entry.credit_amount || 0,
+              debitAmount: parseFloat(entry.debit_amount) || 0,
+              creditAmount: parseFloat(entry.credit_amount) || 0,
               narration: entry.narration || journalSet.entry_description || '',
+              isBalanced: isSetBalanced, // Add balance status
               userId: result.userEmail,
               createdAt: result.createdAt
             }
