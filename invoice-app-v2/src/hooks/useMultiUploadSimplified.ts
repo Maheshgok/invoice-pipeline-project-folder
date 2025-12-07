@@ -229,11 +229,6 @@ export const useMultiUploadSimplified = () => {
 
   // Download CSV
   const downloadCSV = useCallback(async () => {
-    if (!batchState.readyForDownload) {
-      toast.error('⏳ Please wait for all files to complete processing')
-      return
-    }
-
     if (journalEntries.length === 0) {
       toast.error('No journal entries to download')
       return
@@ -289,17 +284,15 @@ export const useMultiUploadSimplified = () => {
 
       toast.success(`📥 Downloaded ${journalEntries.length} journal entries`)
       
-      // Refresh the page after successful download to clear displayed data
-      setTimeout(() => {
-        console.log('🔄 Refreshing page after download to clear data')
-        window.location.reload()
-      }, 1000) // Short delay to ensure download starts
-
+      // Clear all data after successful download
+      console.log('🧹 Clearing all data after CSV download')
+      clearAll()
+      
     } catch (error) {
       console.error('❌ Download failed:', error)
       toast.error('Failed to download CSV')
     }
-  }, [batchState.readyForDownload, journalEntries])
+  }, [journalEntries])
 
   // Mark all as displayed
   // Archive completed results
@@ -343,17 +336,20 @@ export const useMultiUploadSimplified = () => {
   useEffect(() => {
     return () => {
       // Clean up local preview URLs
-      batchState.files.forEach(file => {
-        if (file.localPreviewUrl) {
-          URL.revokeObjectURL(file.localPreviewUrl)
-        }
-      })
+      if (batchManager.current) {
+        const files = batchManager.current.getFiles()
+        files.forEach(file => {
+          if (file.localPreviewUrl) {
+            URL.revokeObjectURL(file.localPreviewUrl)
+          }
+        })
+      }
       
       if (syncManager.current) {
         syncManager.current.stopListening()
       }
     }
-  }, [batchState.files])
+  }, []) // Empty dependency array - only runs on unmount
 
   return {
     // State

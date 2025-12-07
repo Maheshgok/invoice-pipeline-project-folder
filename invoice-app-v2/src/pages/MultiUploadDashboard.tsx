@@ -8,6 +8,15 @@ import { authService } from '../services/auth'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, logout } = useAuth()
+  
+  // State declarations first
+  const [selectedImage, setSelectedImage] = useState<string | null>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const [editingCell, setEditingCell] = useState<string | null>(null)
+  const [editValue, setEditValue] = useState('')
+  const [documentLoading, setDocumentLoading] = useState<Record<string, boolean>>({})
+  const [documentError, setDocumentError] = useState<string | null>(null)
+  
   const { 
     uploadedFiles, 
     journalEntries,
@@ -34,13 +43,6 @@ const MultiUploadDashboard: React.FC = () => {
       userEmail: user?.email
     })
   }, [batchState.completedFiles, batchState.totalFiles, journalEntries.length, isInitialized, user?.email])
-
-  const [selectedImage, setSelectedImage] = useState<string | null>(null)
-  const [dragActive, setDragActive] = useState(false)
-  const [editingCell, setEditingCell] = useState<string | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [documentLoading, setDocumentLoading] = useState<Record<string, boolean>>({})
-  const [documentError, setDocumentError] = useState<string | null>(null)
 
   const MAX_QUEUE_SIZE = 100
 
@@ -269,6 +271,16 @@ const MultiUploadDashboard: React.FC = () => {
       setDocumentError(null) // Clear any previous errors
       setDocumentLoading(prev => ({ ...prev, [entryId]: true })) // Show loading state
       
+      // Check if we have a corresponding batch file first
+      const hasLocalFile = batchState.files.some(f => f.jobId === entry.invoiceId || f.id === entry.invoiceId)
+      
+      if (!hasLocalFile) {
+        console.log('📄 No local file available for invoice:', entry.invoiceId)
+        setDocumentError('Document not available in current session')
+        setDocumentLoading(prev => ({ ...prev, [entryId]: false }))
+        return
+      }
+      
       const docUrl = await getDocumentUrlForInvoice(entry.invoiceId)
       if (docUrl) {
         setSelectedImage(docUrl)
@@ -283,7 +295,7 @@ const MultiUploadDashboard: React.FC = () => {
     } finally {
       setDocumentLoading(prev => ({ ...prev, [entryId]: false }))
     }
-  }, [journalEntries, getDocumentUrlForInvoice])
+  }, [journalEntries, getDocumentUrlForInvoice, batchState.files])
 
   const handleCellSave = (entryId: string, field: string) => {
     updateJournalEntry(entryId, field, field.includes('Amount') ? parseFloat(editValue) || 0 : editValue)
@@ -457,18 +469,18 @@ const MultiUploadDashboard: React.FC = () => {
         <div className="xl:col-span-2 bg-white rounded-lg shadow-lg p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Journal Entries</h2>
-            <div className="flex space-x-3">
+            <div className="flex items-center space-x-3">
               <button
                 onClick={downloadCSV}
-                disabled={!batchState.readyForDownload || journalEntries.length === 0}
+                disabled={journalEntries.length === 0}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={!batchState.readyForDownload ? "Please wait for all files to complete processing" : "Download journal entries as CSV and refresh page"}
+                title={journalEntries.length === 0 ? "No journal entries to download" : "Download journal entries as CSV and clear all data"}
               >
                 <Download className="w-4 h-4 mr-2" />
-                Download CSV & Refresh
-                {!batchState.readyForDownload && batchState.totalFiles > 0 && (
+                Download CSV & Clear All
+                {batchState.processingFiles > 0 && (
                   <span className="ml-2 text-xs">
-                    (Processing...)
+                    ({batchState.processingFiles} processing...)
                   </span>
                 )}
               </button>
@@ -485,6 +497,7 @@ const MultiUploadDashboard: React.FC = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50 sticky top-0">
                   <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Doc</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account Name</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Account Code</th>
@@ -500,6 +513,15 @@ const MultiUploadDashboard: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {journalEntries.map((entry) => (
                     <tr key={entry.id} className="hover:bg-gray-50">
+                      {/* Document availability indicator */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
+                        {batchState.files.some(f => f.jobId === entry.invoiceId || f.id === entry.invoiceId) ? (
+                          <FileText className="w-4 h-4 text-green-600 mx-auto" title="Document available" />
+                        ) : (
+                          <span className="w-4 h-4 text-gray-300 mx-auto block text-xs" title="No document in current session">-</span>
+                        )}
+                      </td>
+                      
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {editingCell === `${entry.id}-date` ? (
                           <div className="flex items-center space-x-2">
@@ -817,14 +839,19 @@ const MultiUploadDashboard: React.FC = () => {
               <p>Loading document...</p>
             </div>
           ) : documentError ? (
-            <div className="text-center py-8 text-red-500">
-              <AlertCircle className="mx-auto h-12 w-12 text-red-300 mb-2" />
-              <p>{documentError}</p>
+            <div className="text-center py-8">
+              <AlertCircle className="mx-auto h-12 w-12 text-amber-400 mb-4" />
+              <p className="text-gray-600 mb-2">{documentError}</p>
+              {documentError.includes('current session') && (
+                <p className="text-sm text-gray-500 mb-4">
+                  This entry may be from a previous session. Only files uploaded in the current session have viewable documents.
+                </p>
+              )}
               <button
                 onClick={() => setDocumentError(null)}
-                className="mt-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
               >
-                Clear Error
+                Clear Message
               </button>
             </div>
           ) : selectedImage ? (
