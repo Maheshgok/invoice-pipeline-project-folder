@@ -1,13 +1,15 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
 // Import the new simplified hook
 import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 import { authService } from '../services/auth'
+import { userService } from '../services/userService'
+import AdminDashboard from '../components/admin/AdminDashboard'
 
 const MultiUploadDashboard: React.FC = () => {
-  const { user, logout } = useAuth()
+  const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize } = useAuth()
   
   // State declarations first
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -20,6 +22,13 @@ const MultiUploadDashboard: React.FC = () => {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
+  const [showAdminDashboard, setShowAdminDashboard] = useState(false)
+  
+  // Check permissions
+  const canUpload = hasPermission('canUpload')
+  const canEdit = hasPermission('canEdit')
+  const canDownload = hasPermission('canDownload')
+  const isOrgAdmin = hasPermission('canManageOrgUsers')
   
   const { 
     uploadedFiles, 
@@ -395,8 +404,26 @@ const MultiUploadDashboard: React.FC = () => {
         <div className="flex items-center space-x-4">
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <User className="w-4 h-4" />
-            <span>{user?.email}</span>
+            <div>
+              <div>{user?.email}</div>
+              {userProfile?.organizationId && (
+                <div className="text-xs text-gray-500">
+                  {userProfile.organizationRole} • {userProfile.organizationId.slice(0, 8)}
+                </div>
+              )}
+            </div>
           </div>
+          
+          {isOrgAdmin && (
+            <button
+              onClick={() => setShowAdminDashboard(!showAdminDashboard)}
+              className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
+            >
+              <Settings className="w-4 h-4" />
+              <span>{showAdminDashboard ? 'Dashboard' : 'Admin'}</span>
+            </button>
+          )}
+          
           <button
             onClick={handleLogout}
             className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
@@ -1021,6 +1048,8 @@ const MultiUploadDashboard: React.FC = () => {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

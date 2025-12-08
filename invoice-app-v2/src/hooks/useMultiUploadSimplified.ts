@@ -1,11 +1,12 @@
 /**
- * Simplified Multi-Upload Hook
+ * Simplified Multi-Upload Hook with User Access Control
  * Uses modular services for better separation of concerns
- * Fixes batch tracking and download button issues
+ * Includes permission checks and usage limits
  */
 import { useState, useCallback, useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
+import { userService } from '../services/userService'
 import { archiveService } from '../services/archive'
 import { BatchManager, type BatchFile, type BatchState } from '../services/batch-manager'
 import { FirestoreSyncManager, type JournalEntry } from '../services/firestore-sync-manager'

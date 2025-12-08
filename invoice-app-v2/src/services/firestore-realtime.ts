@@ -15,6 +15,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
+import { userService } from './userService'
 
 export interface InvoiceProcessingResult {
   id: string
@@ -24,6 +25,7 @@ export interface InvoiceProcessingResult {
   progress: number
   processedAt?: string
   userEmail: string
+  userUID: string  // Added for better user isolation
   extractedData?: any
   error?: string
   jobId?: string
@@ -32,6 +34,9 @@ export interface InvoiceProcessingResult {
   updatedAt: Timestamp
   displayedAt?: string
   frontendStatus?: 'displayed' | 'downloaded' | 'archived'
+  organization?: string  // For organization-level data sharing
+  department?: string   // For department-level data sharing
+  visibility: 'private' | 'organization' | 'public'  // Data visibility level
 }
 
 class RealtimeFirestoreService {
@@ -42,48 +47,109 @@ class RealtimeFirestoreService {
   private recentResultsCache: Map<string, InvoiceProcessingResult> = new Map()
 
   /**
-   * SIMPLIFIED: Listen only to ALL active results (no filtering needed after archive system)
-   * Archive system keeps the active collection clean, so we can display everything
+   * Listen to user's active results with organization-based data isolation
    */
   listenToActiveResults(
     onUpdate: (results: InvoiceProcessingResult[]) => void,
     onError: (error: Error) => void
   ) {
     const user = authService.getCurrentUser()
-    if (!user?.email) {
+    if (!user?.uid) {
       onError(new Error('User not authenticated'))
       return
     }
 
-    console.log('🎨 Setting up SIMPLIFIED active listener for:', user.email)
+    console.log('🔒 Setting up organization-aware listener for UID:', user.uid)
 
-    // ⚡ ULTRA-SIMPLIFIED query - archive system keeps collection clean
-    const activeQuery = query(
-      collection(db, 'invoice_results'),
-      where('user_email', '==', user.email),
-      limit(50)  // Higher limit since archive system keeps collection clean
-    )
+    this.setupOrganizationAwareListener(onUpdate, onError)
+  }
 
-    const unsubscribe = onSnapshot(
-      activeQuery,
-      (snapshot) => {
-        console.log('⚡ SIMPLIFIED active snapshot:', snapshot.docs.length, 'documents')
-        
-        const results = this.processSimplifiedSnapshot(snapshot)
-        
-        // Cache active results
-        results.forEach(result => {
-          if (result.jobId) {
-            this.activeResultsCache.set(result.jobId, result)
+  /**
+   * Setup organization-aware data listener
+   */
+  private async setupOrganizationAwareListener(
+    onUpdate: (results: InvoiceProcessingResult[]) => void,
+    onError: (error: Error) => void
+  ) {
+    try {
+      const user = authService.getCurrentUser()
+      if (!user?.uid) {
+        onError(new Error('User not authenticated'))
+        return
+      }
+
+      // Get user profile to determine data access scope
+      const userProfile = await userService.getUserProfile()
+      if (!userProfile) {
+        onError(new Error('User profile not found'))
+        return
+      }
+
+      console.log('🏢 Data access scope for user:', {
+        uid: userProfile.uid,
+        organizationId: userProfile.organizationId,
+        canViewOrgData: userProfile.permissions.canViewOrgData
+      })
+
+      // Use organization-scoped collection
+      const orgCollectionPath = `organizations/${userProfile.organizationId}/invoice_results`
+      
+      let dataQuery: any
+      
+      if (userProfile.permissions.canViewOrgData) {
+        // Admin can see all organization data
+        console.log('📊 Admin access: viewing all organization data')
+        dataQuery = query(
+          collection(db, orgCollectionPath),
+          where('organizationId', '==', userProfile.organizationId),
+          orderBy('createdAt', 'desc'),
+          limit(100)
+        )
+      } else {
+        // Regular user can only see their own data
+        console.log('👤 User access: viewing own data only')
+        dataQuery = query(
+          collection(db, orgCollectionPath),
+          where('userUID', '==', user.uid),
+          where('organizationId', '==', userProfile.organizationId),
+          orderBy('createdAt', 'desc'),
+          limit(50)
+        )
+      }
+
+      const unsubscribe = onSnapshot(
+        dataQuery,
+        async (snapshot) => {
+          const accessType = userProfile.permissions.canViewOrgData ? 'organization' : 'user'
+          console.log(`🔒 ${accessType} data snapshot:`, snapshot.docs.length, 'documents')
+          
+          // Additional permission check
+          const canView = await userService.hasPermission('canViewOwnData')
+          if (!canView) {
+            onError(new Error('Insufficient permissions to view data'))
+            return
           }
-        })
-        
-        onUpdate(results)
-      },
-      onError
-    )
+          
+          const results = this.processOrganizationSnapshot(snapshot, userProfile)
+          
+          // Cache results
+          results.forEach(result => {
+            if (result.jobId) {
+              this.activeResultsCache.set(result.jobId, result)
+            }
+          })
+          
+          onUpdate(results)
+        },
+        onError
+      )
 
-    this.unsubscribers.push(unsubscribe)
+      this.unsubscribers.push(unsubscribe)
+    } catch (error) {
+      console.error('❌ Error setting up organization listener:', error)
+      onError(error as Error)
+    }
+  }
   }
 
   /**

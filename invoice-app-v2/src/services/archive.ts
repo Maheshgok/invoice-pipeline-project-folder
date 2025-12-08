@@ -1,9 +1,11 @@
 /**
  * Archive Manager API Service
  * Handles communication with the archive-manager Cloud Run service
+ * Now supports user-isolated operations
  */
 
 import { authService } from './auth'
+import { userService } from './userService'
 
 const ARCHIVE_SERVICE_URL = 'https://archive-manager-812016027146.asia-south1.run.app'
 
@@ -22,15 +24,18 @@ class ArchiveService {
   private async getAuthHeaders() {
     try {
       const token = await authService.getIdToken()
-      console.log('🔍 Archive service - Getting token:', token ? 'Token received' : 'No token')
+      const userUID = userService.getCurrentUserUID()
       
-      if (!token) {
-        throw new Error('No authentication token available')
+      console.log('🔍 Archive service - Getting token for user:', userUID, token ? 'Token received' : 'No token')
+      
+      if (!token || !userUID) {
+        throw new Error('No authentication token or user UID available')
       }
       
       return {
         'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'X-User-UID': userUID  // Pass user UID for server-side validation
       }
     } catch (error) {
       console.error('❌ Archive service - Failed to get auth headers:', error)

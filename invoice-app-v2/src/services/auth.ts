@@ -9,9 +9,11 @@ import {
   GoogleAuthProvider,
   UserCredential,
   User as FirebaseUser,
+  onAuthStateChanged
 } from 'firebase/auth'
 import { auth } from '../config/firebase'
 import type { LoginCredentials } from '../types/auth'
+import type { UserProfile } from './userService'
 
 export class AuthService {
   private googleProvider: GoogleAuthProvider
@@ -154,9 +156,42 @@ export class AuthService {
     try {
       return await user.getIdToken()
     } catch (error) {
-      console.error(' Failed to get ID token:', error)
+      console.error('❌ Failed to get ID token:', error)
       return null
     }
+  }
+
+  /**
+   * Set up auth state listener with user profile management
+   */
+  onAuthStateChanged(callback: (user: FirebaseUser | null, profile?: UserProfile | null) => void) {
+    return onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          // Import userService here to avoid circular dependency
+          const { userService } = await import('./userService')
+          
+          // Create or update user profile
+          const profile = await userService.createOrUpdateUserProfile({
+            id: user.uid,
+            uid: user.uid,
+            email: user.email!,
+            displayName: user.displayName,
+            photoURL: user.photoURL,
+            emailVerified: user.emailVerified
+          } as any)
+          
+          console.log('✅ User authenticated and profile updated:', user.email)
+          callback(user, profile)
+        } catch (error) {
+          console.error('❌ Error managing user profile:', error)
+          callback(user, null)
+        }
+      } else {
+        console.log('🚪 User signed out')
+        callback(null, null)
+      }
+    })
   }
 
   /**

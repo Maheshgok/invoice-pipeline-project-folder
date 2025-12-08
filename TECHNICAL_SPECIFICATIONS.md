@@ -1,7 +1,15 @@
 # Technical Specifications - Invoice Processing Pipeline
 
 ## Project Overview
-A comprehensive invoice processing system with AI-powered OCR, real-time data synchronization, and automated journal entry generation for Indian business accounting workflows.
+A comprehensive **multi-tenant** invoice processing system with AI-powered OCR, real-time data synchronization, and automated journal entry generation for Indian business accounting workflows. Features organization-based data isolation, role-based access control, and enterprise-ready user management.
+
+### 🔐 **Multi-Tenant Architecture Features**
+- **Organization-based data isolation**: Each organization's data is completely segregated
+- **Role-based access control**: Admin, user, and viewer roles with granular permissions
+- **User management system**: Admin-controlled user provisioning and permission management
+- **Usage limits and quotas**: Per-user and per-organization resource limits
+- **Audit logging**: Complete activity tracking for compliance and security
+- **Scalable processing**: Single queue processor serves all organizations with proper isolation
 
 ---
 
@@ -9,7 +17,15 @@ A comprehensive invoice processing system with AI-powered OCR, real-time data sy
 
 ### High-Level Architecture
 ```
-Frontend (React/Vite) → Firebase Auth → Cloud Run APIs → Cloud Storage → OpenAI Vision API → Firestore
+Frontend (React/Vite) → Firebase Auth → User Service → Organization Service → Cloud Run APIs → Cloud Storage → OpenAI Vision API → Firestore (Per-Org Collections)
+```
+
+### Multi-Tenant Data Flow
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│    User     │────▶│ Organization│────▶│   Invoice   │────▶│ Org-Isolated│
+│ (Any Org)   │     │ Validation  │     │ Processing  │     │    Data     │
+└─────────────┘     └─────────────┘     └─────────────┘     └─────────────┘
 ```
 
 ### Data Flow Diagram (DFD)
@@ -253,18 +269,26 @@ httpx>=0.24.0
 src/
 ├── components/
 │   ├── auth/          # Authentication components
+│   ├── admin/         # Admin dashboard and user management
+│   ├── organization/  # Organization management components
 │   ├── upload/        # File upload components  
 │   ├── results/       # Results display components
 │   └── common/        # Shared UI components
 ├── hooks/             # Custom React hooks
-│   ├── useAuth.ts     # Authentication hook
-│   ├── useMultiUpload.ts  # File upload hook
-│   └── useFirestore.ts    # Firestore real-time hook
+│   ├── useAuth.ts     # Enhanced authentication hook with permissions
+│   ├── useMultiUpload.ts  # File upload hook with user validation
+│   ├── useFirestore.ts    # Firestore real-time hook with org isolation
+│   └── useOrganization.ts # Organization management hook
 ├── services/          # API and service layers
 │   ├── auth.ts        # Authentication service
-│   ├── firestore.ts   # Firestore service
-│   └── upload.ts      # Upload service
+│   ├── userService.ts # User management and permissions
+│   ├── organizationService.ts # Organization management
+│   ├── firestore.ts   # Firestore service with data isolation
+│   └── upload.ts      # Upload service with quota checks
 └── types/             # TypeScript type definitions
+    ├── auth.ts        # Enhanced auth types
+    ├── user.ts        # User profile and permissions
+    └── organization.ts # Organization structure
 ```
 
 **Active Frontend**: `invoice-app-v2` contains the full-featured implementation with all documented capabilities including file dropzone, state management, and UI enhancements.
@@ -290,23 +314,40 @@ Cloud Run Services:
 
 ## Security Configuration
 
-### Firestore Security Rules
+### Firestore Security Rules (Multi-Tenant)
 ```javascript
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Allow authenticated users to read/write their own invoice results
-    match /invoice_results/{document} {
+    // User profiles - users can only access their own profile
+    match /users/{userId} {
       allow read, write: if request.auth != null 
-        && request.auth.token.email_verified
-        && resource.data.user_email == request.auth.token.email;
+        && request.auth.uid == userId;
     }
     
-    // Allow authenticated users to create new invoice results
-    match /invoice_results/{document} {
-      allow create: if request.auth != null 
+    // Organization data - isolated by organization ID
+    match /organizations/{orgId}/invoice_results/{document} {
+      allow read, write: if request.auth != null 
         && request.auth.token.email_verified
-        && request.resource.data.user_email == request.auth.token.email;
+        && (resource.data.userUID == request.auth.uid || 
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions.canViewOthersData == true)
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == orgId;
+    }
+    
+    // User-specific data within organization
+    match /organizations/{orgId}/users/{userId}/invoice_results/{document} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == userId
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == orgId;
+    }
+    
+    // Admin-only access to organization management
+    match /organizations/{orgId} {
+      allow read: if request.auth != null 
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == orgId;
+      allow write: if request.auth != null 
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.permissions.canManageUsers == true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.organization == orgId;
     }
   }
 }
@@ -498,39 +539,152 @@ gcloud run deploy queue-processor \
 | Endpoint | Method | Purpose | Authentication |
 |----------|--------|---------|----------------|
 | `/health` | GET | Health check | None |
-| `/upload` | POST | File upload to Cloud Storage | Firebase Token |
-| `/signed-url` | POST | Generate signed upload URL | Firebase Token |
-| `/process-queue` | POST | Trigger queue processing | Firebase Token |
+| `/upload` | POST | File upload to Cloud Storage | Firebase Token + Org Validation |
+| `/signed-url` | POST | Generate signed upload URL | Firebase Token + Org Validation |
+| `/process-queue` | POST | Trigger queue processing | Firebase Token + Org Validation |
 
 ### Queue Processor Service  
 | Endpoint | Method | Purpose | Authentication |
 |----------|--------|---------|----------------|
 | `/health` | GET | Health check | None |
-| `/process-file` | POST | Process uploaded file | Firebase Token |
-| `/queue-status` | GET | Get processing status | Firebase Token |
+| `/process-file` | POST | Process uploaded file | Firebase Token + Org Validation |
+| `/queue-status` | GET | Get processing status | Firebase Token + Org Validation |
+
+### User Management Service
+| Endpoint | Method | Purpose | Authentication |
+|----------|--------|---------|----------------|
+| `/users` | GET | List organization users | Admin Token |
+| `/users` | POST | Create new user | Admin Token |
+| `/users/{id}` | PUT | Update user permissions | Admin Token |
+| `/users/{id}` | DELETE | Deactivate user | Admin Token |
+| `/organizations` | GET | Get organization details | User Token |
+| `/organizations` | PUT | Update organization settings | Admin Token |
+| `/usage-stats` | GET | Get usage statistics | Admin Token |
+
+### Access Control Headers
+**Required Headers for All Authenticated Requests:**
+- `Authorization: Bearer {firebase_token}`
+- `X-User-UID: {user_uid}`
+- `X-Organization-ID: {org_id}` (auto-extracted from user profile)
 
 ---
 
 ## Data Models
 
-### Invoice Result Document (Firestore)
+### User Profile Document (Firestore)
+```typescript
+interface UserProfile {
+  uid: string;
+  email: string;
+  displayName: string | null;
+  photoURL: string | null;
+  role: 'admin' | 'user' | 'viewer';
+  organization: string; // Organization ID
+  department?: string;
+  permissions: UserPermissions;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  lastLoginAt: Timestamp;
+  isActive: boolean;
+  preferences: UserPreferences;
+  usage: UserUsageStats;
+}
+
+interface UserPermissions {
+  canUpload: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canDownload: boolean;
+  canViewOthersData: boolean; // Organization-wide data access
+  canManageUsers: boolean; // Admin privilege
+  maxFilesPerDay: number;
+  maxFileSize: number; // in MB
+}
+
+interface UserPreferences {
+  theme: 'light' | 'dark' | 'auto';
+  language: string;
+  timezone: string;
+  emailNotifications: boolean;
+  autoSave: boolean;
+  defaultCurrency: string;
+}
+
+interface UserUsageStats {
+  totalUploads: number;
+  totalProcessed: number;
+  storageUsed: number; // in MB
+  lastUpload?: Timestamp;
+  uploadsToday: number;
+  uploadsThisMonth: number;
+}
+```
+
+### Organization Document (Firestore)
+```typescript
+interface Organization {
+  id: string;
+  name: string;
+  domain?: string; // Email domain for auto-assignment
+  settings: OrganizationSettings;
+  subscription: SubscriptionDetails;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  isActive: boolean;
+  adminUsers: string[]; // Array of admin user UIDs
+  totalUsers: number;
+  usage: OrganizationUsage;
+}
+
+interface OrganizationSettings {
+  allowSelfRegistration: boolean;
+  requireEmailVerification: boolean;
+  dataRetentionDays: number;
+  maxUsersAllowed: number;
+  defaultUserRole: 'user' | 'viewer';
+  defaultPermissions: UserPermissions;
+}
+
+interface SubscriptionDetails {
+  plan: 'free' | 'pro' | 'enterprise';
+  status: 'active' | 'suspended' | 'cancelled';
+  billingEmail: string;
+  nextBillingDate?: Timestamp;
+  usage: {
+    monthlyUploads: number;
+    storageUsed: number;
+    apiCalls: number;
+  };
+  limits: {
+    maxUploadsPerMonth: number;
+    maxStorageGB: number;
+    maxApiCalls: number;
+  };
+}
+```
+
+### Enhanced Invoice Result Document (Firestore)
 ```typescript
 interface InvoiceResult {
   id: string;
-  user_email: string;
-  file_name: string;
-  file_url: string;
-  upload_timestamp: Timestamp;
-  processed_timestamp?: Timestamp;
-  processing_status: 'pending' | 'processing' | 'completed' | 'failed';
-  error_message?: string;
+  userEmail: string;
+  userUID: string; // Enhanced user identification
+  organization: string; // Organization ID for data isolation
+  department?: string;
+  fileName: string;
+  fileUrl: string;
+  uploadTimestamp: Timestamp;
+  processedTimestamp?: Timestamp;
+  processingStatus: 'pending' | 'processing' | 'completed' | 'failed';
+  errorMessage?: string;
+  visibility: 'private' | 'organization' | 'public'; // Data sharing level
   
   // Extracted Invoice Data
-  vendor_name: string;
-  invoice_number: string; 
-  invoice_date: string;
-  due_date: string;
-  total_amount: number;
+  vendorName: string;
+  invoiceNumber: string; 
+  invoiceDate: string;
+  dueDate: string;
+  totalAmount: number;
   currency: string;
   gstin: string;
   pan: string;
@@ -539,18 +693,26 @@ interface InvoiceResult {
   items: InvoiceItem[];
   
   // Tax Details
-  tax_details: {
+  taxDetails: {
     cgst: number;
     sgst: number; 
     igst: number;
-    total_gst: number;
-    taxable_amount: number;
+    totalGst: number;
+    taxableAmount: number;
   };
   
   // Generated Journal Entries
-  suggested_journal_entries: JournalEntry[];
-  double_entry_bookkeeping: {
-    journal_entry_set: JournalEntrySet[];
+  suggestedJournalEntries: JournalEntry[];
+  doubleEntryBookkeeping: {
+    journalEntrySet: JournalEntrySet[];
+  };
+  
+  // Audit Trail
+  auditLog: {
+    createdBy: string;
+    modifiedBy?: string;
+    modifiedAt?: Timestamp;
+    actions: AuditAction[];
   };
 }
 ```
@@ -610,20 +772,29 @@ python main.py
 
 ## Future Enhancements
 
+### Multi-Tenant Features (Planned)
+1. **Self-Service Organization Management**: Full admin portal for organization settings
+2. **Advanced Role-Based Access Control**: Custom role creation and permission matrices
+3. **Organization Analytics**: Usage dashboards, cost analysis, and performance metrics
+4. **Inter-Organization Data Sharing**: Controlled data sharing between partner organizations
+5. **Compliance & Audit Reporting**: SOC 2, GDPR compliance features and audit trails
+6. **White-Label Solutions**: Custom branding and domain configuration per organization
+
 ### Planned Features
-1. **Batch Processing**: Process multiple invoices simultaneously
-2. **Approval Workflow**: Multi-step invoice approval process
-3. **ERP Integration**: Connect with popular accounting software
-4. **Advanced Analytics**: Invoice processing insights and reporting
-5. **Mobile Application**: Native iOS/Android apps
-6. **Multi-language Support**: Support for regional Indian languages
+1. **Batch Processing**: Process multiple invoices simultaneously with organization quotas
+2. **Approval Workflow**: Multi-step invoice approval process with org-specific rules
+3. **ERP Integration**: Connect with popular accounting software (org-specific configurations)
+4. **Advanced Analytics**: Invoice processing insights per organization and user
+5. **Mobile Application**: Native iOS/Android apps with organization switching
+6. **Multi-language Support**: Support for regional Indian languages per organization
 
 ### Technical Improvements
-1. **Caching Layer**: Redis cache for frequently accessed data
-2. **Message Queue**: Cloud Pub/Sub for reliable async processing  
-3. **CDN Optimization**: CloudFlare integration for global performance
-4. **Database Optimization**: Firestore compound indices optimization
-5. **Monitoring**: Comprehensive APM with Datadog or New Relic
+1. **Dedicated Organization Processors**: Large organizations get dedicated processing instances
+2. **Organization-Specific Caching**: Redis cache with org-based data isolation
+3. **Advanced Message Queue**: Cloud Pub/Sub with organization-based topics
+4. **CDN Optimization**: Organization-specific CloudFlare configurations
+5. **Database Sharding**: Automatic Firestore collection distribution by organization
+6. **Monitoring Per Organization**: Separate APM dashboards for each organization
 
 ---
 
@@ -697,8 +868,92 @@ invoice-pipeline-project-folder/
 
 ---
 
+## 🏢 Multi-Tenant Architecture (Production-Ready)
+
+### Organization Isolation Strategy
+
+**Data Isolation Method**: Firestore collection-based isolation
+```
+organizations/
+├── {org-id-1}/
+│   ├── users/
+│   │   └── {user-uid}/
+│   │       └── invoice_results/
+│   ├── settings/
+│   └── analytics/
+├── {org-id-2}/
+│   ├── users/
+│   │   └── {user-uid}/
+│   │       └── invoice_results/
+│   ├── settings/
+│   └── analytics/
+└── ...
+```
+
+### Access Control Matrix
+
+| Role | Own Data | Org Data | User Management | Org Settings | Cross-Org Access |
+|------|----------|----------|-----------------|--------------|------------------|
+| **Viewer** | Read Only | ❌ | ❌ | ❌ | ❌ |
+| **User** | Read/Write | ❌ | ❌ | ❌ | ❌ |
+| **Admin** | Read/Write | Read/Write | ✅ | ✅ | ❌ |
+| **Super Admin** | Read/Write | Read/Write | ✅ | ✅ | ✅ (System Only) |
+
+### User Provisioning Workflow
+
+```mermaid
+graph TD
+    A[Admin Requests New User] --> B[Email Sent to System Admin]
+    B --> C[System Admin Reviews Request]
+    C --> D{Approve?}
+    D -->|Yes| E[Create User Account]
+    D -->|No| F[Notify Admin of Rejection]
+    E --> G[Assign to Organization]
+    G --> H[Set Default Permissions]
+    H --> I[Send Welcome Email]
+    I --> J[User Can Login]
+    F --> K[End Process]
+    J --> K
+```
+
+### Shared Queue Processor Design
+
+**Single Processor for All Organizations:**
+- ✅ Cost-efficient for small-medium organizations
+- ✅ Automatic load balancing across organizations
+- ✅ Shared infrastructure maintenance
+- ✅ Data isolation maintained through organization IDs
+
+**Future: Dedicated Processors**
+- 🔄 Large organizations (>1000 users) get dedicated instances
+- 🔄 SLA guarantees and priority processing
+- 🔄 Custom processing configurations per organization
+
+### Security Considerations
+
+1. **Data Isolation**: Complete Firestore-level separation
+2. **Authentication**: Firebase Auth with organization validation
+3. **Authorization**: Role-based permissions with organization scope
+4. **Audit Logging**: All actions tracked with user and organization context
+5. **Compliance**: GDPR, SOC 2 ready with organization-level controls
+
+---
+
 ## Conclusion
 
-This invoice processing pipeline represents a modern, scalable solution built on proven cloud technologies. The architecture prioritizes real-time user experience, security, and cost-effectiveness while maintaining flexibility for future enhancements.
+This invoice processing pipeline represents a modern, scalable **multi-tenant** solution built on proven cloud technologies. The architecture prioritizes real-time user experience, organization-level security, and cost-effectiveness while maintaining complete data isolation between organizations.
 
-The system successfully combines cutting-edge AI capabilities with robust cloud infrastructure to deliver a production-ready invoice processing solution tailored for Indian business requirements.
+The system successfully combines cutting-edge AI capabilities with robust cloud infrastructure to deliver a production-ready, enterprise-grade invoice processing solution tailored for Indian business requirements with **full multi-tenant support**.
+
+### 🎯 Production Readiness Checklist
+
+✅ **Multi-Tenant Data Isolation**: Organization-based Firestore collections  
+✅ **Role-Based Access Control**: Admin, user, viewer roles with granular permissions  
+✅ **User Management System**: Admin-controlled provisioning and permission management  
+✅ **Usage Limits & Quotas**: Per-user and per-organization resource controls  
+✅ **Audit Logging**: Complete activity tracking for compliance  
+✅ **Scalable Processing**: Single queue processor with organization isolation  
+🔄 **Self-Service Admin Portal**: Planned for Phase 2  
+🔄 **Inter-Organization Features**: Planned for enterprise customers  
+
+The system is **production-ready for multi-tenant deployment** with proper organization isolation and user access controls.
