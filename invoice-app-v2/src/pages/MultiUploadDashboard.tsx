@@ -1048,8 +1048,6 @@ const MultiUploadDashboard: React.FC = () => {
           )}
         </div>
       </div>
-        </>
-      )}
     </div>
   )
 }
