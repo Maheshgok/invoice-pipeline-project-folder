@@ -49,10 +49,7 @@ class RealtimeFirestoreService {
   /**
    * Listen to user's active results with organization-based data isolation
    */
-  listenToActiveResults(
-    onUpdate: (results: InvoiceProcessingResult[]) => void,
-    onError: (error: Error) => void
-  ) {
+  listenToActiveResults(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
     if (!user?.uid) {
       onError(new Error('User not authenticated'))
@@ -67,10 +64,7 @@ class RealtimeFirestoreService {
   /**
    * Setup organization-aware data listener
    */
-  private async setupOrganizationAwareListener(
-    onUpdate: (results: InvoiceProcessingResult[]) => void,
-    onError: (error: Error) => void
-  ) {
+  private async setupOrganizationAwareListener(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     try {
       const user = authService.getCurrentUser()
       if (!user?.uid) {
@@ -150,16 +144,12 @@ class RealtimeFirestoreService {
       onError(error as Error)
     }
   }
-  }
 
   /**
    * OPTIMIZED: Listen to recently displayed results (separate query)
    * Only loads when user explicitly wants to see recent history
    */
-  listenToRecentResults(
-    onUpdate: (results: InvoiceProcessingResult[]) => void,
-    onError: (error: Error) => void
-  ) {
+  listenToRecentResults(onUpdate, onError) {
     const user = authService.getCurrentUser()
     if (!user?.email) {
       onError(new Error('User not authenticated'))
@@ -204,10 +194,7 @@ class RealtimeFirestoreService {
    * Real-time listener for ALL new invoice results for current user
    * Automatically pushes updates when new documents are added/modified
    */
-  listenToAllUserResults(
-    onUpdate: (results: InvoiceProcessingResult[]) => void,
-    onError: (error: Error) => void
-  ) {
+  listenToAllUserResults(onUpdate, onError) {
     const user = authService.getCurrentUser()
     if (!user) {
       console.log('❌ No authenticated user for Firestore listener')
@@ -467,7 +454,7 @@ class RealtimeFirestoreService {
    * Track specific job IDs for targeted updates
    * This allows monitoring specific uploads while still getting all user data
    */
-  trackJobIds(jobIds: string[]) {
+  trackJobIds(jobIds: string[]): void {
     jobIds.forEach(jobId => this.activeJobIds.add(jobId))
     console.log('📌 Tracking job IDs:', Array.from(this.activeJobIds))
   }
@@ -485,11 +472,7 @@ class RealtimeFirestoreService {
    * Real-time listener for specific job IDs only
    * More efficient when you only want to track specific uploads
    */
-  listenToSpecificJobs(
-    jobIds: string[],
-    onUpdate: (results: InvoiceProcessingResult[]) => void,
-    onError: (error: Error) => void
-  ) {
+  listenToSpecificJobs(jobIds, onUpdate, onError) {
     const user = authService.getCurrentUser()
     if (!user) {
       onError(new Error('User not authenticated'))
@@ -563,7 +546,7 @@ class RealtimeFirestoreService {
   /**
    * Extract journal entries from results
    */
-  extractJournalEntriesFromResults(results: InvoiceProcessingResult[]) {
+  extractJournalEntriesFromResults(results: InvoiceProcessingResult[]): any[] {
     const entries: any[] = []
     
     console.log('🔍 Extracting journal entries from', results.length, 'results')
@@ -715,7 +698,7 @@ class RealtimeFirestoreService {
    * Mark results as displayed to prevent future notifications
    * This creates a communication channel back to the backend
    */
-  async markAsDisplayed(jobIds: string[]) {
+  async markAsDisplayed(jobIds: string[]): Promise<void> {
     const user = authService.getCurrentUser()
     if (!user?.email) {
       console.error('❌ No authenticated user for marking displayed status')
@@ -769,7 +752,7 @@ class RealtimeFirestoreService {
   /**
    * Clean up all active listeners
    */
-  cleanup() {
+  cleanup(): void {
     this.unsubscribers.forEach(unsubscribe => {
       try {
         unsubscribe()
