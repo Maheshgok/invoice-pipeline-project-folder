@@ -59,6 +59,17 @@ CORS(app,
          }
      })
 
+# Add explicit OPTIONS handler for preflight requests
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = jsonify({})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        response.headers['Access-Control-Max-Age'] = '3600'
+        return response
+
 def verify_auth_token(auth_header):
     """Verify Firebase ID token and return user email"""
     if not auth_header or not auth_header.startswith('Bearer '):
@@ -78,13 +89,20 @@ def verify_auth_token(auth_header):
         logger.error(f"Firebase token verification failed: {e}")
         raise ValueError(f"Token verification failed: {e}")
 
-@app.route('/upload_invoice', methods=['POST'])
+@app.route('/upload_invoice', methods=['POST', 'OPTIONS'])
 def upload_file():
     """
     Direct file upload endpoint.
     Accepts multipart/form-data with a file field.
     Returns a token and file location information.
     """
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        return response
+    
     logger.info("File upload request received")
     
     # Verify authentication first
@@ -500,11 +518,18 @@ def get_queue_stats():
         logger.error(f"Error getting queue stats: {str(e)}")
         return jsonify({"error": f"Failed to get queue stats: {str(e)}"}), 500
 
-@app.route('/signed-url', methods=['GET'])
+@app.route('/signed-url', methods=['GET', 'OPTIONS'])
 def generate_signed_url():
     """
     Generate a signed URL for viewing uploaded documents
     """
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        return response
+    
     logger.info("Signed URL request received")
     
     # Verify authentication first
@@ -563,9 +588,16 @@ def generate_signed_url():
         logger.error(f"Error generating signed URL: {str(e)}")
         return jsonify({"error": f"Failed to generate signed URL: {str(e)}"}), 500
 
-@app.route('/health', methods=['GET'])
+@app.route('/health', methods=['GET', 'OPTIONS'])
 def health_check():
     """Health check endpoint - standard Cloud Run health check"""
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        return response
+    
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
