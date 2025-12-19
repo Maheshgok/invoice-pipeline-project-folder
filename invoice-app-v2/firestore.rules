@@ -14,13 +14,12 @@ service cloud.firestore {
         && request.auth.uid == userId;
     }
     
-    // Organizations - users can read their organization
+    // Organizations - allow reading for organization discovery during signup
     match /organizations/{orgId} {
-      allow read: if request.auth != null 
-        && (request.auth.uid in resource.data.adminIds 
-            || request.auth.token.email in resource.data.allowedEmails);
+      allow read: if request.auth != null;
       allow write: if request.auth != null 
-        && request.auth.uid in resource.data.adminIds;
+        && (request.auth.uid in resource.data.adminIds 
+            || request.auth.uid == resource.data.ownerId);
       // Allow creation during signup process
       allow create: if request.auth != null;
     }

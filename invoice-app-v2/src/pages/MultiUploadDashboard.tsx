@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getApiUrl } from '../config/api'
 // Import the new simplified hook
@@ -8,6 +8,7 @@ import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 import { authService } from '../services/auth'
 import { userService } from '../services/userService'
 import AdminDashboard from '../components/admin/AdminDashboard'
+import OrganizationSetup from '../components/organization/OrganizationSetup'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize } = useAuth()
@@ -23,7 +24,8 @@ const MultiUploadDashboard: React.FC = () => {
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const [isDragging, setIsDragging] = useState(false)
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
-  const [showAdminDashboard, setShowAdminDashboard] = useState(false)
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'admin' | 'organization'>('dashboard')
+  const [showOrganizationSetup, setShowOrganizationSetup] = useState(false)
   
   // Check permissions
   const canUpload = hasPermission('canUpload')
@@ -415,16 +417,6 @@ const MultiUploadDashboard: React.FC = () => {
             </div>
           </div>
           
-          {isOrgAdmin && (
-            <button
-              onClick={() => setShowAdminDashboard(!showAdminDashboard)}
-              className="flex items-center space-x-2 px-3 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors"
-            >
-              <Settings className="w-4 h-4" />
-              <span>{showAdminDashboard ? 'Dashboard' : 'Admin'}</span>
-            </button>
-          )}
-          
           <button
             onClick={handleLogout}
             className="flex items-center space-x-2 px-4 py-2 text-sm font-medium text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
@@ -434,6 +426,89 @@ const MultiUploadDashboard: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Tab Navigation */}
+      <div className="mb-6">
+        <nav className="flex space-x-8 border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('dashboard')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'dashboard'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Upload className="w-4 h-4" />
+              <span>Invoice Processing</span>
+            </div>
+          </button>
+          
+          {!userProfile?.organizationId && (
+            <button
+              onClick={() => setActiveTab('organization')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'organization'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Building2 className="w-4 h-4" />
+                <span>Create Organization</span>
+              </div>
+            </button>
+          )}
+          
+          {isOrgAdmin && (
+            <button
+              onClick={() => setActiveTab('admin')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'admin'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Settings className="w-4 h-4" />
+                <span>Admin Dashboard</span>
+              </div>
+            </button>
+          )}
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'organization' && !userProfile?.organizationId && (
+        <OrganizationSetup />
+      )}
+      
+      {activeTab === 'admin' && isOrgAdmin && (
+        <AdminDashboard />
+      )}
+      
+      {activeTab === 'dashboard' && (
+        <>
+          {/* Show organization setup notice if user has no organization */}
+          {!userProfile?.organizationId && (
+            <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="flex items-start">
+                <Building2 className="w-5 h-5 text-blue-600 mt-0.5 mr-3" />
+                <div>
+                  <h3 className="font-medium text-blue-900">Setup Required</h3>
+                  <p className="text-blue-800 text-sm mt-1">
+                    You need to create or join an organization before you can start processing invoices.
+                  </p>
+                  <button
+                    onClick={() => setActiveTab('organization')}
+                    className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-800"
+                  >
+                    Create Organization →
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
       {/* Top Section - Upload Area and Progress */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
@@ -1049,6 +1124,8 @@ const MultiUploadDashboard: React.FC = () => {
           )}
         </div>
       </div>
+        </>
+      )}
     </div>
   )
 }

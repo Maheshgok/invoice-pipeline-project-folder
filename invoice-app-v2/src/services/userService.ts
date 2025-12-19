@@ -235,8 +235,18 @@ export class UserService {
       return await this.createDefaultOrganization(email)
     } catch (error) {
       console.error('❌ Error determining organization:', error)
-      // Fallback to creating default organization
-      return await this.createDefaultOrganization(email)
+      // Fallback: Create a simple organization ID based on email domain
+      const domain = email.split('@')[1].replace(/\./g, '-')
+      const fallbackOrgId = `org-${domain}-${Date.now()}`
+      console.log(`🔄 Using fallback organization ID: ${fallbackOrgId}`)
+      
+      try {
+        // Try to create the fallback organization
+        return await this.createDefaultOrganization(email)
+      } catch (createError) {
+        console.error('❌ Failed to create organization, using fallback ID:', createError)
+        return fallbackOrgId
+      }
     }
   }
 
