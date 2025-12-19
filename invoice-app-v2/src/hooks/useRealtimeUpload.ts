@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
 import { realtimeFirestoreService } from '../services/firestore-realtime'
 import { archiveService } from '../services/archive'
+import { getApiUrl } from '../config/api'
 import type { InvoiceProcessingResult } from '../services/firestore-realtime'
 
 interface UploadedFile {
@@ -195,7 +196,7 @@ export const useRealtimeUpload = () => {
 
       // Step 2: Health check
       try {
-        const healthCheck = await fetch('https://initial-api-812016027146.asia-south1.run.app/health', {
+        const healthCheck = await fetch(getApiUrl.health(), {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${idToken}` }
         })
@@ -213,7 +214,7 @@ export const useRealtimeUpload = () => {
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
 
-      const uploadResponse = await fetch('https://initial-api-812016027146.asia-south1.run.app/upload_invoice', {
+      const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`

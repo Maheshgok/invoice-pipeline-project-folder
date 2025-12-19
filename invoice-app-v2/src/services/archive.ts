@@ -6,8 +6,7 @@
 
 import { authService } from './auth'
 import { userService } from './userService'
-
-const ARCHIVE_SERVICE_URL = 'https://archive-manager-812016027146.asia-south1.run.app'
+import { getApiUrl } from '../config/api'
 
 export interface ArchiveResponse {
   message: string
@@ -58,7 +57,7 @@ class ArchiveService {
         'Content-Type': headers['Content-Type'] 
       })
       
-      const response = await fetch(`${ARCHIVE_SERVICE_URL}/archive-completed`, {
+      const response = await fetch(getApiUrl.archiveCompleted(), {
         method: 'POST',
         headers
       })
@@ -96,7 +95,7 @@ class ArchiveService {
     try {
       const headers = await this.getAuthHeaders()
       
-      const response = await fetch(`${ARCHIVE_SERVICE_URL}/archive-displayed`, {
+      const response = await fetch(getApiUrl.archiveDisplayed(), {
         method: 'POST',
         headers
       })
@@ -122,7 +121,7 @@ class ArchiveService {
     try {
       const headers = await this.getAuthHeaders()
       
-      const response = await fetch(`${ARCHIVE_SERVICE_URL}/archive-all-old`, {
+      const response = await fetch(getApiUrl.archiveAllOld(), {
         method: 'POST',
         headers,
         body: JSON.stringify({ days_old: daysOld })
@@ -158,7 +157,7 @@ class ArchiveService {
       if (options.page) params.append('page', options.page.toString())
       if (options.daysBack) params.append('days_back', options.daysBack.toString())
 
-      const url = `${ARCHIVE_SERVICE_URL}/get-archived${params.toString() ? '?' + params.toString() : ''}`
+      const url = `${getApiUrl.getArchived()}${params.toString() ? '?' + params.toString() : ''}`
       
       const response = await fetch(url, {
         method: 'GET',
@@ -184,7 +183,7 @@ class ArchiveService {
    */
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${ARCHIVE_SERVICE_URL}/health`, {
+      const response = await fetch(getApiUrl.archiveHealth(), {
         method: 'GET'
       })
 

@@ -8,6 +8,7 @@ import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
 import { userService } from '../services/userService'
 import { archiveService } from '../services/archive'
+import { getApiUrl } from '../config/api'
 import { BatchManager, type BatchFile, type BatchState } from '../services/batch-manager'
 import { FirestoreSyncManager, type JournalEntry } from '../services/firestore-sync-manager'
 
@@ -114,7 +115,7 @@ export const useMultiUploadSimplified = () => {
       batchManager.current.updateFile(fileId, { status: 'uploading', progress: 20 })
 
       // Health check
-      const healthCheck = await fetch('https://initial-api-812016027146.asia-south1.run.app/health', {
+      const healthCheck = await fetch(getApiUrl.health(), {
         method: 'GET',
         headers: { 'Authorization': `Bearer ${idToken}` }
       })
@@ -127,7 +128,7 @@ export const useMultiUploadSimplified = () => {
       const formData = new FormData()
       formData.append('file', file)
 
-      const uploadResponse = await fetch('https://initial-api-812016027146.asia-south1.run.app/upload_invoice', {
+      const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${idToken}` },
         body: formData

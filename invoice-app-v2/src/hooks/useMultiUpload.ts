@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
 import { firestoreService, InvoiceProcessingResult, JournalEntryData } from '../services/firestore'
+import { getApiUrl } from '../config/api'
 
 interface UploadedFile {
   id: string
@@ -126,7 +127,7 @@ export const useMultiUpload = () => {
 
       // Step 2: First check if Cloud Run service is healthy
       try {
-        const healthCheck = await fetch('https://initial-api-812016027146.asia-south1.run.app/health', {
+        const healthCheck = await fetch(getApiUrl.health(), {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${idToken}` }
         })
@@ -144,7 +145,7 @@ export const useMultiUpload = () => {
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
 
-      const uploadResponse = await fetch('https://initial-api-812016027146.asia-south1.run.app/upload_invoice', {
+      const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${idToken}`

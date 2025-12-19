@@ -2,6 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
 import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { getApiUrl } from '../config/api'
 // Import the new simplified hook
 import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 import { authService } from '../services/auth'
@@ -118,7 +119,7 @@ const MultiUploadDashboard: React.FC = () => {
         
         // Call the signed URL endpoint
         const response = await fetch(
-          `https://initial-api-812016027146.asia-south1.run.app/signed-url?path=${encodeURIComponent(result.gcsPath)}`,
+          getApiUrl.signedUrl(encodeURIComponent(result.gcsPath)),
           {
             method: 'GET',
             headers: {
