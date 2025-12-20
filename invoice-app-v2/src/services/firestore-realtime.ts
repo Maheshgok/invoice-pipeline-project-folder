@@ -86,6 +86,14 @@ class RealtimeFirestoreService {
         return
       }
 
+      // For non-admin users, prefer user-isolated to avoid permission issues
+      const isOrgAdmin = userProfile.permissions?.canViewOrgData || userProfile.organizationRole === 'admin'
+      if (!isOrgAdmin) {
+        console.log('👤 Regular user, using user-isolated collection to avoid permission issues')
+        this.setupUserIsolatedListener(user, onUpdate, onError)
+        return
+      }
+
       console.log('🏢 Data access scope for user:', {
         uid: userProfile.uid,
         organizationId: userProfile.organizationId,
@@ -135,7 +143,30 @@ class RealtimeFirestoreService {
           
           onUpdate(filteredResults)
         },
-        onError
+        (error) => {
+          console.error('❌ Organization listener error:', error)
+          
+          // Check if it's a permissions error
+          if (error.code === 'permission-denied' || error.message.includes('Missing or insufficient permissions')) {
+            console.log('🔄 Permission denied for organization data, falling back to user-isolated...')
+            
+            // Clean up current listener
+            if (unsubscribe) {
+              unsubscribe()
+            }
+            
+            // Fallback to user-isolated collection
+            const currentUser = authService.getCurrentUser()
+            if (currentUser?.uid) {
+              this.setupUserIsolatedListener(currentUser, onUpdate, onError)
+            } else {
+              onError(error)
+            }
+          } else {
+            // For other errors, pass through
+            onError(error)
+          }
+        }
       )
 
       this.unsubscribers.push(unsubscribe)
@@ -158,6 +189,9 @@ class RealtimeFirestoreService {
    */
   private setupUserIsolatedListener(user: any, onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     console.log('🏠 Setting up user-isolated listener for UID:', user.uid)
+    
+    // Clean up any existing listeners to prevent duplicates
+    this.cleanup()
     
     const userCollectionPath = `users/${user.uid}/invoice_results`
     
