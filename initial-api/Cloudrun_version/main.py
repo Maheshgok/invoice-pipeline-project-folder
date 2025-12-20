@@ -81,7 +81,6 @@ def after_request(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-Requested-With, Accept, Origin'
     return response
-        return response
 
 def verify_auth_token(auth_header):
     """Verify Firebase ID token and return user email"""
