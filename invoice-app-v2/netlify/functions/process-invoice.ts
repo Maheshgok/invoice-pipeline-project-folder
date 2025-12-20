@@ -46,13 +46,24 @@ if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && proce
 }
 
 export const handler: Handler = async (event, context) => {
-  // Set CORS headers
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
+  // Set CORS headers with origin validation
+  const origin = event.headers.origin || event.headers.Origin;
+  const allowedOrigins = [
+    'https://invoiceparse.netlify.app',
+    'https://profound-babka-8bbaa6.netlify.app', 
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ];
+  
+  const headers: any = {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Content-Type': 'application/json'
   };
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
 
   // Handle preflight requests
   if (event.httpMethod === 'OPTIONS') {

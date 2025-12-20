@@ -113,7 +113,10 @@ def upload_file():
     """
     if request.method == 'OPTIONS':
         response = jsonify({})
-        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        origin = request.headers.get('Origin')
+        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'POST, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
         return response
@@ -540,7 +543,10 @@ def generate_signed_url():
     """
     if request.method == 'OPTIONS':
         response = jsonify({})
-        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        origin = request.headers.get('Origin')
+        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
         return response
@@ -608,7 +614,10 @@ def health_check():
     """Health check endpoint - standard Cloud Run health check"""
     if request.method == 'OPTIONS':
         response = jsonify({})
-        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', '*')
+        origin = request.headers.get('Origin')
+        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
         response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
         return response

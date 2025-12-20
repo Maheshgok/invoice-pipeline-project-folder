@@ -23,12 +23,24 @@ if (!admin.apps.length) {
 }
 
 export const handler: Handler = async (event, context) => {
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
+  // Set CORS headers with origin validation
+  const origin = event.headers.origin || event.headers.Origin;
+  const allowedOrigins = [
+    'https://invoiceparse.netlify.app',
+    'https://profound-babka-8bbaa6.netlify.app',
+    'http://localhost:3000', 
+    'http://localhost:3001'
+  ];
+  
+  const headers: any = {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Content-Type': 'application/json'
   };
+  
+  if (origin && allowedOrigins.includes(origin)) {
+    headers['Access-Control-Allow-Origin'] = origin;
+  }
 
   if (event.httpMethod === 'OPTIONS') {
     return { statusCode: 200, headers, body: '' };
