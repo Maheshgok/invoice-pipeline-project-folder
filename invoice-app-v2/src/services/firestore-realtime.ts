@@ -102,6 +102,9 @@ class RealtimeFirestoreService {
         where('organizationId', '==', userProfile.organizationId),
         limit(200) // Higher limit since we'll filter client-side
       )
+
+      const unsubscribe = onSnapshot(
+        dataQuery,
         async (snapshot: QuerySnapshot<DocumentData>) => {
           const accessType = userProfile.permissions?.canViewOrgData ? 'organization' : 'user'
           console.log(`🔒 ${accessType} data snapshot:`, snapshot.docs.length, 'documents')
