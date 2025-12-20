@@ -1,6 +1,5 @@
 import { 
   collection, 
-  doc, 
   onSnapshot, 
   query, 
   where, 
@@ -62,7 +61,7 @@ class RealtimeFirestoreService {
   }
 
   /**
-   * Setup organization-aware data listener
+   * Setup organization-aware data listener with user-isolated fallback
    */
   private async setupOrganizationAwareListener(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     try {
@@ -75,14 +74,22 @@ class RealtimeFirestoreService {
       // Get user profile to determine data access scope
       const userProfile = await userService.getUserProfile()
       if (!userProfile) {
-        onError(new Error('User profile not found'))
+        console.log('⚠️  No user profile found, falling back to user-isolated data')
+        this.setupUserIsolatedListener(user, onUpdate, onError)
+        return
+      }
+
+      // Check if user has organization
+      if (!userProfile.organizationId) {
+        console.log('👤 No organization assigned, using user-isolated collection')
+        this.setupUserIsolatedListener(user, onUpdate, onError)
         return
       }
 
       console.log('🏢 Data access scope for user:', {
         uid: userProfile.uid,
         organizationId: userProfile.organizationId,
-        canViewOrgData: userProfile.permissions.canViewOrgData
+        canViewOrgData: userProfile.permissions?.canViewOrgData || false
       })
 
       // Use organization-scoped collection
@@ -90,7 +97,7 @@ class RealtimeFirestoreService {
       
       let dataQuery: any
       
-      if (userProfile.permissions.canViewOrgData) {
+      if (userProfile.permissions?.canViewOrgData) {
         // Admin can see all organization data
         console.log('📊 Admin access: viewing all organization data')
         dataQuery = query(
@@ -113,8 +120,8 @@ class RealtimeFirestoreService {
 
       const unsubscribe = onSnapshot(
         dataQuery,
-        async (snapshot) => {
-          const accessType = userProfile.permissions.canViewOrgData ? 'organization' : 'user'
+        async (snapshot: QuerySnapshot<DocumentData>) => {
+          const accessType = userProfile.permissions?.canViewOrgData ? 'organization' : 'user'
           console.log(`🔒 ${accessType} data snapshot:`, snapshot.docs.length, 'documents')
           
           // Additional permission check
@@ -141,15 +148,60 @@ class RealtimeFirestoreService {
       this.unsubscribers.push(unsubscribe)
     } catch (error) {
       console.error('❌ Error setting up organization listener:', error)
-      onError(error as Error)
+      console.log('🔄 Attempting fallback to user-isolated listener...')
+      
+      // Fallback to user-isolated collection on any error
+      const user = authService.getCurrentUser()
+      if (user?.uid) {
+        this.setupUserIsolatedListener(user, onUpdate, onError)
+      } else {
+        onError(error as Error)
+      }
     }
+  }
+
+  /**
+   * Setup user-isolated data listener (fallback for users without organization)
+   */
+  private setupUserIsolatedListener(user: any, onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
+    console.log('🏠 Setting up user-isolated listener for UID:', user.uid)
+    
+    const userCollectionPath = `users/${user.uid}/invoice_results`
+    
+    const userQuery = query(
+      collection(db, userCollectionPath),
+      where('userUID', '==', user.uid),
+      orderBy('createdAt', 'desc'),
+      limit(50)
+    )
+
+    const unsubscribe = onSnapshot(
+      userQuery,
+      (snapshot) => {
+        console.log('🏠 User-isolated data snapshot:', snapshot.docs.length, 'documents')
+        
+        const results = this.processUserIsolatedSnapshot(snapshot, user)
+        
+        // Cache results
+        results.forEach(result => {
+          if (result.jobId) {
+            this.activeResultsCache.set(result.jobId, result)
+          }
+        })
+        
+        onUpdate(results)
+      },
+      onError
+    )
+
+    this.unsubscribers.push(unsubscribe)
   }
 
   /**
    * OPTIMIZED: Listen to recently displayed results (separate query)
    * Only loads when user explicitly wants to see recent history
    */
-  listenToRecentResults(onUpdate, onError) {
+  listenToRecentResults(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
     if (!user?.email) {
       onError(new Error('User not authenticated'))
@@ -194,7 +246,7 @@ class RealtimeFirestoreService {
    * Real-time listener for ALL new invoice results for current user
    * Automatically pushes updates when new documents are added/modified
    */
-  listenToAllUserResults(onUpdate, onError) {
+  listenToAllUserResults(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
     if (!user) {
       console.log('❌ No authenticated user for Firestore listener')
@@ -265,7 +317,9 @@ class RealtimeFirestoreService {
                 createdAt: this.stringToTimestamp(data.created_at),
                 updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
                 displayedAt: data.displayed_at,
-                frontendStatus: data.frontend_status
+                frontendStatus: data.frontend_status,
+                userUID: data.user_uid || data.userUID || '',
+                visibility: 'private' as const
               }
               
               // Add metadata for notification filtering
@@ -325,7 +379,9 @@ class RealtimeFirestoreService {
           createdAt: this.stringToTimestamp(data.created_at),
           updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
           displayedAt: data.displayed_at,
-          frontendStatus: data.frontend_status
+          frontendStatus: data.frontend_status,
+          userUID: data.user_uid || data.userUID || '',
+          visibility: 'private' as const
         }
         
         results.push(result)
@@ -427,6 +483,95 @@ class RealtimeFirestoreService {
   }
 
   /**
+   * Process organization-scoped snapshot for users with organizations
+   */
+  private processOrganizationSnapshot(snapshot: QuerySnapshot<DocumentData>, userProfile: any): InvoiceProcessingResult[] {
+    const results: InvoiceProcessingResult[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      
+      // Process organization-scoped data
+      const result: InvoiceProcessingResult = {
+        id: doc.id,
+        fileName: this.extractFileNameFromPath(data.bucket_path) || data.fileName || '',
+        fileSize: data.fileSize || 0,
+        status: this.mapBackendStatus(data.status),
+        progress: this.calculateProgress(data.status),
+        processedAt: data.completed_at || data.updated_at,
+        userEmail: data.user_email || data.userEmail || '',
+        extractedData: data.result || data.extractedData,
+        error: data.error,
+        jobId: data.job_id || data.jobId,
+        gcsPath: data.bucket_path || data.gcsPath,
+        createdAt: data.createdAt || this.stringToTimestamp(data.created_at),
+        updatedAt: data.updatedAt || this.stringToTimestamp(data.updated_at || data.created_at),
+        displayedAt: data.displayed_at || data.displayedAt,
+        frontendStatus: data.frontend_status || data.frontendStatus,
+        userUID: data.userUID || data.user_uid || userProfile.uid,
+        visibility: 'organization' as const,
+        organization: userProfile.organizationId
+      }
+      
+      results.push(result)
+    })
+    
+    // Sort by creation date (newest first)
+    results.sort((a, b) => {
+      const aTime = a.createdAt?.seconds || 0
+      const bTime = b.createdAt?.seconds || 0
+      return bTime - aTime
+    })
+    
+    console.log(`🏢 Organization processing: ${results.length} results from ${snapshot.docs.length} documents`)
+    return results
+  }
+
+  /**
+   * Process user-isolated snapshot for users without organizations
+   */
+  private processUserIsolatedSnapshot(snapshot: QuerySnapshot<DocumentData>, user: any): InvoiceProcessingResult[] {
+    const results: InvoiceProcessingResult[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      
+      // Process user-isolated data
+      const result: InvoiceProcessingResult = {
+        id: doc.id,
+        fileName: this.extractFileNameFromPath(data.bucket_path) || data.fileName || '',
+        fileSize: data.fileSize || 0,
+        status: this.mapBackendStatus(data.status),
+        progress: this.calculateProgress(data.status),
+        processedAt: data.completed_at || data.updated_at,
+        userEmail: user.email,
+        extractedData: data.result || data.extractedData,
+        error: data.error,
+        jobId: data.job_id || data.jobId,
+        gcsPath: data.bucket_path || data.gcsPath,
+        createdAt: data.createdAt || this.stringToTimestamp(data.created_at),
+        updatedAt: data.updatedAt || this.stringToTimestamp(data.updated_at || data.created_at),
+        displayedAt: data.displayed_at || data.displayedAt,
+        frontendStatus: data.frontend_status || data.frontendStatus,
+        userUID: user.uid,
+        visibility: 'private' as const
+      }
+      
+      results.push(result)
+    })
+    
+    // Sort by creation date (newest first)
+    results.sort((a, b) => {
+      const aTime = a.createdAt?.seconds || 0
+      const bTime = b.createdAt?.seconds || 0
+      return bTime - aTime
+    })
+    
+    console.log(`🏠 User-isolated processing: ${results.length} results from ${snapshot.docs.length} documents`)
+    return results
+  }
+
+  /**
    * Get combined active and recent results from cache
    */
   getCombinedCachedResults(): InvoiceProcessingResult[] {
@@ -472,7 +617,7 @@ class RealtimeFirestoreService {
    * Real-time listener for specific job IDs only
    * More efficient when you only want to track specific uploads
    */
-  listenToSpecificJobs(jobIds, onUpdate, onError) {
+  listenToSpecificJobs(jobIds: string[], onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
     if (!user) {
       onError(new Error('User not authenticated'))
