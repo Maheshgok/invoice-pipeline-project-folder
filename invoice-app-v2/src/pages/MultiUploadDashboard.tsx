@@ -9,6 +9,7 @@ import { authService } from '../services/auth'
 import { userService } from '../services/userService'
 import AdminDashboard from '../components/admin/AdminDashboard'
 import OrganizationSetup from '../components/organization/OrganizationSetup'
+import OrganizationManagement from '../components/organization/OrganizationManagement'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize } = useAuth()
@@ -444,7 +445,8 @@ const MultiUploadDashboard: React.FC = () => {
             </div>
           </button>
           
-          {!userProfile?.organizationId && (
+          {/* Organization Tab - Create or Manage based on user status */}
+          {!userProfile?.organizationId ? (
             <button
               onClick={() => setActiveTab('organization')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
@@ -456,6 +458,20 @@ const MultiUploadDashboard: React.FC = () => {
               <div className="flex items-center space-x-2">
                 <Building2 className="w-4 h-4" />
                 <span>Create Organization</span>
+              </div>
+            </button>
+          ) : (
+            <button
+              onClick={() => setActiveTab('organization')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'organization'
+                  ? 'border-blue-500 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Building2 className="w-4 h-4" />
+                <span>Organization</span>
               </div>
             </button>
           )}
@@ -479,8 +495,14 @@ const MultiUploadDashboard: React.FC = () => {
       </div>
 
       {/* Tab Content */}
-      {activeTab === 'organization' && !userProfile?.organizationId && (
-        <OrganizationSetup />
+      {activeTab === 'organization' && (
+        <div>
+          {!userProfile?.organizationId ? (
+            <OrganizationSetup />
+          ) : (
+            <OrganizationManagement />
+          )}
+        </div>
       )}
       
       {activeTab === 'admin' && isOrgAdmin && (
