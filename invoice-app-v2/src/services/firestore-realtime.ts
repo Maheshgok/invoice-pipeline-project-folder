@@ -95,31 +95,13 @@ class RealtimeFirestoreService {
       // Use organization-scoped collection
       const orgCollectionPath = `organizations/${userProfile.organizationId}/invoice_results`
       
-      let dataQuery: any
-      
-      if (userProfile.permissions?.canViewOrgData) {
-        // Admin can see all organization data
-        console.log('📊 Admin access: viewing all organization data')
-        dataQuery = query(
-          collection(db, orgCollectionPath),
-          where('organizationId', '==', userProfile.organizationId),
-          orderBy('createdAt', 'desc'),
-          limit(100)
-        )
-      } else {
-        // Regular user can only see their own data
-        console.log('👤 User access: viewing own data only')
-        dataQuery = query(
-          collection(db, orgCollectionPath),
-          where('userUID', '==', user.uid),
-          where('organizationId', '==', userProfile.organizationId),
-          orderBy('createdAt', 'desc'),
-          limit(50)
-        )
-      }
-
-      const unsubscribe = onSnapshot(
-        dataQuery,
+      // Simple query with just organizationId - client-side filtering for user access
+      console.log('🏢 Setting up organization data query with organizationId index')
+      const dataQuery = query(
+        collection(db, orgCollectionPath),
+        where('organizationId', '==', userProfile.organizationId),
+        limit(200) // Higher limit since we'll filter client-side
+      )
         async (snapshot: QuerySnapshot<DocumentData>) => {
           const accessType = userProfile.permissions?.canViewOrgData ? 'organization' : 'user'
           console.log(`🔒 ${accessType} data snapshot:`, snapshot.docs.length, 'documents')
@@ -131,16 +113,24 @@ class RealtimeFirestoreService {
             return
           }
           
-          const results = this.processOrganizationSnapshot(snapshot, userProfile)
+          // Process all results then filter client-side based on permissions
+          const allResults = this.processOrganizationSnapshot(snapshot, userProfile)
+          
+          // Client-side filtering based on user permissions
+          const filteredResults = userProfile.permissions?.canViewOrgData 
+            ? allResults // Admins see all org data
+            : allResults.filter(result => result.userUID === user.uid) // Users see only their data
+            
+          console.log(`📊 Filtered ${filteredResults.length} results from ${allResults.length} total (${accessType} access)`)
           
           // Cache results
-          results.forEach(result => {
+          filteredResults.forEach(result => {
             if (result.jobId) {
               this.activeResultsCache.set(result.jobId, result)
             }
           })
           
-          onUpdate(results)
+          onUpdate(filteredResults)
         },
         onError
       )
@@ -171,7 +161,6 @@ class RealtimeFirestoreService {
     const userQuery = query(
       collection(db, userCollectionPath),
       where('userUID', '==', user.uid),
-      orderBy('createdAt', 'desc'),
       limit(50)
     )
 
@@ -516,11 +505,17 @@ class RealtimeFirestoreService {
       results.push(result)
     })
     
-    // Sort by creation date (newest first)
+    // Sort by creation date (newest first) - client-side sorting to avoid compound indexes
     results.sort((a, b) => {
-      const aTime = a.createdAt?.seconds || 0
-      const bTime = b.createdAt?.seconds || 0
-      return bTime - aTime
+      const getTime = (timestamp: any) => {
+        if (!timestamp) return 0
+        if (timestamp.seconds) return timestamp.seconds
+        if (typeof timestamp === 'string') return new Date(timestamp).getTime() / 1000
+        if (timestamp instanceof Date) return timestamp.getTime() / 1000
+        return 0
+      }
+      
+      return getTime(b.createdAt) - getTime(a.createdAt)
     })
     
     console.log(`🏢 Organization processing: ${results.length} results from ${snapshot.docs.length} documents`)
@@ -560,11 +555,17 @@ class RealtimeFirestoreService {
       results.push(result)
     })
     
-    // Sort by creation date (newest first)
+    // Sort by creation date (newest first) - client-side sorting to avoid compound indexes
     results.sort((a, b) => {
-      const aTime = a.createdAt?.seconds || 0
-      const bTime = b.createdAt?.seconds || 0
-      return bTime - aTime
+      const getTime = (timestamp: any) => {
+        if (!timestamp) return 0
+        if (timestamp.seconds) return timestamp.seconds
+        if (typeof timestamp === 'string') return new Date(timestamp).getTime() / 1000
+        if (timestamp instanceof Date) return timestamp.getTime() / 1000
+        return 0
+      }
+      
+      return getTime(b.createdAt) - getTime(a.createdAt)
     })
     
     console.log(`🏠 User-isolated processing: ${results.length} results from ${snapshot.docs.length} documents`)
