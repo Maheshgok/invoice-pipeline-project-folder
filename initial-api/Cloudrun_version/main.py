@@ -39,9 +39,12 @@ cloud_tasks_manager = CloudTasksManager()
 if not firebase_admin._apps:
     # Use default credentials (service account) in production
     cred = credentials.ApplicationDefault()
-    firebase_admin.initialize_app(cred)
+    firebase_admin.initialize_app(cred, {
+        'projectId': project_id
+    })
 
 print(f"Initialized clients for project: {project_id}")
+print(f"Firebase Admin SDK initialized for project: {project_id}")
 
 # Initialize Flask app for Cloud Run
 app = Flask(__name__)
