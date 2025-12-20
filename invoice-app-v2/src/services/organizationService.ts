@@ -157,7 +157,7 @@ export class OrganizationService {
           lastName: adminUserData.lastName,
           photoURL: currentUser.photoURL,
           phone: adminUserData.phone,
-          role: 'admin',
+          role: 'org_admin',
           organizationId: orgRef.id,
           organizationRole: 'admin',
           department: adminUserData.department,
@@ -181,7 +181,8 @@ export class OrganizationService {
           createdAt: serverTimestamp() as Timestamp,
           updatedAt: serverTimestamp() as Timestamp,
           lastLoginAt: serverTimestamp() as Timestamp,
-          isActive: true
+          isActive: true,
+          inviteStatus: 'accepted'  // Admin user is self-created/accepted
         }
 
         // Execute transactions

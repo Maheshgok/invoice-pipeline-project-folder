@@ -130,7 +130,7 @@ const OrganizationSetup: React.FC = () => {
       
       // Auto-set domain from email
       const emailDomain = currentUser.email.split('@')[1]
-      if (emailDomain && !prev.domain) {
+      if (emailDomain && !formData.domain) {
         setFormData(prev => ({
           ...prev,
           domain: emailDomain,

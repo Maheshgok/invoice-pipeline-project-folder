@@ -19,18 +19,22 @@ export interface UserProfile {
   uid: string
   email: string
   displayName: string | null
+  firstName?: string
+  lastName?: string
   photoURL: string | null
+  phone?: string
   role: 'super_admin' | 'org_admin' | 'user' | 'viewer'
   organizationId: string
   organizationRole: 'admin' | 'member' | 'viewer'
   permissions: UserPermissions
   department?: string
+  jobTitle?: string
   createdAt: Timestamp
   updatedAt: Timestamp
   lastLoginAt: Timestamp
   isActive: boolean
   preferences: UserPreferences
-  usage: UserUsageStats
+  usageStats: UserUsageStats
   invitedBy?: string  // UID of admin who invited this user
   inviteStatus: 'pending' | 'accepted' | 'rejected'
 }
@@ -40,6 +44,15 @@ export interface Organization {
   name: string
   domain?: string  // Email domain for auto-assignment
   description?: string
+  industry?: string
+  size?: 'startup' | 'small' | 'medium' | 'large' | 'enterprise'
+  address?: {
+    street: string
+    city: string
+    state: string
+    country: string
+    zipCode: string
+  }
   settings: OrganizationSettings
   subscription: SubscriptionDetails
   createdAt: Timestamp
