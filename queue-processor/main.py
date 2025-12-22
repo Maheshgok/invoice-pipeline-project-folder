@@ -118,7 +118,7 @@ def process_task():
     try:
         # Step 1: Authenticate request
         auth_header = request.headers.get('Authorization')
-        user_email = cloud_tasks_handler.verify_auth_token(auth_header)
+        user_context = cloud_tasks_handler.verify_auth_token(auth_header)
         
         # Step 2: Validate Cloud Tasks payload
         data = request.get_json()
@@ -128,13 +128,13 @@ def process_task():
         bucket_path = validated_payload['bucket_path']
         source = validated_payload['source']
         
-        logger.info(f"📨 Received Cloud Task: {job_id} from {user_email}")
+        logger.info(f"📨 Received Cloud Task: {job_id} from {user_context['email']}")
         
         # Step 3: Process the invoice using the business logic service
         response_data, status_code = processing_service.process_invoice_task(
             job_id=job_id,
             bucket_path=bucket_path,
-            user_email=user_email,
+            user_context=user_context,  # Pass full user context instead of just email
             source=source
         )
         

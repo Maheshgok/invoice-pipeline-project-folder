@@ -24,26 +24,31 @@ class InvoiceProcessingService:
         
         self.logger.info("Invoice Processing Service initialized")
     
-    def process_invoice_task(self, job_id: str, bucket_path: str, user_email: str, source: str = 'cloud_tasks') -> Tuple[Dict[str, Any], int]:
+    def process_invoice_task(self, job_id: str, bucket_path: str, user_context: Dict[str, Any], source: str = 'cloud_tasks') -> Tuple[Dict[str, Any], int]:
         """
         Process a single invoice task with complete error handling and tracking
         
         Args:
             job_id: Unique job identifier
             bucket_path: GCS path to the invoice file
-            user_email: User email for result attribution
+            user_context: User context including email, UID, and organization info
             source: Source of the task (for tracking)
         
         Returns:
             Tuple of (response_dict, status_code)
         """
+        user_email = user_context['email']
+        user_uid = user_context['uid']
+        organization_id = user_context.get('organization_id')
+        
         self.logger.info(f"🚀 Starting invoice processing")
         self.logger.info(f"📋 Job ID: {job_id}")
         self.logger.info(f"📁 File path: {bucket_path}")
-        self.logger.info(f"👤 User: {user_email}")
+        self.logger.info(f"👤 User: {user_email} (UID: {user_uid[:8]}...)")
+        self.logger.info(f"🏢 Organization: {organization_id or 'None'}")
         self.logger.info(f"🔍 Source: {source}")
         
-        # Track processing start
+        # Track processing start with full context
         self.tracker.track_start(job_id, bucket_path, user_email, source)
         
         try:
@@ -56,13 +61,15 @@ class InvoiceProcessingService:
                 # Step 2: Handle successful processing
                 extracted_data = processing_result.get('data', {})
                 
-                # Store result in Firestore
+                # Store result in Firestore with user/organization context
                 self.result_manager.store_result(
                     job_id=job_id,
                     user_email=user_email,
                     extracted_data=extracted_data,
                     status='completed',
-                    bucket_path=bucket_path
+                    bucket_path=bucket_path,
+                    user_uid=user_uid,
+                    organization_id=organization_id
                 )
                 
                 # Track completion
@@ -81,25 +88,27 @@ class InvoiceProcessingService:
             
             else:
                 # Step 3: Handle processing failure
-                return self._handle_processing_failure(job_id, user_email, bucket_path, processing_result)
+                return self._handle_processing_failure(job_id, user_context, bucket_path, processing_result)
         
         except Exception as e:
             # Step 4: Handle unexpected errors
-            return self._handle_unexpected_error(job_id, user_email, bucket_path, e)
+            return self._handle_unexpected_error(job_id, user_context, bucket_path, e)
     
-    def _handle_processing_failure(self, job_id: str, user_email: str, bucket_path: str, 
+    def _handle_processing_failure(self, job_id: str, user_context: Dict[str, Any], bucket_path: str, 
                                    processing_result: Dict[str, Any]) -> Tuple[Dict[str, Any], int]:
         """Handle OpenAI processing failures"""
         error_message = processing_result.get('error', 'Unknown processing error')
         
-        # Store failed result
+        # Store failed result with user context
         self.result_manager.store_result(
             job_id=job_id,
-            user_email=user_email,
+            user_email=user_context['email'],
             extracted_data={},
             status='failed',
             bucket_path=bucket_path,
-            error=error_message
+            error=error_message,
+            user_uid=user_context['uid'],
+            organization_id=user_context.get('organization_id')
         )
         
         # Track failure
@@ -117,19 +126,21 @@ class InvoiceProcessingService:
             "timestamp": datetime.now().isoformat()
         }, 200
     
-    def _handle_unexpected_error(self, job_id: str, user_email: str, bucket_path: str, 
+    def _handle_unexpected_error(self, job_id: str, user_context: Dict[str, Any], bucket_path: str, 
                                  error: Exception) -> Tuple[Dict[str, Any], int]:
         """Handle unexpected system errors"""
         error_message = f"Unexpected processing error: {str(error)}"
         
-        # Store error result
+        # Store error result with user context
         self.result_manager.store_result(
             job_id=job_id,
-            user_email=user_email,
+            user_email=user_context['email'],
             extracted_data={},
             status='failed',
             bucket_path=bucket_path,
-            error=error_message
+            error=error_message,
+            user_uid=user_context['uid'],
+            organization_id=user_context.get('organization_id')
         )
         
         # Track failure

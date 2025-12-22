@@ -42,7 +42,7 @@ ARCHIVE_COLLECTION = 'invoice_results_archive'
 PROJECT_ID = os.getenv('GOOGLE_CLOUD_PROJECT', 'watch-mail-trial')
 
 def verify_firebase_token(auth_header: str) -> Optional[Dict]:
-    """Verify Firebase ID token and return user info"""
+    """Verify Firebase ID token and return full user context"""
     try:
         if not auth_header:
             print("❌ No authorization header provided")
@@ -58,27 +58,91 @@ def verify_firebase_token(auth_header: str) -> Optional[Dict]:
         # Use Firebase Admin SDK to verify the token
         decoded_token = firebase_auth.verify_id_token(id_token_str)
         
-        print(f"✅ Token verified successfully for user: {decoded_token.get('email', 'unknown')}")
-        return decoded_token
+        user_email = decoded_token.get('email')
+        user_uid = decoded_token.get('uid')
+        
+        if not user_email or not user_uid:
+            print("❌ Invalid token: missing email or UID")
+            return None
+            
+        # Extract organization information from custom claims if available
+        custom_claims = decoded_token.get('custom_claims', {}) or {}
+        organization_id = custom_claims.get('organizationId')
+        organization_role = custom_claims.get('organizationRole')
+        
+        user_context = {
+            'email': user_email,
+            'uid': user_uid,
+            'organization_id': organization_id,
+            'organization_role': organization_role
+        }
+        
+        print(f"✅ Token verified successfully for user: {user_email} (UID: {user_uid[:8]}...) Org: {organization_id or 'None'}")
+        return user_context
     except Exception as e:
         print(f"❌ Token verification failed: {e}")
         print(f"❌ Token verification error type: {type(e)}")
         return None
 
-def get_user_email_from_request() -> Optional[str]:
-    """Extract user email from Authorization header"""
+def get_user_context_from_request() -> Optional[Dict]:
+    """Extract full user context from Authorization header"""
     auth_header = request.headers.get('Authorization')
     print(f"🔍 Processing request with auth header: {bool(auth_header)}")
     
-    user_info = verify_firebase_token(auth_header)
+    user_context = verify_firebase_token(auth_header)
     
-    if not user_info:
-        print("❌ No valid user info from token")
+    if not user_context:
+        print("❌ No valid user context from token")
         return None
     
-    email = user_info.get('email')
-    print(f"✅ Authenticated user: {email}")
-    return email
+    email = user_context.get('email')
+    print(f"✅ Authenticated user: {email} (UID: {user_context.get('uid', '')[:8]}...)")
+    return user_context
+
+def get_collection_paths(user_context: Dict) -> Dict[str, str]:
+    """Get the appropriate collection paths based on user/organization context"""
+    user_uid = user_context['uid']
+    organization_id = user_context.get('organization_id')
+    
+    if organization_id:
+        # Use organization-scoped collections
+        return {
+            'active': f'organizations/{organization_id}/invoice_results',
+            'archive': f'organizations/{organization_id}/invoice_results_archive'
+        }
+    elif user_uid:
+        # Use user-isolated collections
+        return {
+            'active': f'users/{user_uid}/invoice_results',
+            'archive': f'users/{user_uid}/invoice_results_archive'
+        }
+    else:
+        # Fallback to legacy root collections
+        return {
+            'active': 'invoice_results',
+            'archive': 'invoice_results_archive'
+        }
+
+def build_user_query(collection_ref, user_context: Dict):
+    """Build appropriate query filter based on user context and permissions"""
+    organization_id = user_context.get('organization_id')
+    organization_role = user_context.get('organization_role')
+    user_uid = user_context['uid']
+    user_email = user_context['email']
+    
+    # For organization collections, filter based on user permissions
+    if organization_id:
+        is_admin = organization_role == 'admin'
+        if is_admin:
+            # Admins can archive all organization data
+            return collection_ref.where('organizationId', '==', organization_id)
+        else:
+            # Regular users can only archive their own data
+            return collection_ref.where('organizationId', '==', organization_id)\
+                                .where('userUID', '==', user_uid)
+    else:
+        # For user-isolated or legacy collections, filter by user identifiers
+        return collection_ref.where('user_email', '==', user_email)
 
 @app.route('/health', methods=['GET'])
 def health_check():
@@ -119,20 +183,24 @@ def archive_completed_results():
     """
     print("🔄 Archive completed request received")
     
-    user_email = get_user_email_from_request()
-    if not user_email:
+    user_context = get_user_context_from_request()
+    if not user_context:
         print("❌ Authentication failed - returning 401")
         return jsonify({'error': 'Authentication required'}), 401
     
-    print(f"🔍 Processing archive request for user: {user_email}")
+    user_email = user_context['email']
+    print(f"🔍 Processing archive request for user: {user_email} (UID: {user_context['uid'][:8]}...)")
     
     try:
-        # Query for completed results for this user
-        active_ref = db.collection(ACTIVE_COLLECTION)
-        completed_query = active_ref.where('user_email', '==', user_email)\
-                                   .where('status', '==', 'completed')
+        # Get appropriate collection paths
+        collection_paths = get_collection_paths(user_context)
         
-        print(f"🔍 Querying for completed results...")
+        # Query for completed results using organization-aware filtering
+        active_ref = db.collection(collection_paths['active'])
+        completed_query = build_user_query(active_ref, user_context)\
+                                          .where('status', '==', 'completed')
+        
+        print(f"🔍 Querying collection: {collection_paths['active']}")
         completed_docs = completed_query.get()
         
         print(f"📊 Found {len(completed_docs)} completed documents")
@@ -162,9 +230,10 @@ def archive_completed_results():
             doc_data['archived_at'] = datetime.utcnow().isoformat()
             doc_data['archive_reason'] = 'completed_auto_archive'
             doc_data['original_doc_id'] = doc.id
+            doc_data['original_collection'] = collection_paths['active']
             
-            # Add to archive
-            archive_ref = db.collection(ARCHIVE_COLLECTION).document()
+            # Add to archive using organization-aware path
+            archive_ref = db.collection(collection_paths['archive']).document()
             batch.set(archive_ref, doc_data)
             
             # Delete from active collection
@@ -195,15 +264,20 @@ def archive_displayed_results():
     Archive all displayed results for the authenticated user
     This moves displayed items from active collection to archive
     """
-    user_email = get_user_email_from_request()
-    if not user_email:
+    user_context = get_user_context_from_request()
+    if not user_context:
         return jsonify({'error': 'Authentication required'}), 401
     
+    user_email = user_context['email']
+    
     try:
-        # Query for displayed results for this user
-        active_ref = db.collection(ACTIVE_COLLECTION)
-        displayed_query = active_ref.where('user_email', '==', user_email)\
-                                   .where('frontend_status', '==', 'displayed')
+        # Get appropriate collection paths
+        collection_paths = get_collection_paths(user_context)
+        
+        # Query for displayed results using organization-aware filtering
+        active_ref = db.collection(collection_paths['active'])
+        displayed_query = build_user_query(active_ref, user_context)\
+                                          .where('frontend_status', '==', 'displayed')
         
         displayed_docs = displayed_query.get()
         
@@ -230,9 +304,10 @@ def archive_displayed_results():
             doc_data['archived_at'] = datetime.utcnow().isoformat()
             doc_data['archive_reason'] = 'displayed_auto_archive'
             doc_data['original_doc_id'] = doc.id
+            doc_data['original_collection'] = collection_paths['active']
             
-            # Add to archive
-            archive_ref = db.collection(ARCHIVE_COLLECTION).document()
+            # Add to archive using organization-aware path
+            archive_ref = db.collection(collection_paths['archive']).document()
             batch.set(archive_ref, doc_data)
             
             # Delete from active collection
@@ -263,9 +338,11 @@ def archive_old_results():
     Archive all results older than specified days for the authenticated user
     Default: 7 days
     """
-    user_email = get_user_email_from_request()
-    if not user_email:
+    user_context = get_user_context_from_request()
+    if not user_context:
         return jsonify({'error': 'Authentication required'}), 401
+    
+    user_email = user_context['email']
     
     # Get days parameter (default 7)
     data = request.get_json() or {}
@@ -276,10 +353,13 @@ def archive_old_results():
         cutoff_date = datetime.utcnow() - timedelta(days=days_old)
         cutoff_iso = cutoff_date.isoformat()
         
-        # Query for old results for this user
-        active_ref = db.collection(ACTIVE_COLLECTION)
-        old_query = active_ref.where('user_email', '==', user_email)\
-                             .where('created_at', '<', cutoff_iso)
+        # Get appropriate collection paths
+        collection_paths = get_collection_paths(user_context)
+        
+        # Query for old results using organization-aware filtering
+        active_ref = db.collection(collection_paths['active'])
+        old_query = build_user_query(active_ref, user_context)\
+                                   .where('created_at', '<', cutoff_iso)
         
         old_docs = old_query.get()
         
@@ -306,9 +386,10 @@ def archive_old_results():
             doc_data['archived_at'] = datetime.utcnow().isoformat()
             doc_data['archive_reason'] = f'age_based_archive_{days_old}days'
             doc_data['original_doc_id'] = doc.id
+            doc_data['original_collection'] = collection_paths['active']
             
-            # Add to archive
-            archive_ref = db.collection(ARCHIVE_COLLECTION).document()
+            # Add to archive using organization-aware path
+            archive_ref = db.collection(collection_paths['archive']).document()
             batch.set(archive_ref, doc_data)
             
             # Delete from active collection
@@ -340,9 +421,11 @@ def get_archived_results():
     Retrieve archived results for the authenticated user
     Supports pagination and date filtering
     """
-    user_email = get_user_email_from_request()
-    if not user_email:
+    user_context = get_user_context_from_request()
+    if not user_context:
         return jsonify({'error': 'Authentication required'}), 401
+    
+    user_email = user_context['email']
     
     try:
         # Get query parameters
@@ -357,13 +440,16 @@ def get_archived_results():
         cutoff_date = datetime.utcnow() - timedelta(days=days_back)
         cutoff_iso = cutoff_date.isoformat()
         
-        # Query archived results
-        archive_ref = db.collection(ARCHIVE_COLLECTION)
-        query = archive_ref.where('user_email', '==', user_email)\
-                          .where('archived_at', '>=', cutoff_iso)\
-                          .order_by('archived_at', direction=firestore.Query.DESCENDING)\
-                          .limit(limit)\
-                          .offset(offset)
+        # Get appropriate collection paths
+        collection_paths = get_collection_paths(user_context)
+        
+        # Query archived results using organization-aware filtering
+        archive_ref = db.collection(collection_paths['archive'])
+        query = build_user_query(archive_ref, user_context)\
+                               .where('archived_at', '>=', cutoff_iso)\
+                               .order_by('archived_at', direction=firestore.Query.DESCENDING)\
+                               .limit(limit)\
+                               .offset(offset)
         
         archived_docs = query.get()
         

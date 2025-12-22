@@ -60,18 +60,22 @@ class ResultManager:
         else:
             return 3  # Archive tier - old/failed items
 
-    def store_result(self, job_id: str, user_email: str, extracted_data: Dict, status: str, bucket_path: str, error: Optional[str] = None) -> bool:
+    def store_result(self, job_id: str, user_email: str, extracted_data: Dict, status: str, bucket_path: str, error: Optional[str] = None, user_uid: str = None, organization_id: str = None) -> bool:
         """
-        Store job result in Firestore (Cloud Tasks compatible version)
+        Store job result in Firestore with organization-aware collection routing
         Returns: True if stored successfully, False otherwise
         """
         try:
-            doc_ref = self.firestore_client.collection('invoice_results').document(job_id)
+            # Determine the appropriate collection path based on organization context
+            collection_path = self._get_collection_path(user_uid, organization_id)
+            doc_ref = self.firestore_client.collection(collection_path).document(job_id)
             
-            # Base document data with optimization fields
+            # Base document data with optimization fields and proper indexing
             doc_data = {
                 'job_id': job_id,
                 'user_email': user_email,
+                'userUID': user_uid,  # For user-based filtering
+                'organizationId': organization_id,  # For organization-based filtering
                 'bucket_path': bucket_path,
                 'created_at': datetime.now().isoformat(),
                 'updated_at': datetime.now().isoformat(),
@@ -80,7 +84,10 @@ class ResultManager:
                 'priority_score': self._compute_priority_score(status),
                 'display_tier': self._compute_display_tier(status),
                 'frontend_status': None,  # Will be set by frontend when displayed
-                'processing_mode': 'cloud_tasks'  # Track processing mode
+                'processing_mode': 'cloud_tasks',  # Track processing mode
+                # 🏢 Multi-tenant fields for proper data isolation
+                'tenant_type': 'organization' if organization_id else 'user',
+                'access_scope': 'organization' if organization_id else 'user'
             }
             
             if status == 'completed':

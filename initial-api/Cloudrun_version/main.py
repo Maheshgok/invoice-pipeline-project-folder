@@ -86,7 +86,7 @@ def after_request(response):
     return response
 
 def verify_auth_token(auth_header):
-    """Verify Firebase ID token and return user email"""
+    """Verify Firebase ID token and return full user context"""
     if not auth_header or not auth_header.startswith('Bearer '):
         raise ValueError("Missing or invalid authorization token")
     
@@ -96,10 +96,25 @@ def verify_auth_token(auth_header):
         # Verify Firebase ID token
         decoded_token = firebase_auth.verify_id_token(id_token_str)
         user_email = decoded_token.get('email')
-        if not user_email:
-            raise ValueError("Invalid token: no email")
-        logger.info(f"Authenticated user: {user_email}")
-        return user_email
+        user_uid = decoded_token.get('uid')
+        
+        if not user_email or not user_uid:
+            raise ValueError("Invalid token: missing email or UID")
+            
+        # Extract organization information from custom claims if available
+        custom_claims = decoded_token.get('custom_claims', {}) or {}
+        organization_id = custom_claims.get('organizationId')
+        organization_role = custom_claims.get('organizationRole')
+        
+        user_context = {
+            'email': user_email,
+            'uid': user_uid,
+            'organization_id': organization_id,
+            'organization_role': organization_role
+        }
+        
+        logger.info(f"✅ Authenticated user: {user_email} (UID: {user_uid[:8]}...) Org: {organization_id or 'None'}")
+        return user_context
     except Exception as e:
         logger.error(f"Firebase token verification failed: {e}")
         raise ValueError(f"Token verification failed: {e}")
@@ -126,8 +141,9 @@ def upload_file():
     # Verify authentication first
     try:
         auth_header = request.headers.get('Authorization')
-        user_email = verify_auth_token(auth_header)
-        logger.info(f"Upload request authenticated for user: {user_email}")
+        user_context = verify_auth_token(auth_header)
+        user_email = user_context['email']  # For backward compatibility in logs
+        logger.info(f"Upload request authenticated for user: {user_email} (UID: {user_context['uid'][:8]}...)")
     except ValueError as e:
         logger.error(f"Authentication failed: {e}")
         return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401
@@ -197,7 +213,7 @@ def upload_file():
             task_name = cloud_tasks_manager.create_processing_task(
                 job_id=job_id,
                 bucket_path=f"{BUCKET_NAME}/{filename}",
-                user_email=user_email,
+                user_context=user_context,
                 auth_token=auth_token,
                 delay_seconds=5  # Small delay to ensure file is fully uploaded
             )
@@ -465,7 +481,8 @@ def get_cloud_task_status(job_id):
     try:
         # Verify authentication
         auth_header = request.headers.get('Authorization')
-        user_email = verify_auth_token(auth_header)
+        user_context = verify_auth_token(auth_header)
+        user_email = user_context['email']  # Extract email for status checking
         
         # Get task information from Firestore tracking
         doc_ref = firestore_client.collection("cloud_tasks").document(job_id)
@@ -517,7 +534,8 @@ def get_queue_stats():
     try:
         # Verify authentication
         auth_header = request.headers.get('Authorization')
-        user_email = verify_auth_token(auth_header)
+        user_context = verify_auth_token(auth_header)
+        user_email = user_context['email']  # Extract email for stats logging
         
         # Get queue statistics
         stats = cloud_tasks_manager.get_queue_stats()
@@ -556,8 +574,9 @@ def generate_signed_url():
     # Verify authentication first
     try:
         auth_header = request.headers.get('Authorization')
-        user_email = verify_auth_token(auth_header)
-        logger.info(f"Signed URL request authenticated for user: {user_email}")
+        user_context = verify_auth_token(auth_header)
+        user_email = user_context['email']  # Extract email for path validation
+        logger.info(f"Signed URL request authenticated for user: {user_email} (UID: {user_context['uid'][:8]}...)")
     except ValueError as e:
         logger.error(f"Authentication failed: {e}")
         return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401

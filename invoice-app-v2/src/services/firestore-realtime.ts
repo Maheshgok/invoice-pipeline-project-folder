@@ -46,7 +46,8 @@ class RealtimeFirestoreService {
   private recentResultsCache: Map<string, InvoiceProcessingResult> = new Map()
 
   /**
-   * Listen to user's active results with organization-based data isolation
+   * Listen to user's active results with organization-aware data routing
+   * Uses proper collection isolation with indexing fallbacks
    */
   listenToActiveResults(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
@@ -55,15 +56,17 @@ class RealtimeFirestoreService {
       return
     }
 
-    console.log('🔒 Setting up organization-aware listener for UID:', user.uid)
+    console.log('🔥 Setting up organization-aware listener for UID:', user.uid)
+    console.log('📊 Using collection routing with proper data isolation')
 
-    this.setupOrganizationAwareListener(onUpdate, onError)
+    this.setupSmartOrganizationListener(onUpdate, onError)
   }
 
   /**
-   * Setup organization-aware data listener with user-isolated fallback
+   * Setup smart organization listener with proper collection routing and indexing
+   * Priority: Organization collection -> User collection -> Legacy collection
    */
-  private async setupOrganizationAwareListener(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
+  private async setupSmartOrganizationListener(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     try {
       const user = authService.getCurrentUser()
       if (!user?.uid) {
@@ -606,6 +609,59 @@ class RealtimeFirestoreService {
     })
     
     console.log(`🏠 User-isolated processing: ${results.length} results from ${snapshot.docs.length} documents`)
+    return results
+  }
+
+  /**
+   * Process legacy collection snapshot for backward compatibility
+   */
+  private processLegacySnapshot(snapshot: QuerySnapshot<DocumentData>, user: any): InvoiceProcessingResult[] {
+    const results: InvoiceProcessingResult[] = []
+    
+    snapshot.forEach((doc) => {
+      const data = doc.data()
+      const docJobId = data.job_id
+      
+      // Only process documents that match expected job ID pattern
+      if (docJobId && docJobId.match(/^[A-Z0-9]{3}-[A-Z0-9]{6}-[A-Z0-9]{4}$/)) {
+        const result: InvoiceProcessingResult = {
+          id: doc.id,
+          fileName: this.extractFileNameFromPath(data.bucket_path) || '',
+          fileSize: 0,
+          status: this.mapBackendStatus(data.status) || 'displayed',
+          progress: this.calculateProgress(data.status),
+          processedAt: data.completed_at || data.updated_at,
+          userEmail: user.email,
+          extractedData: data.result,
+          error: data.error,
+          jobId: data.job_id,
+          gcsPath: data.bucket_path,
+          createdAt: this.stringToTimestamp(data.created_at),
+          updatedAt: this.stringToTimestamp(data.updated_at || data.created_at),
+          displayedAt: data.displayed_at,
+          frontendStatus: data.frontend_status,
+          userUID: user.uid,
+          visibility: 'private' as const
+        }
+        
+        results.push(result)
+      }
+    })
+    
+    // Sort by creation date (newest first)
+    results.sort((a, b) => {
+      const getTime = (timestamp: any) => {
+        if (!timestamp) return 0
+        if (timestamp.seconds) return timestamp.seconds
+        if (typeof timestamp === 'string') return new Date(timestamp).getTime() / 1000
+        if (timestamp instanceof Date) return timestamp.getTime() / 1000
+        return 0
+      }
+      
+      return getTime(b.createdAt) - getTime(a.createdAt)
+    })
+    
+    console.log(`🔄 Legacy collection processing: ${results.length} results from ${snapshot.docs.length} documents`)
     return results
   }
 

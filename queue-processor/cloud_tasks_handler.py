@@ -18,7 +18,7 @@ class CloudTasksHandler:
         self.logger = logging.getLogger(self.__class__.__name__)
     
     def verify_auth_token(self, auth_header):
-        """Verify Firebase ID token and return user email"""
+        """Verify Firebase ID token and return user context with organization info"""
         if not auth_header or not auth_header.startswith('Bearer '):
             raise ValueError("Missing or invalid authorization token")
         
@@ -28,10 +28,25 @@ class CloudTasksHandler:
             # Verify Firebase ID token
             decoded_token = firebase_auth.verify_id_token(id_token_str)
             user_email = decoded_token.get('email')
-            if not user_email:
-                raise ValueError("Invalid token: no email")
-            self.logger.info(f"Authenticated user: {user_email}")
-            return user_email
+            user_uid = decoded_token.get('uid')
+            
+            if not user_email or not user_uid:
+                raise ValueError("Invalid token: missing email or UID")
+                
+            # Extract organization information from custom claims if available
+            custom_claims = decoded_token.get('custom_claims', {}) or {}
+            organization_id = custom_claims.get('organizationId')
+            organization_role = custom_claims.get('organizationRole')
+            
+            user_context = {
+                'email': user_email,
+                'uid': user_uid,
+                'organization_id': organization_id,
+                'organization_role': organization_role
+            }
+            
+            self.logger.info(f"✅ Authenticated user: {user_email} (UID: {user_uid[:8]}...) Org: {organization_id or 'None'}")
+            return user_context
         except Exception as e:
             self.logger.error(f"Firebase token verification failed: {e}")
             raise ValueError(f"Token verification failed: {e}")

@@ -90,7 +90,7 @@ class CloudTasksManager:
         self,
         job_id: str,
         bucket_path: str,
-        user_email: str,
+        user_context: Dict[str, Any],
         auth_token: str,
         delay_seconds: int = 0
     ) -> str:
@@ -100,7 +100,7 @@ class CloudTasksManager:
         Args:
             job_id: Unique job identifier
             bucket_path: GCS path to the uploaded file
-            user_email: User email for authentication
+            user_context: Full user context including email, UID, and organization info
             auth_token: Firebase ID token for authentication
             delay_seconds: Optional delay before task execution
         
@@ -108,11 +108,14 @@ class CloudTasksManager:
             task_name: Full Cloud Tasks task name
         """
         try:
-            # Prepare task payload
+            # Prepare task payload with full user context
             task_payload = {
                 "job_id": job_id,
                 "bucket_path": bucket_path,
-                "user_email": user_email,
+                "user_email": user_context['email'],  # For backward compatibility
+                "user_uid": user_context['uid'],
+                "organization_id": user_context.get('organization_id'),
+                "organization_role": user_context.get('organization_role'),
                 "timestamp": datetime.utcnow().isoformat(),
                 "source": "cloud_tasks_manager"
             }
@@ -157,7 +160,7 @@ class CloudTasksManager:
             logger.info(f"Payload: {task_payload}")
             
             # Store task tracking in Firestore for monitoring
-            self._track_task_creation(job_id, task_name, bucket_path, user_email)
+            self._track_task_creation(job_id, task_name, bucket_path, user_context)
             
             return task_name
             
@@ -170,9 +173,9 @@ class CloudTasksManager:
         job_id: str,
         task_name: str,
         bucket_path: str,
-        user_email: str
+        user_context: Dict[str, Any]
     ):
-        """Track task creation in Firestore for monitoring"""
+        """Track task creation in Firestore for monitoring with user context"""
         try:
             from google.cloud import firestore
             
@@ -182,7 +185,10 @@ class CloudTasksManager:
                 "job_id": job_id,
                 "task_name": task_name,
                 "bucket_path": bucket_path,
-                "user_email": user_email,
+                "user_email": user_context['email'],
+                "user_uid": user_context['uid'],
+                "organization_id": user_context.get('organization_id'),
+                "organization_role": user_context.get('organization_role'),
                 "status": "created",
                 "created_at": datetime.utcnow(),
                 "updated_at": datetime.utcnow()
