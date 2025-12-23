@@ -1,8 +1,9 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, ReactNode, useRef } from 'react'
 import { onAuthStateChanged, User as FirebaseUser } from 'firebase/auth'
 import { auth } from '../config/firebase'
 import { authService } from '../services/auth'
 import { userService, type UserProfile } from '../services/userService'
+import { windowCloseHandler } from '../services/windowCloseHandler'
 import type { AuthContextType, LoginCredentials, User } from '../types/auth'
 
 // Enhanced context type with user management
@@ -12,6 +13,7 @@ interface EnhancedAuthContextType extends AuthContextType {
   hasPermission: (permission: keyof UserProfile['permissions']) => boolean
   checkUsageLimits: () => Promise<ReturnType<typeof userService.checkUsageLimits>>
   validateFileSize: (fileSizeInMB: number) => Promise<ReturnType<typeof userService.validateFileSize>>
+  markHasResults: (hasResults: boolean) => void
 }
 
 const AuthContext = createContext<EnhancedAuthContextType | undefined>(undefined)
@@ -53,6 +55,11 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return await userService.validateFileSize(fileSizeInMB)
   }
 
+  // Track results status for window close handling
+  const markHasResults = (hasActiveResults: boolean) => {
+    windowCloseHandler.setHasResults(hasActiveResults)
+  }
+
   // Convert Firebase user to our User type
   const convertFirebaseUser = (firebaseUser: FirebaseUser): User => ({
     ...firebaseUser,
@@ -65,12 +72,16 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
   useEffect(() => {
     console.log('🔄 Setting up enhanced auth state listener...')
+    
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       try {
         if (firebaseUser) {
           const user = convertFirebaseUser(firebaseUser)
           console.log('✅ User authenticated:', user.email)
           setUser(user)
+          
+          // Initialize window close handler for this user
+          windowCloseHandler.initialize(user)
           
           // Create or update user profile
           try {
@@ -85,6 +96,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           console.log('❌ User not authenticated')
           setUser(null)
           setUserProfile(null)
+          windowCloseHandler.cleanup()
         }
       } catch (err: any) {
         console.error('❌ Auth state change error:', err)
@@ -97,6 +109,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       console.log('🔄 Cleaning up auth listener')
       unsubscribe()
+      windowCloseHandler.cleanup()
     }
   }, [])
 
@@ -145,7 +158,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const signOut = async (): Promise<void> => {
     try {
       setError(null)
+      
+      // Trigger cleanup before logout
+      if (user) {
+        console.log('🚪 Manual logout - triggering cleanup')
+        await windowCloseHandler.triggerCleanup()
+      }
+      
       await authService.signOut()
+      
       // User state will be updated by onAuthStateChanged
     } catch (err: any) {
       setError(err.message)
@@ -184,6 +205,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     hasPermission,
     checkUsageLimits,
     validateFileSize,
+    markHasResults,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

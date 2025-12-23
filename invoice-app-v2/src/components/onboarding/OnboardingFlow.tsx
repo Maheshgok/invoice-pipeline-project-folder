@@ -97,11 +97,26 @@ const OnboardingFlow: React.FC = () => {
       setPaymentAmount(selectedAmount)
       await userService.initializePayment(selectedAmount, subscriptionType)
       await refreshUserProfile()
-      setCurrentStep(2)
+      setCurrentStep(4)
       toast.success('Plan selected! Please proceed with payment.')
     } catch (error: any) {
       console.error('Plan selection error:', error)
       toast.error(error.message || 'Failed to initialize payment')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleOrganizationComplete = async (organizationData: any) => {
+    try {
+      setLoading(true)
+      // Organization setup is handled in OrganizationStep component
+      await refreshUserProfile()
+      setCurrentStep(3)
+      toast.success('Organization setup completed!')
+    } catch (error: any) {
+      console.error('Organization setup error:', error)
+      toast.error(error.message || 'Failed to complete organization setup')
     } finally {
       setLoading(false)
     }
@@ -142,10 +157,10 @@ const OnboardingFlow: React.FC = () => {
             </div>
 
             <button
-              onClick={() => setCurrentStep(2)}
+              onClick={() => setCurrentStep(3)}
               className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              Continue to Organization Setup
+              Continue to Plan Selection
             </button>
           </div>
         )
@@ -224,7 +239,7 @@ const OnboardingFlow: React.FC = () => {
           </div>
         )
 
-      case 2:
+      case 4:
         return (
           <PaymentStep
             amount={paymentAmount}
@@ -234,7 +249,7 @@ const OnboardingFlow: React.FC = () => {
           />
         )
 
-      case 3:
+      case 5:
         return (
           <VerificationStep
             paymentStatus={userProfile?.paymentStatus}

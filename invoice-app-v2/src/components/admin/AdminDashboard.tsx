@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '../../contexts/AuthContext'
 import { userService, type UserProfile, type UserInvite, type Organization } from '../../services/userService'
-import { Users, UserPlus, Settings, Shield, AlertCircle, CheckCircle, Clock, X } from 'lucide-react'
+import { Users, UserPlus, Settings, Shield, AlertCircle, CheckCircle, Clock, X, Wrench } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { SuperAdminSettings } from './SuperAdminSettings'
 
 export const AdminDashboard: React.FC = () => {
   const { userProfile, hasPermission } = useAuth()
-  const [activeTab, setActiveTab] = useState<'users' | 'invites' | 'organization'>('users')
+  const [activeTab, setActiveTab] = useState<'users' | 'invites' | 'organization' | 'super-admin'>('users')
   const [users, setUsers] = useState<UserProfile[]>([])
   const [invites, setInvites] = useState<UserInvite[]>([])
   const [organization, setOrganization] = useState<Organization | null>(null)
@@ -20,6 +21,7 @@ export const AdminDashboard: React.FC = () => {
 
   // Check if user has admin permissions
   const isAdmin = hasPermission('canManageOrgUsers')
+  const isSuperAdmin = userProfile?.role === 'super_admin'
 
   useEffect(() => {
     if (!isAdmin) return
@@ -139,7 +141,8 @@ export const AdminDashboard: React.FC = () => {
           <nav className="-mb-px flex space-x-8">
             {[
               { id: 'users', label: 'Users', icon: Users, count: users.length },
-              { id: 'organization', label: 'Organization', icon: Settings }
+              { id: 'organization', label: 'Organization', icon: Settings },
+              ...(isSuperAdmin ? [{ id: 'super-admin', label: 'System Settings', icon: Wrench }] : [])
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -179,6 +182,10 @@ export const AdminDashboard: React.FC = () => {
               organization={organization}
               onUpdate={loadAdminData}
             />
+          )}
+          
+          {activeTab === 'super-admin' && isSuperAdmin && (
+            <SuperAdminSettings />
           )}
         </div>
       </div>

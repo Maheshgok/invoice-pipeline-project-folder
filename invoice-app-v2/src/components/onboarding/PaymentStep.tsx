@@ -1,6 +1,7 @@
-import { useState } from 'react'
-import { QrCode, Copy, CheckCircle, IndianRupee, AlertCircle } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { QrCode, Copy, CheckCircle, IndianRupee, AlertCircle, Loader } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { userService } from '../../services/userService'
 
 interface PaymentStepProps {
   amount: number
@@ -18,11 +19,43 @@ const PaymentStep: React.FC<PaymentStepProps> = ({
   const [transactionRef, setTransactionRef] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const [upiConfig, setUpiConfig] = useState<any>(null)
+  const [loadingConfig, setLoadingConfig] = useState(true)
 
-  // UPI payment details
+  // Load UPI configuration on component mount
+  useEffect(() => {
+    const loadUPIConfig = async () => {
+      try {
+        const config = await userService.getUPIConfig()
+        setUpiConfig(config)
+      } catch (error) {
+        console.error('Failed to load UPI config:', error)
+        toast.error('Failed to load payment configuration')
+      } finally {
+        setLoadingConfig(false)
+      }
+    }
+    
+    loadUPIConfig()
+  }, [])
+
+  // Show loading state while fetching UPI config
+  if (loadingConfig || !upiConfig) {
+    return (
+      <div className="max-w-2xl mx-auto flex items-center justify-center py-12">
+        <div className="text-center">
+          <Loader className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+          <p className="text-gray-600">Loading payment configuration...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // UPI payment details using dynamic configuration
   const upiDetails = {
-    vpa: 'your-business@upi', // Replace with your actual UPI ID
-    name: 'Invoice Processor',
+    vpa: upiConfig.vpa,
+    name: upiConfig.name,
+    businessName: upiConfig.businessName,
     amount: amount,
     transactionId: `INV${Date.now()}${Math.random().toString(36).substr(2, 4).toUpperCase()}`,
     note: `Invoice Processing Subscription - ${userEmail}`

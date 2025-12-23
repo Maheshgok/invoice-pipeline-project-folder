@@ -11,9 +11,11 @@ import {
   X,
   IndianRupee,
   User,
-  Mail
+  Mail,
+  Settings
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { Link } from 'react-router-dom'
 
 interface PendingPayment extends UserProfile {
   id: string
@@ -135,14 +137,23 @@ const PaymentManagementDashboard: React.FC = () => {
               <h1 className="text-3xl font-bold text-gray-900">Payment Management</h1>
               <p className="text-gray-600 mt-2">Verify and manage user payments</p>
             </div>
-            <button
-              onClick={loadPendingPayments}
-              disabled={loading}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-colors flex items-center space-x-2"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              <span>Refresh</span>
-            </button>
+            <div className="flex items-center space-x-4">
+              <Link 
+                to="/admin"
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition-colors flex items-center space-x-2"
+              >
+                <Settings className="w-4 h-4" />
+                <span>Admin Dashboard</span>
+              </Link>
+              <button
+                onClick={loadPendingPayments}
+                disabled={loading}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:bg-blue-400 transition-colors flex items-center space-x-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

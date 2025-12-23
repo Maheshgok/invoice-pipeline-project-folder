@@ -4,10 +4,10 @@
  */
 
 export const API_CONFIG = {
-  // Cloud Run Services (Project ID: 812016027146)
+  // Cloud Run Services (Project ID: 812016027146 - watch-mail-trial)
   INITIAL_API_URL: import.meta.env.VITE_INITIAL_API_URL || 'https://initial-api-812016027146.asia-south1.run.app',
   ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-812016027146.asia-south1.run.app',
-  QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-812016027146.asia-south1.run.app',
+  QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-577003720732.asia-south1.run.app',
   
   // Endpoints
   ENDPOINTS: {

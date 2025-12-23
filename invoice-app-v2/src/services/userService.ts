@@ -1060,6 +1060,100 @@ export class UserService {
       throw error
     }
   }
+
+  /**
+   * Get super admin configuration
+   */
+  async getSuperAdminConfig(): Promise<any> {
+    try {
+      const configRef = doc(db, 'system_config', 'super_admin')
+      const configDoc = await getDoc(configRef)
+      
+      if (configDoc.exists()) {
+        return configDoc.data()
+      }
+      
+      // Return default config if none exists
+      return {
+        allowedEmails: ['maheshgok@gmail.com'],
+        upiConfig: {
+          vpa: 'maheshgok@paytm',
+          name: 'Invoice Processor',
+          businessName: 'Invoice Processing Services',
+          isActive: true
+        },
+        systemSettings: {
+          maintenanceMode: false,
+          newRegistrations: true,
+          paymentVerificationAuto: false
+        },
+        updatedAt: serverTimestamp()
+      }
+    } catch (error) {
+      console.error('❌ Error loading super admin config:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Save super admin configuration
+   */
+  async saveSuperAdminConfig(config: any): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can modify system configuration')
+      }
+
+      const configRef = doc(db, 'system_config', 'super_admin')
+      const configData = {
+        ...config,
+        updatedAt: serverTimestamp(),
+        updatedBy: currentUser.uid
+      }
+      
+      await setDoc(configRef, configData)
+      console.log('✅ Super admin config saved successfully')
+    } catch (error) {
+      console.error('❌ Error saving super admin config:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Check if email is super admin
+   */
+  async isSuperAdmin(email: string): Promise<boolean> {
+    try {
+      const config = await this.getSuperAdminConfig()
+      return config.allowedEmails.includes(email.toLowerCase())
+    } catch (error) {
+      console.error('❌ Error checking super admin status:', error)
+      return email === 'maheshgok@gmail.com' // Fallback to hardcoded admin
+    }
+  }
+
+  /**
+   * Get UPI configuration for payments
+   */
+  async getUPIConfig(): Promise<any> {
+    try {
+      const config = await this.getSuperAdminConfig()
+      return config.upiConfig
+    } catch (error) {
+      console.error('❌ Error loading UPI config:', error)
+      // Return default UPI config
+      return {
+        vpa: 'maheshgok@paytm',
+        name: 'Invoice Processor',
+        businessName: 'Invoice Processing Services',
+        isActive: true
+      }
+    }
+  }
 }
 
 export const userService = new UserService()

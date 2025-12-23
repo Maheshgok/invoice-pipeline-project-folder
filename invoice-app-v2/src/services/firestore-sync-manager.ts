@@ -130,7 +130,9 @@ export class FirestoreSyncManager {
    * Update journal entries from Firestore results
    */
   private updateJournalEntries(results: InvoiceProcessingResult[]): void {
+    console.log('📊 SYNC MANAGER: updateJournalEntries called with', results.length, 'results')
     const entries = realtimeFirestoreService.extractJournalEntriesFromResults(results)
+    console.log('📊 SYNC MANAGER: Extracted', entries.length, 'raw entries from firestore service')
     
     this.journalEntries = entries.map(entry => ({
       id: entry.id,
@@ -149,7 +151,8 @@ export class FirestoreSyncManager {
       isBalanced: entry.isBalanced
     }))
 
-    console.log('📊 Updated journal entries:', this.journalEntries.length)
+    console.log('📊 SYNC MANAGER: Mapped to', this.journalEntries.length, 'journal entries')
+    console.log('📊 SYNC MANAGER: Sample entry:', this.journalEntries[0])
     this.notifyJournalListeners()
   }
 
@@ -181,12 +184,15 @@ export class FirestoreSyncManager {
    * Subscribe to journal entry updates
    */
   subscribeToJournalEntries(listener: (entries: JournalEntry[]) => void): () => void {
+    console.log('🔄 SYNC MANAGER: New journal listener subscribed')
     this.listeners.add(listener)
     
     // Immediately notify with current entries
+    console.log('🔄 SYNC MANAGER: Immediately notifying new listener with', this.journalEntries.length, 'entries')
     listener(this.journalEntries)
     
     return () => {
+      console.log('🔄 SYNC MANAGER: Journal listener unsubscribed')
       this.listeners.delete(listener)
     }
   }
@@ -209,8 +215,10 @@ export class FirestoreSyncManager {
    * Notify journal listeners
    */
   private notifyJournalListeners(): void {
-    this.listeners.forEach(listener => {
+    console.log('🔔 SYNC MANAGER: Notifying', this.listeners.size, 'journal listeners with', this.journalEntries.length, 'entries')
+    this.listeners.forEach((listener, index) => {
       try {
+        console.log(`🔔 SYNC MANAGER: Calling listener ${index + 1}`)
         listener(this.journalEntries)
       } catch (error) {
         console.error('Error in journal listener:', error)

@@ -12,7 +12,7 @@ import OrganizationSetup from '../components/organization/OrganizationSetup'
 import OrganizationManagement from '../components/organization/OrganizationManagement'
 
 const MultiUploadDashboard: React.FC = () => {
-  const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize } = useAuth()
+  const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize, markHasResults } = useAuth()
   
   // State declarations first
   const [selectedImage, setSelectedImage] = useState<string | null>(null)
@@ -50,6 +50,12 @@ const MultiUploadDashboard: React.FC = () => {
     getBatchStats,
     syncManager
   } = useMultiUploadSimplified()
+
+  // Debug logging for journal entries
+  useEffect(() => {
+    console.log('🎯 COMPONENT DEBUG: journalEntries.length =', journalEntries.length)
+    console.log('🎯 COMPONENT DEBUG: journalEntries sample:', journalEntries.slice(0, 2))
+  }, [journalEntries.length])
   
   // Debug logging for archiving behavior
   useEffect(() => {
@@ -61,6 +67,18 @@ const MultiUploadDashboard: React.FC = () => {
       userEmail: user?.email
     })
   }, [batchState.completedFiles, batchState.totalFiles, journalEntries.length, isInitialized, user?.email])
+
+  // Track if there are results that need archiving
+  useEffect(() => {
+    const hasActiveResults = journalEntries.length > 0 || batchState.totalFiles > 0
+    if (markHasResults) {
+      markHasResults(hasActiveResults)
+      console.log('📊 Marked results status:', hasActiveResults, { 
+        journalEntries: journalEntries.length, 
+        totalFiles: batchState.totalFiles 
+      })
+    }
+  }, [journalEntries.length, batchState.totalFiles, markHasResults])
 
   const MAX_QUEUE_SIZE = 100
 
@@ -681,7 +699,11 @@ const MultiUploadDashboard: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            {journalEntries.length === 0 ? (
+            {(() => {
+              console.log('🎯 RENDER DEBUG: journalEntries.length =', journalEntries.length)
+              console.log('🎯 RENDER DEBUG: journalEntries sample:', journalEntries.slice(0, 2))
+              return journalEntries.length === 0
+            })() ? (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="mx-auto h-12 w-12 text-gray-300 mb-2" />
                 <p>No journal entries generated yet</p>
