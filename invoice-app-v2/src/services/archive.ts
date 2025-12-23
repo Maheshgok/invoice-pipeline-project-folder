@@ -51,13 +51,14 @@ class ArchiveService {
       console.log('📦 Archive service - Starting archive completed results...')
       const headers = await this.getAuthHeaders()
       
-      console.log('📦 Archive service - Making request to:', `${ARCHIVE_SERVICE_URL}/archive-completed`)
+      const archiveUrl = getApiUrl.archiveCompleted()
+      console.log('📦 Archive service - Making request to:', archiveUrl)
       console.log('📦 Archive service - Headers:', { 
         'Authorization': headers.Authorization ? 'Bearer [TOKEN_PRESENT]' : 'No auth header',
         'Content-Type': headers['Content-Type'] 
       })
       
-      const response = await fetch(getApiUrl.archiveCompleted(), {
+      const response = await fetch(archiveUrl, {
         method: 'POST',
         headers
       })
