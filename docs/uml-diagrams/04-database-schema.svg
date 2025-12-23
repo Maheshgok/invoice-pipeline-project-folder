@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1400" height="1000" viewBox="0 0 1400 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font: bold 18px Arial; text-anchor: middle; }
+      .section-title { font: bold 14px Arial; text-anchor: middle; fill: #1a73e8; }
+      .collection-box { fill: #e8f0fe; stroke: #1a73e8; stroke-width: 2; rx: 8; }
+      .document-box { fill: #fff3cd; stroke: #f9ab00; stroke-width: 1; rx: 4; }
+      .field-box { fill: #e8f5e8; stroke: #137333; stroke-width: 1; rx: 3; }
+      .index-box { fill: #fce8e6; stroke: #d93025; stroke-width: 1; rx: 4; }
+      .relationship { stroke: #5f6368; stroke-width: 2; marker-end: url(#arrowhead); }
+      .composition { stroke: #fbbc04; stroke-width: 3; marker-end: url(#diamond); }
+      .field-text { font: 11px Arial; }
+      .collection-text { font: bold 12px Arial; }
+      .document-text { font: 11px Arial; fill: #5f6368; }
+      .note { fill: #f8f9fa; stroke: #5f6368; stroke-width: 1; rx: 4; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5f6368"/>
+    </marker>
+    <marker id="diamond" markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto">
+      <polygon points="0 4, 6 0, 12 4, 6 8" fill="#fbbc04" stroke="#f9ab00"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="700" y="30" class="title">Invoice Processing System - Database Schema (Firestore)</text>
+
+  <!-- Organization Collection Tree -->
+  <text x="200" y="70" class="section-title">Organization-Level Collections</text>
+
+  <!-- Organizations Collection -->
+  <rect x="50" y="90" width="300" height="180" class="collection-box"/>
+  <text x="200" y="110" class="collection-text">organizations/{orgId}</text>
+  
+  <!-- Organization Document Fields -->
+  <rect x="70" y="125" width="260" height="140" class="document-box"/>
+  <text x="85" y="140" class="field-text">📄 Organization Document:</text>
+  <rect x="90" y="150" width="100" height="20" class="field-box"/>
+  <text x="95" y="163" class="field-text">name: string</text>
+  <rect x="200" y="150" width="120" height="20" class="field-box"/>
+  <text x="205" y="163" class="field-text">created_at: timestamp</text>
+  <rect x="90" y="175" width="100" height="20" class="field-box"/>
+  <text x="95" y="188" class="field-text">owner_uid: string</text>
+  <rect x="200" y="175" width="120" height="20" class="field-box"/>
+  <text x="205" y="188" class="field-text">subscription_tier: string</text>
+  <rect x="90" y="200" width="100" height="20" class="field-box"/>
+  <text x="95" y="213" class="field-text">settings: object</text>
+  <rect x="200" y="200" width="120" height="20" class="field-box"/>
+  <text x="205" y="213" class="field-text">member_count: number</text>
+  <rect x="90" y="225" width="230" height="20" class="field-box"/>
+  <text x="95" y="238" class="field-text">usage_limits: {uploads_per_month: number}</text>
+  <rect x="90" y="245" width="230" height="15" class="field-box"/>
+  <text x="95" y="255" class="field-text">status: "active" | "suspended"</text>
+
+  <!-- Organization Members Subcollection -->
+  <rect x="400" y="90" width="300" height="130" class="collection-box"/>
+  <text x="550" y="110" class="collection-text">organizations/{orgId}/members/{uid}</text>
+  
+  <rect x="420" y="125" width="260" height="90" class="document-box"/>
+  <text x="435" y="140" class="field-text">👤 Member Document:</text>
+  <rect x="440" y="150" width="80" height="20" class="field-box"/>
+  <text x="445" y="163" class="field-text">email: string</text>
+  <rect x="530" y="150" width="120" height="20" class="field-box"/>
+  <text x="535" y="163" class="field-text">role: "owner" | "admin" | "member"</text>
+  <rect x="440" y="175" width="100" height="20" class="field-box"/>
+  <text x="445" y="188" class="field-text">joined_at: timestamp</text>
+  <rect x="550" y="175" width="100" height="20" class="field-box"/>
+  <text x="555" y="188" class="field-text">status: "active"</text>
+
+  <!-- Organization Invoice Results -->
+  <rect x="50" y="300" width="400" height="200" class="collection-box"/>
+  <text x="250" y="320" class="collection-text">organizations/{orgId}/invoice_results/{docId}</text>
+  
+  <rect x="70" y="335" width="360" height="155" class="document-box"/>
+  <text x="85" y="350" class="field-text">📊 Shared Invoice Result:</text>
+  <rect x="90" y="360" width="80" height="20" class="field-box"/>
+  <text x="95" y="373" class="field-text">jobId: string</text>
+  <rect x="180" y="360" width="100" height="20" class="field-box"/>
+  <text x="185" y="373" class="field-text">userUID: string</text>
+  <rect x="290" y="360" width="120" height="20" class="field-box"/>
+  <text x="295" y="373" class="field-text">organizationId: string</text>
+  <rect x="90" y="385" width="100" height="20" class="field-box"/>
+  <text x="95" y="398" class="field-text">fileName: string</text>
+  <rect x="200" y="385" width="100" height="20" class="field-box"/>
+  <text x="205" y="398" class="field-text">fileSize: number</text>
+  <rect x="310" y="385" width="100" height="20" class="field-box"/>
+  <text x="315" y="398" class="field-text">processingTime: number</text>
+  <rect x="90" y="410" width="320" height="20" class="field-box"/>
+  <text x="95" y="423" class="field-text">extractedData: {invoice_number, date, total, vendor, etc.}</text>
+  <rect x="90" y="435" width="100" height="20" class="field-box"/>
+  <text x="95" y="448" class="field-text">status: enum</text>
+  <rect x="200" y="435" width="100" height="20" class="field-box"/>
+  <text x="205" y="448" class="field-text">createdAt: timestamp</text>
+  <rect x="310" y="435" width="100" height="20" class="field-box"/>
+  <text x="315" y="448" class="field-text">updatedAt: timestamp</text>
+  <rect x="90" y="460" width="150" height="20" class="field-box"/>
+  <text x="95" y="473" class="field-text">visibility: "organization" | "user"</text>
+  <rect x="250" y="460" width="160" height="20" class="field-box"/>
+  <text x="255" y="473" class="field-text">shared_by: string (uid of uploader)</text>
+
+  <!-- User Collection Tree -->
+  <text x="900" y="70" class="section-title">User-Level Collections</text>
+
+  <!-- User Invoice Results -->
+  <rect x="750" y="90" width="400" height="180" class="collection-box"/>
+  <text x="950" y="110" class="collection-text">users/{uid}/invoice_results/{docId}</text>
+  
+  <rect x="770" y="125" width="360" height="135" class="document-box"/>
+  <text x="785" y="140" class="field-text">🔒 Private Invoice Result (Same schema as organization):</text>
+  <rect x="790" y="150" width="320" height="15" class="field-box"/>
+  <text x="795" y="160" class="field-text">• All fields identical to organization/invoice_results</text>
+  <rect x="790" y="170" width="320" height="15" class="field-box"/>
+  <text x="795" y="180" class="field-text">• Used when user has no organization OR opts for private storage</text>
+  <rect x="790" y="190" width="320" height="15" class="field-box"/>
+  <text x="795" y="200" class="field-text">• organizationId field will be null or empty</text>
+  <rect x="790" y="210" width="320" height="15" class="field-box"/>
+  <text x="795" y="220" class="field-text">• visibility always set to "user"</text>
+  <rect x="790" y="230" width="320" height="15" class="field-box"/>
+  <text x="795" y="240" class="field-text">• Only accessible by the document owner (uid)</text>
+  <rect x="790" y="245" width="320" height="10" class="field-box"/>
+  <text x="795" y="252" style="font: 9px Arial;">• Automatic fallback when organization collection is unavailable</text>
+
+  <!-- User Profile -->
+  <rect x="750" y="300" width="300" height="150" class="collection-box"/>
+  <text x="900" y="320" class="collection-text">users/{uid}</text>
+  
+  <rect x="770" y="335" width="260" height="105" class="document-box"/>
+  <text x="785" y="350" class="field-text">👤 User Profile Document:</text>
+  <rect x="790" y="360" width="80" height="20" class="field-box"/>
+  <text x="795" y="373" class="field-text">email: string</text>
+  <rect x="880" y="360" width="120" height="20" class="field-box"/>
+  <text x="885" y="373" class="field-text">display_name: string</text>
+  <rect x="790" y="385" width="120" height="20" class="field-box"/>
+  <text x="795" y="398" class="field-text">organization_id: string?</text>
+  <rect x="920" y="385" width="80" height="20" class="field-box"/>
+  <text x="925" y="398" class="field-text">role: string?</text>
+  <rect x="790" y="410" width="100" height="20" class="field-box"/>
+  <text x="795" y="423" class="field-text">created_at: timestamp</text>
+  <rect x="900" y="410" width="100" height="20" class="field-box"/>
+  <text x="905" y="423" class="field-text">last_active: timestamp</text>
+
+  <!-- Legacy Root Collection -->
+  <text x="200" y="550" class="section-title">Legacy Collections (Backward Compatibility)</text>
+
+  <rect x="50" y="570" width="400" height="120" class="collection-box"/>
+  <text x="250" y="590" class="collection-text">invoice_results/{docId} (Root Level)</text>
+  
+  <rect x="70" y="605" width="360" height="75" class="document-box"/>
+  <text x="85" y="620" class="field-text">🔄 Legacy Invoice Results:</text>
+  <rect x="90" y="630" width="320" height="15" class="field-box"/>
+  <text x="95" y="640" class="field-text">• Same schema as organization/user invoice_results</text>
+  <rect x="90" y="650" width="320" height="15" class="field-box"/>
+  <text x="95" y="660" class="field-text">• Still used by legacy data and fallback queries</text>
+  <rect x="90" y="665" width="320" height="10" class="field-box"/>
+  <text x="95" y="672" style="font: 9px Arial;">• Smart listener checks this collection when org/user collections are empty</text>
+
+  <!-- Archive Collections -->
+  <text x="900" y="550" class="section-title">Archive Collections</text>
+
+  <rect x="750" y="570" width="400" height="120" class="collection-box"/>
+  <text x="950" y="590" class="collection-text">organizations/{orgId}/archived_results/{docId}</text>
+  
+  <rect x="770" y="605" width="360" height="75" class="document-box"/>
+  <text x="785" y="620" class="field-text">📁 Archived Results:</text>
+  <rect x="790" y="630" width="320" height="15" class="field-box"/>
+  <text x="795" y="640" class="field-text">• Identical schema to active invoice_results</text>
+  <rect x="790" y="650" width="320" height="15" class="field-box"/>
+  <text x="795" y="660" class="field-text">• Includes additional archived_at: timestamp field</text>
+  <rect x="790" y="665" width="320" height="10" class="field-box"/>
+  <text x="795" y="672" style="font: 9px Arial;">• Moved here after CSV export or manual archiving</text>
+
+  <!-- Firestore Indexes -->
+  <text x="200" y="750" class="section-title">Composite Indexes Required</text>
+
+  <rect x="50" y="770" width="500" height="150" class="index-box"/>
+  <text x="65" y="785" style="font: bold 11px Arial;">📚 Firestore Composite Indexes:</text>
+  
+  <text x="65" y="805" style="font: 10px Arial; font-weight: bold;">organizations/{orgId}/invoice_results:</text>
+  <text x="80" y="820" style="font: 9px Arial;">• userUID (Ascending) + createdAt (Descending)</text>
+  <text x="80" y="835" style="font: 9px Arial;">• organizationId (Ascending) + status (Ascending) + createdAt (Descending)</text>
+  
+  <text x="65" y="855" style="font: 10px Arial; font-weight: bold;">users/{uid}/invoice_results:</text>
+  <text x="80" y="870" style="font: 9px Arial;">• userUID (Ascending) + createdAt (Descending)</text>
+  <text x="80" y="885" style="font: 9px Arial;">• status (Ascending) + createdAt (Descending)</text>
+  
+  <text x="65" y="905" style="font: 10px Arial; font-weight: bold;">Root level invoice_results (legacy):</text>
+  <text x="80" y="920" style="font: 9px Arial;">• userUID (Ascending) + createdAt (Descending) [existing]</text>
+
+  <!-- Data Flow and Logic -->
+  <text x="900" y="750" class="section-title">Collection Routing Logic</text>
+
+  <rect x="600" y="770" width="500" height="150" class="note"/>
+  <text x="615" y="785" style="font: bold 11px Arial;">🔀 Smart Collection Routing:</text>
+  
+  <text x="615" y="805" style="font: 10px Arial; font-weight: bold;">Storage Decision Tree:</text>
+  <text x="630" y="820" style="font: 9px Arial;">1. If user has organization + org allows sharing → organizations/{orgId}/invoice_results</text>
+  <text x="630" y="835" style="font: 9px Arial;">2. If user opts for private storage → users/{uid}/invoice_results</text>
+  <text x="630" y="850" style="font: 9px Arial;">3. If no organization → users/{uid}/invoice_results</text>
+  <text x="630" y="865" style="font: 9px Arial;">4. Legacy fallback → invoice_results (root level)</text>
+  
+  <text x="615" y="885" style="font: 10px Arial; font-weight: bold;">Listener Priority:</text>
+  <text x="630" y="900" style="font: 9px Arial;">Smart listener checks: Organization → User → Legacy collections</text>
+
+  <!-- Relationships -->
+  
+  <!-- Organization to Members -->
+  <line x1="350" y1="180" x2="400" y2="155" class="composition"/>
+  
+  <!-- Organization to Invoice Results -->
+  <line x1="250" y1="270" x2="250" y2="300" class="composition"/>
+  
+  <!-- User to Invoice Results -->
+  <line x1="950" y1="270" x2="950" y2="300" class="composition"/>
+  
+  <!-- Archive Relationship -->
+  <line x1="450" y1="400" x2="750" y2="630" class="relationship" stroke-dasharray="5,5"/>
+  <text x="600" y="520" style="font: 10px Arial; fill: #5f6368;">archives to</text>
+
+  <!-- Multi-tenancy Notes -->
+  <rect x="1200" y="200" width="180" height="200" class="note"/>
+  <text x="1290" y="220" style="font: bold 12px Arial; text-anchor: middle;">🔒 Security Rules</text>
+  <text x="1210" y="240" style="font: 10px Arial;">Organization Collections:</text>
+  <text x="1215" y="255" style="font: 9px Arial;">• Only org members can read</text>
+  <text x="1215" y="270" style="font: 9px Arial;">• Role-based write permissions</text>
+  <text x="1215" y="285" style="font: 9px Arial;">• Admin can manage all docs</text>
+  
+  <text x="1210" y="305" style="font: 10px Arial;">User Collections:</text>
+  <text x="1215" y="320" style="font: 9px Arial;">• Only document owner can access</text>
+  <text x="1215" y="335" style="font: 9px Arial;">• Complete data isolation</text>
+  
+  <text x="1210" y="355" style="font: 10px Arial;">Legacy Collections:</text>
+  <text x="1215" y="370" style="font: 9px Arial;">• userUID field validation</text>
+  <text x="1215" y="385" style="font: 9px Arial;">• Backward compatibility only</text>
+
+</svg>

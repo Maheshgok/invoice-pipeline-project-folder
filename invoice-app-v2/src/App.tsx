@@ -3,6 +3,8 @@ import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './contexts/AuthContext'
 import MultiUploadDashboard from './pages/MultiUploadDashboard'
 import Login from './pages/Login'
+import OnboardingFlow from './components/onboarding/OnboardingFlow'
+import PaymentManagementDashboard from './components/admin/PaymentManagementDashboard'
 import ProtectedRoute from './components/auth/ProtectedRoute'
 
 function App() {
@@ -12,6 +14,22 @@ function App() {
         <div className="min-h-screen bg-gray-50">
           <Routes>
             <Route path="/login" element={<Login />} />
+            <Route 
+              path="/onboarding" 
+              element={
+                <ProtectedRoute requirePayment={false}>
+                  <OnboardingFlow />
+                </ProtectedRoute>
+              } 
+            />
+            <Route 
+              path="/admin/payments" 
+              element={
+                <ProtectedRoute requirePayment={false}>
+                  <PaymentManagementDashboard />
+                </ProtectedRoute>
+              } 
+            />
             <Route
               path="/*"
               element={

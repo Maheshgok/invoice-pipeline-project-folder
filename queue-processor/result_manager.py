@@ -66,8 +66,24 @@ class ResultManager:
         Returns: True if stored successfully, False otherwise
         """
         try:
+            # 🔍 DEBUG: Log all parameters received
+            logger.info(f"📋 STORE_RESULT DEBUG for job {job_id}:")
+            logger.info(f"   user_email: '{user_email}'")
+            logger.info(f"   user_uid: '{user_uid}'")
+            logger.info(f"   organization_id: '{organization_id}'")
+            logger.info(f"   status: '{status}'")
+            logger.info(f"   bucket_path: '{bucket_path}'")
+            
             # Determine the appropriate collection path based on organization context
             collection_path = self._get_collection_path(user_uid, organization_id)
+            logger.info(f"📝 Storing result for job {job_id} in collection: {collection_path}")
+            
+            # 🔍 VALIDATION: Check for invalid user_email
+            if not user_email or user_email == "no email" or user_email == "":
+                logger.error(f"❌ INVALID USER EMAIL detected for job {job_id}: '{user_email}'")
+                logger.error(f"   This suggests auth token verification failed")
+                logger.error(f"   user_uid: '{user_uid}', organization_id: '{organization_id}'")
+            
             doc_ref = self.firestore_client.collection(collection_path).document(job_id)
             
             # Base document data with optimization fields and proper indexing
@@ -111,7 +127,17 @@ class ResultManager:
                 })
                 logger.info(f"Storing failed result for job {job_id}: {error}")
             
+            # Log the complete document data being stored
+            logger.info(f"💾 FINAL DOCUMENT DATA for {job_id}:")
+            logger.info(f"Collection: {collection_path}")
+            logger.info(f"Document ID: {job_id}")
+            logger.info(f"Data keys: {list(doc_data.keys())}")
+            logger.info(f"Status: {doc_data.get('status')}")
+            logger.info(f"User UID: {doc_data.get('userUID')}")
+            logger.info(f"Organization ID: {doc_data.get('organizationId')}")
+            
             doc_ref.set(doc_data)
+            logger.info(f"✅ Successfully stored result for job {job_id} in {collection_path}")
             return True
             
         except Exception as e:
@@ -298,6 +324,47 @@ class ResultManager:
         except Exception as e:
             logger.error(f"Error cleaning up old results: {e}")
             return 0
+    
+    def _get_collection_path(self, user_uid: str = None, organization_id: str = None) -> str:
+        """
+        Determine the appropriate Firestore collection path based on organization context.
+        This enables proper multi-tenant data isolation.
+        
+        Priority:
+        1. Organization collection: organizations/{orgId}/invoice_results (if user has organization)
+        2. User collection: users/{uid}/invoice_results (if no organization or private storage)
+        3. Legacy collection: invoice_results (root level fallback)
+        
+        Args:
+            user_uid: User's Firebase Auth UID
+            organization_id: Organization ID from user's custom claims
+            
+        Returns:
+            Collection path string for Firestore
+        """
+        try:
+            # Priority 1: Organization-level collection
+            if organization_id and user_uid:
+                collection_path = f"organizations/{organization_id}/invoice_results"
+                logger.info(f"🏢 Using organization collection: {collection_path}")
+                return collection_path
+            
+            # Priority 2: User-level collection
+            elif user_uid:
+                collection_path = f"users/{user_uid}/invoice_results"
+                logger.info(f"👤 Using user collection: {collection_path}")
+                return collection_path
+            
+            # Priority 3: Legacy root collection (backward compatibility)
+            else:
+                collection_path = "invoice_results"
+                logger.warning(f"⚠️ Using legacy root collection: {collection_path} (missing user context)")
+                return collection_path
+                
+        except Exception as e:
+            logger.error(f"Error determining collection path: {e}")
+            # Fallback to legacy collection
+            return "invoice_results"
     
     def _sanitize_for_firestore(self, data):
         """

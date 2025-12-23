@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1400" height="1000" viewBox="0 0 1400 1000" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font: bold 18px Arial; text-anchor: middle; }
+      .actor { fill: #4285f4; stroke: #1a73e8; stroke-width: 2; }
+      .service { fill: #34a853; stroke: #137333; stroke-width: 2; }
+      .database { fill: #ea4335; stroke: #c5221f; stroke-width: 2; }
+      .external { fill: #fbbc04; stroke: #f9ab00; stroke-width: 2; }
+      .text { font: 11px Arial; text-anchor: middle; }
+      .arrow { stroke: #5f6368; stroke-width: 2; marker-end: url(#arrowhead); }
+      .return-arrow { stroke: #5f6368; stroke-width: 1; stroke-dasharray: 5,5; marker-end: url(#arrowhead); }
+      .step-text { font: 10px Arial; }
+      .lifeline { stroke: #dadce0; stroke-width: 2; stroke-dasharray: 3,3; }
+    </style>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <polygon points="0 0, 8 3, 0 6" fill="#5f6368"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="700" y="30" class="title">Invoice Upload & Processing Sequence - Organization-Aware Flow</text>
+
+  <!-- Actors/Services Headers -->
+  <rect x="50" y="60" width="120" height="40" class="actor" rx="5"/>
+  <text x="110" y="85" class="text" style="fill: white;">User</text>
+
+  <rect x="200" y="60" width="120" height="40" class="service" rx="5"/>
+  <text x="260" y="85" class="text" style="fill: white;">React Frontend</text>
+
+  <rect x="350" y="60" width="120" height="40" class="service" rx="5"/>
+  <text x="410" y="85" class="text" style="fill: white;">Initial API</text>
+
+  <rect x="500" y="60" width="120" height="40" class="external" rx="5"/>
+  <text x="560" y="85" class="text" style="fill: white;">Cloud Storage</text>
+
+  <rect x="650" y="60" width="120" height="40" class="external" rx="5"/>
+  <text x="710" y="85" class="text" style="fill: white;">Cloud Tasks</text>
+
+  <rect x="800" y="60" width="120" height="40" class="service" rx="5"/>
+  <text x="860" y="85" class="text" style="fill: white;">Queue Processor</text>
+
+  <rect x="950" y="60" width="120" height="40" class="external" rx="5"/>
+  <text x="1010" y="85" class="text" style="fill: white;">OpenAI Vision</text>
+
+  <rect x="1100" y="60" width="120" height="40" class="database" rx="5"/>
+  <text x="1160" y="85" class="text" style="fill: white;">Firestore</text>
+
+  <!-- Lifelines -->
+  <line x1="110" y1="100" x2="110" y2="950" class="lifeline"/>
+  <line x1="260" y1="100" x2="260" y2="950" class="lifeline"/>
+  <line x1="410" y1="100" x2="410" y2="950" class="lifeline"/>
+  <line x1="560" y1="100" x2="560" y2="950" class="lifeline"/>
+  <line x1="710" y1="100" x2="710" y2="950" class="lifeline"/>
+  <line x1="860" y1="100" x2="860" y2="950" class="lifeline"/>
+  <line x1="1010" y1="100" x2="1010" y2="950" class="lifeline"/>
+  <line x1="1160" y1="100" x2="1160" y2="950" class="lifeline"/>
+
+  <!-- Sequence Steps -->
+
+  <!-- 1. User Upload -->
+  <line x1="110" y1="130" x2="260" y2="130" class="arrow"/>
+  <text x="185" y="125" class="step-text">1. Select & Upload Files</text>
+  <text x="185" y="145" class="step-text">+ Organization Context</text>
+
+  <!-- 2. Authentication -->
+  <line x1="260" y1="170" x2="410" y2="170" class="arrow"/>
+  <text x="335" y="165" class="step-text">2. POST /upload_invoice</text>
+  <text x="335" y="185" class="step-text">Bearer Token + Files</text>
+
+  <!-- 3. Token Verification -->
+  <rect x="390" y="200" width="40" height="60" style="fill: #f8f9fa; stroke: #dadce0;"/>
+  <text x="410" y="220" class="step-text">3. Extract</text>
+  <text x="410" y="235" class="step-text">User Context</text>
+  <text x="410" y="250" class="step-text">(UID + Org)</text>
+
+  <!-- 4. File Upload -->
+  <line x1="410" y1="280" x2="560" y2="280" class="arrow"/>
+  <text x="485" y="275" class="step-text">4. Upload to GCS</text>
+  <text x="485" y="295" class="step-text">/{orgId}/{userUID}/...</text>
+
+  <line x1="560" y1="310" x2="410" y2="310" class="return-arrow"/>
+  <text x="485" y="325" class="step-text">File URL + Job ID</text>
+
+  <!-- 5. Create Cloud Task -->
+  <line x1="410" y1="350" x2="710" y2="350" class="arrow"/>
+  <text x="560" y="345" class="step-text">5. Create Processing Task</text>
+  <text x="560" y="365" class="step-text">+ Full User Context</text>
+
+  <line x1="710" y1="380" x2="410" y2="380" class="return-arrow"/>
+  <text x="560" y="395" class="step-text">Task Created</text>
+
+  <!-- 6. Response to Frontend -->
+  <line x1="410" y1="420" x2="260" y2="420" class="return-arrow"/>
+  <text x="335" y="415" class="step-text">6. Upload Success</text>
+  <text x="335" y="435" class="step-text">+ Job ID</text>
+
+  <!-- 7. Start Listener -->
+  <rect x="240" y="450" width="40" height="60" style="fill: #f8f9fa; stroke: #dadce0;"/>
+  <text x="260" y="470" class="step-text">7. Start</text>
+  <text x="260" y="485" class="step-text">Smart Org</text>
+  <text x="260" y="500" class="step-text">Listener</text>
+
+  <!-- 8. Cloud Task Execution -->
+  <line x1="710" y1="540" x2="860" y2="540" class="arrow"/>
+  <text x="785" y="535" class="step-text">8. Execute Task</text>
+  <text x="785" y="555" class="step-text">+ User Context</text>
+
+  <!-- 9. Process with OpenAI -->
+  <line x1="860" y1="580" x2="1010" y2="580" class="arrow"/>
+  <text x="935" y="575" class="step-text">9. Vision API</text>
+  <text x="935" y="595" class="step-text">Process Invoice</text>
+
+  <line x1="1010" y1="610" x2="860" y2="610" class="return-arrow"/>
+  <text x="935" y="625" class="step-text">Extracted Data</text>
+
+  <!-- 10. Organization-Aware Storage -->
+  <line x1="860" y1="650" x2="1160" y2="650" class="arrow"/>
+  <text x="1010" y="645" class="step-text">10. Store in Org Collection</text>
+  <text x="1010" y="665" class="step-text">organizations/{orgId}/invoice_results</text>
+
+  <line x1="1160" y1="680" x2="860" y2="680" class="return-arrow"/>
+  <text x="1010" y="695" class="step-text">Stored Successfully</text>
+
+  <!-- 11. Real-time Update -->
+  <line x1="1160" y1="720" x2="260" y2="720" class="arrow"/>
+  <text x="710" y="715" class="step-text">11. Firestore Real-time Update</text>
+  <text x="710" y="735" class="step-text">Organization Collection Listener</text>
+
+  <!-- 12. Update UI -->
+  <line x1="260" y1="760" x2="110" y2="760" class="arrow"/>
+  <text x="185" y="755" class="step-text">12. Update Dashboard</text>
+  <text x="185" y="775" class="step-text">With Processed Results</text>
+
+  <!-- Organization Context Box -->
+  <rect x="50" y="820" width="500" height="120" style="fill: #f8f9fa; stroke: #4285f4; stroke-width: 2; rx: 8;"/>
+  <text x="300" y="840" class="step-text" style="font-weight: bold; font-size: 12px;">Organization-Aware Context Flow</text>
+  
+  <text x="60" y="860" class="step-text">• Token contains: user_email, user_uid, organizationId, organizationRole</text>
+  <text x="60" y="875" class="step-text">• Storage path: organizations/{orgId}/invoice_results/{jobId}</text>
+  <text x="60" y="890" class="step-text">• Access control: Admin sees all org data, Users see only their own</text>
+  <text x="60" y="905" class="step-text">• Real-time listener: Smart routing with fallback to user/legacy collections</text>
+  <text x="60" y="920" class="step-text">• Collection isolation: Perfect tenant separation with role-based filtering</text>
+
+  <!-- Error Handling Box -->
+  <rect x="600" y="820" width="400" height="120" style="fill: #fef7e0; stroke: #f9ab00; stroke-width: 2; rx: 8;"/>
+  <text x="800" y="840" class="step-text" style="font-weight: bold; font-size: 12px;">Fallback & Error Handling</text>
+  
+  <text x="610" y="860" class="step-text">• No organization → Use users/{uid}/invoice_results</text>
+  <text x="610" y="875" class="step-text">• No user profile → Use legacy root collection</text>
+  <text x="610" y="890" class="step-text">• Permission denied → Auto-fallback to user-isolated collection</text>
+  <text x="610" y="905" class="step-text">• Processing errors → Store in same org-aware collection with error status</text>
+  <text x="610" y="920" class="step-text">• Listener errors → Smart retry with collection degradation</text>
+
+</svg>

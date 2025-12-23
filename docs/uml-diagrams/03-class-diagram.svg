@@ -1,0 +1,212 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="900" viewBox="0 0 1200 900" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .title { font: bold 16px Arial; text-anchor: middle; }
+      .class-name { font: bold 14px Arial; text-anchor: middle; fill: white; }
+      .class-box { fill: #4285f4; stroke: #1a73e8; stroke-width: 2; rx: 8; }
+      .method { font: 11px Arial; }
+      .attribute { font: 11px Arial; fill: #5f6368; }
+      .interface { fill: #34a853; stroke: #137333; stroke-width: 2; rx: 8; }
+      .relationship { stroke: #5f6368; stroke-width: 2; marker-end: url(#arrowhead); }
+      .inheritance { stroke: #ea4335; stroke-width: 2; marker-end: url(#triangle); }
+      .composition { stroke: #fbbc04; stroke-width: 2; marker-end: url(#diamond); }
+      .note { fill: #fff3cd; stroke: #856404; stroke-width: 1; rx: 4; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="10" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#5f6368"/>
+    </marker>
+    <marker id="triangle" markerWidth="12" markerHeight="10" refX="12" refY="5" orient="auto">
+      <polygon points="0 0, 12 5, 0 10" fill="none" stroke="#ea4335" stroke-width="2"/>
+    </marker>
+    <marker id="diamond" markerWidth="12" markerHeight="8" refX="12" refY="4" orient="auto">
+      <polygon points="0 4, 6 0, 12 4, 6 8" fill="#fbbc04" stroke="#f9ab00"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="25" class="title">Invoice Processing System - Class Diagram</text>
+
+  <!-- Frontend Classes -->
+  
+  <!-- React Components -->
+  <rect x="50" y="60" width="200" height="140" class="class-box"/>
+  <text x="150" y="80" class="class-name">MultiUploadDashboard</text>
+  <line x1="60" y1="90" x2="240" y2="90" stroke="white" stroke-width="1"/>
+  <text x="60" y="105" class="attribute">- files: File[]</text>
+  <text x="60" y="120" class="attribute">- uploadProgress: Map</text>
+  <text x="60" y="135" class="attribute">- organizationContext: OrgContext</text>
+  <line x1="60" y1="145" x2="240" y2="145" stroke="white" stroke-width="1"/>
+  <text x="60" y="160" class="method">+ handleFileUpload(): void</text>
+  <text x="60" y="175" class="method">+ startRealtimeListener(): void</text>
+  <text x="60" y="190" class="method">+ downloadCSV(): void</text>
+
+  <!-- Services -->
+  <rect x="300" y="60" width="200" height="140" class="class-box"/>
+  <text x="400" y="80" class="class-name">RealtimeFirestoreService</text>
+  <line x1="310" y1="90" x2="490" y2="90" stroke="white" stroke-width="1"/>
+  <text x="310" y="105" class="attribute">- activeResultsCache: Map</text>
+  <text x="310" y="120" class="attribute">- unsubscribers: Function[]</text>
+  <text x="310" y="135" class="attribute">- syncManager: FirestoreSyncManager</text>
+  <line x1="310" y1="145" x2="490" y2="145" stroke="white" stroke-width="1"/>
+  <text x="310" y="160" class="method">+ listenToActiveResults(): void</text>
+  <text x="310" y="175" class="method">+ setupSmartOrganizationListener(): void</text>
+  <text x="310" y="190" class="method">+ processOrganizationSnapshot(): Result[]</text>
+
+  <!-- User Service -->
+  <rect x="550" y="60" width="200" height="140" class="class-box"/>
+  <text x="650" y="80" class="class-name">UserService</text>
+  <line x1="560" y1="90" x2="740" y2="90" stroke="white" stroke-width="1"/>
+  <text x="560" y="105" class="attribute">- currentUser: User</text>
+  <text x="560" y="120" class="attribute">- userProfile: UserProfile</text>
+  <text x="560" y="135" class="attribute">- permissions: UserPermissions</text>
+  <line x1="560" y1="145" x2="740" y2="145" stroke="white" stroke-width="1"/>
+  <text x="560" y="160" class="method">+ getUserProfile(): UserProfile</text>
+  <text x="560" y="175" class="method">+ hasPermission(perm: string): boolean</text>
+  <text x="560" y="190" class="method">+ getUserDataPath(): string</text>
+
+  <!-- Backend Services -->
+
+  <!-- Initial API -->
+  <rect x="50" y="250" width="200" height="140" class="class-box"/>
+  <text x="150" y="270" class="class-name">InitialAPIService</text>
+  <line x1="60" y1="280" x2="240" y2="280" stroke="white" stroke-width="1"/>
+  <text x="60" y="295" class="attribute">- storage_client: StorageClient</text>
+  <text x="60" y="310" class="attribute">- cloud_tasks_manager: CloudTasksManager</text>
+  <text x="60" y="325" class="attribute">- firestore_client: FirestoreClient</text>
+  <line x1="60" y1="335" x2="240" y2="335" stroke="white" stroke-width="1"/>
+  <text x="60" y="350" class="method">+ verify_auth_token(): UserContext</text>
+  <text x="60" y="365" class="method">+ upload_file(): Response</text>
+  <text x="60" y="380" class="method">+ create_processing_task(): str</text>
+
+  <!-- Queue Processor -->
+  <rect x="300" y="250" width="200" height="140" class="class-box"/>
+  <text x="400" y="270" class="class-name">InvoiceProcessingService</text>
+  <line x1="310" y1="280" x2="490" y2="280" stroke="white" stroke-width="1"/>
+  <text x="310" y="295" class="attribute">- openai_processor: OpenAIProcessor</text>
+  <text x="310" y="310" class="attribute">- result_manager: ResultManager</text>
+  <text x="310" y="325" class="attribute">- tracker: ProcessingTracker</text>
+  <line x1="310" y1="335" x2="490" y2="335" stroke="white" stroke-width="1"/>
+  <text x="310" y="350" class="method">+ process_invoice_task(): Tuple</text>
+  <text x="310" y="365" class="method">+ handle_processing_failure(): Tuple</text>
+  <text x="310" y="380" class="method">+ handle_unexpected_error(): Tuple</text>
+
+  <!-- Result Manager -->
+  <rect x="550" y="250" width="200" height="140" class="class-box"/>
+  <text x="650" y="270" class="class-name">ResultManager</text>
+  <line x1="560" y1="280" x2="740" y2="280" stroke="white" stroke-width="1"/>
+  <text x="560" y="295" class="attribute">- firestore_client: FirestoreClient</text>
+  <text x="560" y="310" class="attribute">- collection_router: CollectionRouter</text>
+  <line x1="560" y1="320" x2="740" y2="320" stroke="white" stroke-width="1"/>
+  <text x="560" y="335" class="method">+ store_result(): bool</text>
+  <text x="560" y="350" class="method">+ get_collection_path(): str</text>
+  <text x="560" y="365" class="method">+ get_latest_results(): List</text>
+  <text x="560" y="380" class="method">+ sanitize_for_firestore(): Dict</text>
+
+  <!-- Archive Manager -->
+  <rect x="800" y="250" width="200" height="140" class="class-box"/>
+  <text x="900" y="270" class="class-name">ArchiveManager</text>
+  <line x1="810" y1="280" x2="990" y2="280" stroke="white" stroke-width="1"/>
+  <text x="810" y="295" class="attribute">- firestore_client: FirestoreClient</text>
+  <text x="810" y="310" class="attribute">- collection_paths: Dict</text>
+  <line x1="810" y1="320" x2="990" y2="320" stroke="white" stroke-width="1"/>
+  <text x="810" y="335" class="method">+ archive_completed_results(): Response</text>
+  <text x="810" y="350" class="method">+ get_collection_paths(): Dict</text>
+  <text x="810" y="365" class="method">+ build_user_query(): Query</text>
+  <text x="810" y="380" class="method">+ get_archived_results(): List</text>
+
+  <!-- Utility Classes -->
+  
+  <!-- Cloud Tasks Manager -->
+  <rect x="50" y="440" width="200" height="120" class="interface"/>
+  <text x="150" y="460" class="class-name">CloudTasksManager</text>
+  <line x1="60" y1="470" x2="240" y2="470" stroke="white" stroke-width="1"/>
+  <text x="60" y="485" class="attribute">- client: CloudTasksClient</text>
+  <text x="60" y="500" class="attribute">- queue_path: str</text>
+  <line x1="60" y1="510" x2="240" y2="510" stroke="white" stroke-width="1"/>
+  <text x="60" y="525" class="method">+ create_processing_task(): str</text>
+  <text x="60" y="540" class="method">+ get_task_status(): Dict</text>
+  <text x="60" y="555" class="method">+ get_queue_stats(): Dict</text>
+
+  <!-- OpenAI Processor -->
+  <rect x="300" y="440" width="200" height="120" class="interface"/>
+  <text x="400" y="460" class="class-name">OpenAIProcessor</text>
+  <line x1="310" y1="470" x2="490" y2="470" stroke="white" stroke-width="1"/>
+  <text x="310" y="485" class="attribute">- client: OpenAIClient</text>
+  <text x="310" y="500" class="attribute">- vision_model: str</text>
+  <line x1="310" y1="510" x2="490" y2="510" stroke="white" stroke-width="1"/>
+  <text x="310" y="525" class="method">+ process_invoice(): Dict</text>
+  <text x="310" y="540" class="method">+ extract_structured_data(): Dict</text>
+  <text x="310" y="555" class="method">+ handle_api_error(): Dict</text>
+
+  <!-- Data Models -->
+  
+  <!-- User Context -->
+  <rect x="550" y="440" width="200" height="120" class="interface"/>
+  <text x="650" y="460" class="class-name">UserContext</text>
+  <line x1="560" y1="470" x2="740" y2="470" stroke="white" stroke-width="1"/>
+  <text x="560" y="485" class="attribute">+ email: str</text>
+  <text x="560" y="500" class="attribute">+ uid: str</text>
+  <text x="560" y="515" class="attribute">+ organization_id: Optional[str]</text>
+  <text x="560" y="530" class="attribute">+ organization_role: Optional[str]</text>
+  <text x="560" y="545" class="attribute">+ permissions: UserPermissions</text>
+
+  <!-- Invoice Processing Result -->
+  <rect x="800" y="440" width="200" height="120" class="interface"/>
+  <text x="900" y="460" class="class-name">InvoiceProcessingResult</text>
+  <line x1="810" y1="470" x2="990" y2="470" stroke="white" stroke-width="1"/>
+  <text x="810" y="485" class="attribute">+ jobId: string</text>
+  <text x="810" y="500" class="attribute">+ userUID: string</text>
+  <text x="810" y="515" class="attribute">+ organizationId: string</text>
+  <text x="810" y="530" class="attribute">+ extractedData: Object</text>
+  <text x="810" y="545" class="attribute">+ status: ProcessingStatus</text>
+
+  <!-- Collection Router -->
+  <rect x="300" y="610" width="200" height="100" class="interface"/>
+  <text x="400" y="630" class="class-name">CollectionRouter</text>
+  <line x1="310" y1="640" x2="490" y2="640" stroke="white" stroke-width="1"/>
+  <text x="310" y="655" class="method">+ getCollectionPath(): string</text>
+  <text x="310" y="670" class="method">+ determineScope(): string</text>
+  <text x="310" y="685" class="method">+ buildQuery(): Query</text>
+  <text x="310" y="700" class="method">+ validatePermissions(): boolean</text>
+
+  <!-- Relationships -->
+  
+  <!-- Frontend to Services -->
+  <line x1="250" y1="130" x2="300" y2="130" class="relationship"/>
+  <line x1="150" y1="200" x2="150" y2="250" class="relationship"/>
+
+  <!-- Services to Utilities -->
+  <line x1="150" y1="390" x2="150" y2="440" class="relationship"/>
+  <line x1="400" y1="390" x2="400" y2="440" class="relationship"/>
+
+  <!-- Backend Composition -->
+  <line x1="400" y1="390" x2="650" y2="390" class="composition"/>
+  <line x1="650" y1="390" x2="650" y2="440" class="composition"/>
+
+  <!-- Collection Router Usage -->
+  <line x1="500" y1="650" x2="550" y2="350" class="relationship"/>
+  <line x1="400" y1="610" x2="800" y2="350" class="relationship"/>
+
+  <!-- Organization-Aware Notes -->
+  <rect x="50" y="750" width="300" height="80" class="note"/>
+  <text x="200" y="770" style="font: bold 12px Arial; text-anchor: middle;">Organization-Aware Architecture</text>
+  <text x="60" y="790" style="font: 10px Arial;">• Smart collection routing based on organization context</text>
+  <text x="60" y="805" style="font: 10px Arial;">• Role-based access control for multi-tenant data</text>
+  <text x="60" y="820" style="font: 10px Arial;">• Automatic fallback to user-isolated collections</text>
+
+  <!-- Processing Flow Notes -->
+  <rect x="400" y="750" width="300" height="80" class="note"/>
+  <text x="550" y="770" style="font: bold 12px Arial; text-anchor: middle;">Processing Pipeline</text>
+  <text x="410" y="790" style="font: 10px Arial;">• Cloud Tasks for reliable async processing</text>
+  <text x="410" y="805" style="font: 10px Arial;">• OpenAI Vision API for invoice data extraction</text>
+  <text x="410" y="820" style="font: 10px Arial;">• Real-time updates via Firestore listeners</text>
+
+  <!-- Data Lifecycle Notes -->
+  <rect x="750" y="750" width="300" height="80" class="note"/>
+  <text x="900" y="770" style="font: bold 12px Arial; text-anchor: middle;">Data Lifecycle Management</text>
+  <text x="760" y="790" style="font: 10px Arial;">• Automatic archiving of completed results</text>
+  <text x="760" y="805" style="font: 10px Arial;">• Organization-aware archive collections</text>
+  <text x="760" y="820" style="font: 10px Arial;">• CSV export with user/org filtering</text>
+
+</svg>

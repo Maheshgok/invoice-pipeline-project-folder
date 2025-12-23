@@ -116,17 +116,30 @@ def process_task():
     Handles invoice processing tasks with full error handling and tracking
     """
     try:
-        # Step 1: Authenticate request
+        # Step 1: Authenticate request (for security)
         auth_header = request.headers.get('Authorization')
-        user_context = cloud_tasks_handler.verify_auth_token(auth_header)
+        auth_user_context = cloud_tasks_handler.verify_auth_token(auth_header)
         
-        # Step 2: Validate Cloud Tasks payload
+        # Step 2: Validate Cloud Tasks payload and extract user context
         data = request.get_json()
         validated_payload = cloud_tasks_handler.validate_task_payload(data)
         
         job_id = validated_payload['job_id']
         bucket_path = validated_payload['bucket_path']
         source = validated_payload['source']
+        
+        # Use user context from payload (more reliable than auth token for Cloud Tasks)
+        payload_user_context = validated_payload['user_context']
+        
+        # Cross-validate auth token email with payload email for security
+        auth_email = auth_user_context.get('email')
+        payload_email = payload_user_context.get('email')
+        
+        if auth_email != payload_email and payload_email != 'no email':
+            logger.warning(f"⚠️ Email mismatch: auth='{auth_email}', payload='{payload_email}'")
+        
+        # Use payload context (contains the original user context from initial-api)
+        user_context = payload_user_context
         
         logger.info(f"📨 Received Cloud Task: {job_id} from {user_context['email']}")
         
@@ -144,12 +157,16 @@ def process_task():
         # Handle authentication and validation errors
         logger.error(f"🚫 Authentication/Validation error: {validation_error}")
         
-        # Try to extract job_id for error tracking
+        # Try to extract job_id for error tracking from payload or request data
         try:
             data = request.get_json() or {}
             job_id = data.get('job_id', 'unknown')
+            payload_user_email = data.get('user_email', 'unknown')
         except:
             job_id = 'unknown'
+            payload_user_email = 'unknown'
+        
+        logger.error(f"🚫 Auth/Validation error for job {job_id} (user: {payload_user_email}): {validation_error}")
         
         error_response = cloud_tasks_handler.create_error_response(
             job_id=job_id,
@@ -162,12 +179,15 @@ def process_task():
         # Handle unexpected system errors
         logger.error(f"💥 System error in process-task endpoint: {system_error}", exc_info=True)
         
-        # Try to extract job_id for error tracking
+        # Try to extract context for error tracking
         try:
             data = request.get_json() or {}
             job_id = data.get('job_id', 'unknown')
+            user_email = data.get('user_email', 'unknown')
+            logger.error(f"💥 System error for job {job_id} (user: {user_email}): {system_error}")
         except:
             job_id = 'unknown'
+            user_email = 'unknown'
         
         error_response = cloud_tasks_handler.create_error_response(
             job_id=job_id,

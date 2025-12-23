@@ -41,6 +41,13 @@ class InvoiceProcessingService:
         user_uid = user_context['uid']
         organization_id = user_context.get('organization_id')
         
+        # 🔍 DEBUG: Comprehensive user context logging
+        self.logger.info(f"🗺️ USER CONTEXT DEBUG for job {job_id}:")
+        self.logger.info(f"   Raw user_context: {user_context}")
+        self.logger.info(f"   Extracted email: '{user_email}'")
+        self.logger.info(f"   Extracted UID: '{user_uid}'")
+        self.logger.info(f"   Extracted org_id: '{organization_id}'")
+        
         self.logger.info(f"🚀 Starting invoice processing")
         self.logger.info(f"📋 Job ID: {job_id}")
         self.logger.info(f"📁 File path: {bucket_path}")

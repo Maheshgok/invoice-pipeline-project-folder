@@ -52,13 +52,19 @@ class CloudTasksHandler:
             raise ValueError(f"Token verification failed: {e}")
     
     def validate_task_payload(self, data):
-        """Validate Cloud Tasks payload"""
+        """Validate Cloud Tasks payload and extract user context"""
         if not data:
             raise ValueError("No data provided in Cloud Tasks callback")
         
         job_id = data.get('job_id')
         bucket_path = data.get('bucket_path')
         source = data.get('source', 'cloud_tasks')
+        
+        # Extract user context fields from payload
+        user_email = data.get('user_email')
+        user_uid = data.get('user_uid')
+        organization_id = data.get('organization_id')
+        organization_role = data.get('organization_role')
         
         if not job_id or not bucket_path:
             missing_fields = []
@@ -68,10 +74,24 @@ class CloudTasksHandler:
                 missing_fields.append('bucket_path')
             raise ValueError(f"Missing required fields: {', '.join(missing_fields)}")
         
+        # Log extracted user context for debugging
+        self.logger.info(f"📄 PAYLOAD DEBUG - Extracted from Cloud Tasks:")
+        self.logger.info(f"   user_email: '{user_email}'")
+        self.logger.info(f"   user_uid: '{user_uid}'")
+        self.logger.info(f"   organization_id: '{organization_id}'")
+        self.logger.info(f"   organization_role: '{organization_role}'")
+        
         return {
             'job_id': job_id,
             'bucket_path': bucket_path,
-            'source': source
+            'source': source,
+            # Include user context in validated payload
+            'user_context': {
+                'email': user_email or 'no email',
+                'uid': user_uid or 'no uid',
+                'organization_id': organization_id,
+                'organization_role': organization_role
+            }
         }
     
     def create_success_response(self, job_id, message="Task processed successfully", data=None):

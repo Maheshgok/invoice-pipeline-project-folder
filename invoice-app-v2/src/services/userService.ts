@@ -37,6 +37,35 @@ export interface UserProfile {
   usageStats: UserUsageStats
   invitedBy?: string  // UID of admin who invited this user
   inviteStatus: 'pending' | 'accepted' | 'rejected'
+  paymentStatus: PaymentStatus
+}
+
+export interface PaymentStatus {
+  status: 'pending' | 'paid' | 'verified' | 'expired' | 'free_trial'
+  amount: number
+  currency: string
+  paymentId?: string
+  transactionRef?: string
+  paymentMethod: 'upi' | 'card' | 'bank_transfer' | 'admin_override' | 'trial'
+  paidAt?: Timestamp
+  verifiedAt?: Timestamp
+  verifiedBy?: string  // Admin UID who verified payment
+  expiresAt?: Timestamp
+  subscriptionType: 'monthly' | 'yearly' | 'lifetime' | 'trial'
+  autoRenew: boolean
+  paymentHistory: PaymentRecord[]
+}
+
+export interface PaymentRecord {
+  id: string
+  amount: number
+  currency: string
+  paymentMethod: string
+  status: 'pending' | 'completed' | 'failed' | 'refunded'
+  transactionRef?: string
+  paidAt: Timestamp
+  verifiedBy?: string
+  notes?: string
 }
 
 export interface Organization {
@@ -196,6 +225,17 @@ const DEFAULT_USAGE: UserUsageStats = {
   storageUsed: 0,
   uploadsToday: 0,
   uploadsThisMonth: 0
+}
+
+const DEFAULT_PAYMENT_STATUS: PaymentStatus = {
+  status: 'pending',
+  amount: 0,
+  currency: 'INR',
+  paymentMethod: 'upi',
+  subscriptionType: 'trial',
+  autoRenew: false,
+  paymentHistory: [],
+  expiresAt: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)) // 7 days trial
 }
 
 export class UserService {
@@ -368,7 +408,8 @@ export class UserService {
           isActive: true,
           preferences: DEFAULT_PREFERENCES,
           usage: DEFAULT_USAGE,
-          inviteStatus: 'accepted'
+          inviteStatus: 'accepted',
+          paymentStatus: DEFAULT_PAYMENT_STATUS
         }
         
         await setDoc(userRef, newProfile)
@@ -702,6 +743,225 @@ export class UserService {
       return snapshot.docs.map(doc => doc.data() as UserProfile)
     } catch (error) {
       console.error('❌ Error fetching organization users:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Initialize payment for new user
+   */
+  async initializePayment(amount: number, subscriptionType: PaymentStatus['subscriptionType']): Promise<PaymentStatus> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('User not authenticated')
+
+      const defaultPaymentStatus: PaymentStatus = {
+        status: 'pending',
+        amount: amount,
+        currency: 'INR',
+        paymentMethod: 'upi',
+        subscriptionType: subscriptionType,
+        autoRenew: false,
+        paymentHistory: [],
+        expiresAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)) // 24 hours
+      }
+
+      // Update user profile with payment status
+      const userRef = doc(db, 'users', currentUser.uid)
+      await updateDoc(userRef, {
+        paymentStatus: defaultPaymentStatus,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('💳 Payment initialized for user:', currentUser.uid)
+      return defaultPaymentStatus
+    } catch (error) {
+      console.error('❌ Error initializing payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Check if user has valid payment/subscription
+   */
+  async hasValidSubscription(): Promise<boolean> {
+    try {
+      const profile = await this.getUserProfile()
+      if (!profile?.paymentStatus) return false
+
+      const { status, expiresAt } = profile.paymentStatus
+      
+      // Check status
+      if (['verified', 'free_trial'].includes(status)) {
+        // Check expiration if applicable
+        if (expiresAt && expiresAt.toDate() < new Date()) {
+          return false
+        }
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.error('❌ Error checking subscription:', error)
+      return false
+    }
+  }
+
+  /**
+   * Update payment status (user function)
+   */
+  async updatePaymentStatus(update: Partial<PaymentStatus>): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('User not authenticated')
+
+      const userRef = doc(db, 'users', currentUser.uid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User profile not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      const currentPaymentStatus = userData.paymentStatus
+
+      if (!currentPaymentStatus) {
+        throw new Error('No payment record found')
+      }
+
+      // Add paidAt timestamp if status is being set to 'paid'
+      if (update.status === 'paid' && !update.paidAt) {
+        update.paidAt = serverTimestamp() as Timestamp
+      }
+
+      const updatedPaymentStatus: PaymentStatus = {
+        ...currentPaymentStatus,
+        ...update
+      }
+
+      // Update user profile
+      await updateDoc(userRef, {
+        paymentStatus: updatedPaymentStatus,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('💳 Payment status updated for user:', currentUser.uid)
+    } catch (error) {
+      console.error('❌ Error updating payment status:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Admin function: Verify user payment manually
+   */
+  async verifyUserPayment(userUid: string, transactionRef?: string, notes?: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      // Check admin permissions (could be enhanced to check specific admin role)
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can verify payments')
+      }
+
+      const userRef = doc(db, 'users', userUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      const currentPaymentStatus = userData.paymentStatus
+
+      if (!currentPaymentStatus) {
+        throw new Error('No payment record found for user')
+      }
+
+      // Create payment record
+      const paymentRecord: PaymentRecord = {
+        id: `payment_${Date.now()}`,
+        amount: currentPaymentStatus.amount,
+        currency: currentPaymentStatus.currency,
+        paymentMethod: currentPaymentStatus.paymentMethod,
+        status: 'completed',
+        transactionRef: transactionRef,
+        paidAt: serverTimestamp() as Timestamp,
+        verifiedBy: currentUser.uid,
+        notes: notes
+      }
+
+      // Calculate expiration based on subscription type
+      let expiresAt: Timestamp
+      const now = new Date()
+      switch (currentPaymentStatus.subscriptionType) {
+        case 'monthly':
+          expiresAt = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth() + 1, now.getDate()))
+          break
+        case 'yearly':
+          expiresAt = Timestamp.fromDate(new Date(now.getFullYear() + 1, now.getMonth(), now.getDate()))
+          break
+        case 'lifetime':
+          expiresAt = Timestamp.fromDate(new Date(now.getFullYear() + 100, now.getMonth(), now.getDate()))
+          break
+        case 'trial':
+          expiresAt = Timestamp.fromDate(new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000)) // 7 days
+          break
+        default:
+          expiresAt = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth() + 1, now.getDate()))
+      }
+
+      // Update payment status
+      const updatedPaymentStatus: PaymentStatus = {
+        ...currentPaymentStatus,
+        status: 'verified',
+        transactionRef: transactionRef,
+        verifiedAt: serverTimestamp() as Timestamp,
+        verifiedBy: currentUser.uid,
+        expiresAt: expiresAt,
+        paymentHistory: [...(currentPaymentStatus.paymentHistory || []), paymentRecord]
+      }
+
+      // Update user profile
+      await updateDoc(userRef, {
+        paymentStatus: updatedPaymentStatus,
+        isActive: true,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ Payment verified for user:', userUid)
+    } catch (error) {
+      console.error('❌ Error verifying payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get all pending payments (admin function)
+   */
+  async getPendingPayments(): Promise<Array<UserProfile & { id: string }>> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      // Check admin permissions
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can view pending payments')
+      }
+
+      const usersRef = collection(db, 'users')
+      const q = query(usersRef, where('paymentStatus.status', 'in', ['pending', 'paid']))
+      const snapshot = await getDocs(q)
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data() as UserProfile
+      }))
+    } catch (error) {
+      console.error('❌ Error fetching pending payments:', error)
       throw error
     }
   }

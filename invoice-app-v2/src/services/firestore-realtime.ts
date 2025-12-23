@@ -137,6 +137,13 @@ class RealtimeFirestoreService {
             
           console.log(`📊 Filtered ${filteredResults.length} results from ${allResults.length} total (${accessType} access)`)
           
+          // If no results found in organization collection, fall back to user collection
+          if (filteredResults.length === 0 && snapshot.docs.length === 0) {
+            console.log('🔄 Organization collection empty, falling back to user collection...')
+            this.setupUserIsolatedListener(user, onUpdate, onError)
+            return
+          }
+          
           // Cache results
           filteredResults.forEach(result => {
             if (result.jobId) {
@@ -209,7 +216,56 @@ class RealtimeFirestoreService {
       (snapshot) => {
         console.log('🏠 User-isolated data snapshot:', snapshot.docs.length, 'documents')
         
+        if (snapshot.docs.length === 0) {
+          console.log('🔄 User collection empty, falling back to legacy collection...')
+          this.setupLegacyListener(user, onUpdate, onError)
+          return
+        }
+        
         const results = this.processUserIsolatedSnapshot(snapshot, user)
+        
+        // Cache results
+        results.forEach(result => {
+          if (result.jobId) {
+            this.activeResultsCache.set(result.jobId, result)
+          }
+        })
+        
+        onUpdate(results)
+      },
+      (error) => {
+        console.error('❌ Error in user-isolated listener:', error)
+        console.log('🔄 Falling back to legacy collection...')
+        this.setupLegacyListener(user, onUpdate, onError)
+      }
+    )
+
+    this.unsubscribers.push(unsubscribe)
+  }
+
+  /**
+   * Setup legacy collection listener (final fallback)
+   * Queries the root 'invoice_results' collection for backward compatibility
+   */
+  private setupLegacyListener(user: any, onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
+    console.log('🔄 Setting up legacy collection listener for user:', user.email)
+    
+    // Clean up any existing listeners to prevent duplicates
+    this.cleanup()
+    
+    // Query the root collection by user email (legacy pattern)
+    const legacyQuery = query(
+      collection(db, 'invoice_results'),
+      where('user_email', '==', user.email),
+      limit(50)
+    )
+
+    const unsubscribe = onSnapshot(
+      legacyQuery,
+      (snapshot) => {
+        console.log('🔄 Legacy collection snapshot:', snapshot.docs.length, 'documents')
+        
+        const results = this.processLegacySnapshot(snapshot, user)
         
         // Cache results
         results.forEach(result => {
