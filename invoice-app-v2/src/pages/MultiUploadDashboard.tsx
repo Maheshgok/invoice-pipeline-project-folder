@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings, Building2 } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings, Building2, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getApiUrl } from '../config/api'
 // Import the new simplified hook
@@ -33,6 +33,7 @@ const MultiUploadDashboard: React.FC = () => {
   const canEdit = hasPermission('canEdit')
   const canDownload = hasPermission('canDownload')
   const isOrgAdmin = hasPermission('canManageOrgUsers')
+  const isSuperAdmin = userProfile?.role === 'super_admin'
   
   const { 
     uploadedFiles, 
@@ -406,6 +407,17 @@ const MultiUploadDashboard: React.FC = () => {
         
         {/* User Menu */}
         <div className="flex items-center space-x-4">
+          {/* Payment Management Button for Super Admins */}
+          {isSuperAdmin && (
+            <a
+              href="/admin/payments"
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2 text-sm"
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Payment Management</span>
+            </a>
+          )}
+          
           <div className="flex items-center space-x-2 text-sm text-gray-600">
             <User className="w-4 h-4" />
             <div>
@@ -476,7 +488,7 @@ const MultiUploadDashboard: React.FC = () => {
             </button>
           )}
           
-          {isOrgAdmin && (
+          {(isOrgAdmin || isSuperAdmin) && (
             <button
               onClick={() => setActiveTab('admin')}
               className={`py-2 px-1 border-b-2 font-medium text-sm ${
@@ -505,7 +517,7 @@ const MultiUploadDashboard: React.FC = () => {
         </div>
       )}
       
-      {activeTab === 'admin' && isOrgAdmin && (
+      {activeTab === 'admin' && (isOrgAdmin || isSuperAdmin) && (
         <AdminDashboard />
       )}
       

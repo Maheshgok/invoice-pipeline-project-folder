@@ -304,8 +304,48 @@ export class UserService {
   }
 
   /**
-   * Create a default organization for new user
+   * Create an organization with a custom name (for onboarding)
    */
+  async createOrganizationWithName(organizationName: string, ownerEmail?: string): Promise<string> {
+    const orgRef = doc(collection(db, 'organizations'))
+    
+    const organization: Organization = {
+      id: orgRef.id,
+      name: organizationName,
+      domain: 'custom', // Generic domain for manually created orgs
+      description: `Custom organization: ${organizationName}`,
+      settings: {
+        allowSelfSignup: false,
+        requireAdminApproval: true,
+        dataRetentionDays: 90,
+        maxUsersAllowed: 25,
+        enableDepartments: false,
+        allowedDomains: [] // No domain restrictions for custom orgs
+      },
+      subscription: {
+        plan: 'free',
+        status: 'trial',
+        startDate: serverTimestamp() as Timestamp,
+        features: ['basic_processing', 'document_viewer'],
+        limits: {
+          maxUsers: 10,
+          maxUploadsPerMonth: 500,
+          maxStorageGB: 5,
+          apiCallsPerMonth: 2000
+        }
+      },
+      createdAt: serverTimestamp() as Timestamp,
+      updatedAt: serverTimestamp() as Timestamp,
+      ownerId: '', // Will be updated when user is assigned
+      isActive: true,
+      memberCount: 1,
+      adminIds: []
+    }
+
+    await setDoc(orgRef, organization)
+    console.log(`✅ Created custom organization: ${organizationName} with ID: ${orgRef.id}`)
+    return orgRef.id
+  }
   async createDefaultOrganization(ownerEmail: string): Promise<string> {
     const orgRef = doc(collection(db, 'organizations'))
     const domain = ownerEmail.split('@')[1]
@@ -365,7 +405,7 @@ export class UserService {
   /**
    * Create or update user profile on login
    */
-  async createOrUpdateUserProfile(user: User): Promise<UserProfile> {
+  async createOrUpdateUserProfile(user: User, organizationId?: string): Promise<UserProfile> {
     try {
       const userRef = doc(db, 'users', user.uid)
       const userDoc = await getDoc(userRef)
@@ -428,7 +468,7 @@ export class UserService {
         }
       } else {
         // Create new user profile
-        const organizationId = await this.determineOrganizationId(user.email)
+        const finalOrganizationId = organizationId || await this.determineOrganizationId(user.email)
         
         // Auto-assign super_admin role to specific email
         const isAdminEmail = user.email === 'maheshgok@gmail.com'
@@ -443,7 +483,7 @@ export class UserService {
           displayName: user.displayName,
           photoURL: user.photoURL,
           role: userRole,
-          organizationId,
+          organizationId: finalOrganizationId,
           organizationRole: orgRole,
           permissions: this.getPermissionsForRole(orgRole),
           createdAt: serverTimestamp() as Timestamp,

@@ -2,10 +2,11 @@ import { useState } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
 import { userService } from '../../services/userService'
-import { CheckCircle, Circle, CreditCard, User, Shield, FileText, IndianRupee } from 'lucide-react'
+import { CheckCircle, Circle, CreditCard, User, Shield, FileText, IndianRupee, Building2 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import PaymentStep from './PaymentStep'
 import VerificationStep from './VerificationStep'
+import OrganizationStep from './OrganizationStep'
 
 interface OnboardingStep {
   id: number
@@ -20,6 +21,11 @@ const OnboardingFlow: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(999) // Default amount in INR
+  const [organizationData, setOrganizationData] = useState<{
+    organizationId: string
+    organizationName: string
+    isNew: boolean
+  } | null>(null)
 
   // Check if user should see onboarding
   const shouldShowOnboarding = !userProfile?.paymentStatus || 
@@ -36,6 +42,13 @@ const OnboardingFlow: React.FC = () => {
     },
     {
       id: 2,
+      title: 'Set Up Organization',
+      description: 'Create or join an organization for your team',
+      icon: <Building2 className="w-6 h-6" />,
+      completed: !!organizationData
+    },
+    {
+      id: 3,
       title: 'Choose Plan & Payment',
       description: 'Select your subscription plan and make payment',
       icon: <CreditCard className="w-6 h-6" />,
@@ -43,14 +56,14 @@ const OnboardingFlow: React.FC = () => {
                  userProfile?.paymentStatus?.status === 'verified'
     },
     {
-      id: 3,
+      id: 4,
       title: 'Payment Verification',
       description: 'Waiting for admin verification of your payment',
       icon: <Shield className="w-6 h-6" />,
       completed: userProfile?.paymentStatus?.status === 'verified'
     },
     {
-      id: 4,
+      id: 5,
       title: 'Start Processing',
       description: 'Upload and process your first invoice',
       icon: <FileText className="w-6 h-6" />,
@@ -105,7 +118,7 @@ const OnboardingFlow: React.FC = () => {
       })
       
       await refreshUserProfile()
-      setCurrentStep(3)
+      setCurrentStep(5)
       toast.success('Payment completed! Waiting for verification.')
     } catch (error: any) {
       console.error('Payment completion error:', error)
@@ -125,7 +138,32 @@ const OnboardingFlow: React.FC = () => {
             </div>
             <div>
               <h2 className="text-2xl font-bold text-gray-900 mb-2">Welcome to Invoice Processor!</h2>
-              <p className="text-gray-600 mb-6">Your account has been created successfully. Let's get you set up with a subscription plan.</p>
+              <p className="text-gray-600 mb-6">Your account has been created successfully. Let's set up your organization first.</p>
+            </div>
+
+            <button
+              onClick={() => setCurrentStep(2)}
+              className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
+            >
+              Continue to Organization Setup
+            </button>
+          </div>
+        )
+      
+      case 2:
+        return (
+          <OrganizationStep 
+            onComplete={handleOrganizationComplete}
+            onBack={() => setCurrentStep(1)}
+          />
+        )
+
+      case 3:
+        return (
+          <div className="text-center space-y-6">
+            <div>
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Choose Your Plan</h2>
+              <p className="text-gray-600 mb-6">Select a subscription plan to start processing invoices.</p>
             </div>
 
             {/* Plan Selection */}
