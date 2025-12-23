@@ -12,11 +12,14 @@
     "test:ui": "vitest --ui"
   },
   "dependencies": {
+    "@casl/ability": "^6.7.5",
+    "@casl/react": "^5.0.0",
     "clsx": "^2.0.0",
     "date-fns": "^2.30.0",
     "firebase": "^10.7.0",
     "firebase-admin": "^12.0.0",
     "framer-motion": "^10.16.0",
+    "lambda-multipart-parser": "^1.0.1",
     "lucide-react": "^0.294.0",
     "node-fetch": "^2.6.7",
     "react": "^18.2.0",
@@ -26,8 +29,7 @@
     "react-pdf": "^7.6.0",
     "react-router-dom": "^6.20.0",
     "tailwind-merge": "^2.0.0",
-    "zustand": "^4.4.7",
-    "lambda-multipart-parser": "^1.0.1"
+    "zustand": "^4.4.7"
   },
   "devDependencies": {
     "@tailwindcss/forms": "^0.5.7",

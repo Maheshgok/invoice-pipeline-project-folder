@@ -22,7 +22,8 @@ const OnboardingFlow: React.FC = () => {
   const [paymentAmount, setPaymentAmount] = useState(999) // Default amount in INR
 
   // Check if user should see onboarding
-  const shouldShowOnboarding = userProfile?.paymentStatus?.status === 'pending' || 
+  const shouldShowOnboarding = !userProfile?.paymentStatus || 
+                               userProfile?.paymentStatus?.status === 'pending' || 
                                userProfile?.paymentStatus?.status === 'paid'
 
   const steps: OnboardingStep[] = [
@@ -58,7 +59,8 @@ const OnboardingFlow: React.FC = () => {
   ]
 
   // Redirect if already verified
-  if (userProfile?.paymentStatus?.status === 'verified') {
+  if (userProfile?.paymentStatus?.status === 'verified' || 
+      userProfile?.paymentStatus?.status === 'free_trial') {
     return <Navigate to="/" replace />
   }
 

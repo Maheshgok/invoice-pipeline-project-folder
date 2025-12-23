@@ -381,6 +381,24 @@ export class UserService {
           updatedAt: serverTimestamp() as Timestamp
         }
         
+        // MIGRATION: Update existing user with payment status if missing
+        if (!existingProfile.paymentStatus) {
+          console.log('🔄 Migrating existing user to new payment system:', user.email)
+          const migrationUpdate = {
+            ...updatedProfile,
+            paymentStatus: DEFAULT_PAYMENT_STATUS,
+            updatedAt: serverTimestamp() as Timestamp
+          }
+          await updateDoc(userRef, migrationUpdate)
+          
+          return {
+            ...existingProfile,
+            ...migrationUpdate,
+            lastLoginAt: new Date() as any,
+            updatedAt: new Date() as any
+          }
+        }
+
         await updateDoc(userRef, updatedProfile)
         
         return {

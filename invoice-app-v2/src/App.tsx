@@ -1,6 +1,7 @@
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './contexts/AuthContext'
+import { PermissionProvider } from './contexts/PermissionContext'
 import MultiUploadDashboard from './pages/MultiUploadDashboard'
 import Login from './pages/Login'
 import OnboardingFlow from './components/onboarding/OnboardingFlow'
@@ -10,35 +11,41 @@ import ProtectedRoute from './components/auth/ProtectedRoute'
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <div className="min-h-screen bg-gray-50">
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route 
-              path="/onboarding" 
-              element={
-                <ProtectedRoute requirePayment={false}>
-                  <OnboardingFlow />
-                </ProtectedRoute>
-              } 
-            />
-            <Route 
-              path="/admin/payments" 
-              element={
-                <ProtectedRoute requirePayment={false}>
-                  <PaymentManagementDashboard />
-                </ProtectedRoute>
-              } 
-            />
-            <Route
-              path="/*"
-              element={
-                <ProtectedRoute>
-                  <MultiUploadDashboard />
-                </ProtectedRoute>
-              }
-            />
-          </Routes>
+      <PermissionProvider>
+        <Router>
+          <div className="min-h-screen bg-gray-50">
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route 
+                path="/onboarding" 
+                element={
+                  <ProtectedRoute requirePayment={false}>
+                    <OnboardingFlow />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/admin/payments" 
+                element={
+                  <ProtectedRoute 
+                    requirePayment={false}
+                    requiredPermission={{ action: 'manage', subject: 'payments' }}
+                  >
+                    <PaymentManagementDashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route
+                path="/*"
+                element={
+                  <ProtectedRoute
+                    requiredPermission={{ action: 'use', subject: 'invoice_analysis' }}
+                  >
+                    <MultiUploadDashboard />
+                  </ProtectedRoute>
+                }
+              />
+            </Routes>
           <Toaster
             position="top-right"
             toastOptions={{
@@ -63,7 +70,8 @@ function App() {
           />
         </div>
       </Router>
-    </AuthProvider>
+    </PermissionProvider>
+  </AuthProvider>
   )
 }
 

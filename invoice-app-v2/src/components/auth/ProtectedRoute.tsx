@@ -1,18 +1,33 @@
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../../contexts/AuthContext'
-import { Loader2, AlertTriangle, Clock, CreditCard } from 'lucide-react'
+import { usePermissions } from '../../contexts/PermissionContext'
+import { Loader2, AlertTriangle } from 'lucide-react'
 
 interface ProtectedRouteProps {
   children: React.ReactNode
   requirePayment?: boolean
+  requiredPermission?: {
+    action: string
+    subject: string
+    resource?: any
+  }
 }
 
 const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ 
   children, 
-  requirePayment = true 
+  requirePayment = true,
+  requiredPermission
 }) => {
   const { user, userProfile, loading } = useAuth()
   const location = useLocation()
+
+  // Try to get permissions, but handle case where provider isn't available yet
+  let permissions: { can: (action: string, subject: string, resource?: any) => boolean } | null = null
+  try {
+    permissions = usePermissions()
+  } catch (error) {
+    // Permission context not available yet, will check permissions later
+  }
 
   // Show loading while auth state is being determined
   if (loading) {
@@ -29,6 +44,30 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Redirect to login if not authenticated
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />
+  }
+
+  // Check required permission if specified
+  if (requiredPermission && permissions) {
+    const { action, subject, resource } = requiredPermission
+    if (!permissions.can(action, subject, resource)) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50">
+          <div className="max-w-md w-full bg-white rounded-lg shadow p-6 text-center">
+            <div className="text-red-500 text-5xl mb-4">🚫</div>
+            <h2 className="text-xl font-semibold text-gray-900 mb-2">Access Denied</h2>
+            <p className="text-gray-600 mb-4">
+              You don't have permission to access this feature.
+            </p>
+            <button
+              onClick={() => window.history.back()}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+            >
+              Go Back
+            </button>
+          </div>
+        </div>
+      )
+    }
   }
 
   // If payment is not required (like for admin pages), allow access
@@ -51,11 +90,22 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   // Handle different payment statuses
   const paymentStatus = userProfile.paymentStatus?.status
 
+  // TEMPORARY: Allow existing users without payment status to access the app
+  // TODO: Remove this after all users have been migrated to the new payment system
+  if (!userProfile.paymentStatus) {
+    console.warn('User without payment status detected, allowing access temporarily:', user.email)
+    return <>{children}</>
+  }
+
   switch (paymentStatus) {
     case 'pending':
     case 'paid':
-      // Redirect to onboarding for payment completion/verification
-      return <Navigate to="/onboarding" replace />
+      // Only redirect to onboarding if we're not already there
+      if (location.pathname !== '/onboarding') {
+        return <Navigate to="/onboarding" replace />
+      }
+      // If already on onboarding, show the page
+      return <>{children}</>
     
     case 'verified':
     case 'free_trial':
@@ -103,8 +153,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       )
 
     default:
-      // If no payment status is found, redirect to onboarding
-      return <Navigate to="/onboarding" replace />
+      // If no payment status is found, redirect to onboarding (only if not already there)
+      if (location.pathname !== '/onboarding') {
+        return <Navigate to="/onboarding" replace />
+      }
+      // If already on onboarding, allow access
+      return <>{children}</>
   }
 }
 
