@@ -38,9 +38,7 @@ function App() {
               <Route
                 path="/*"
                 element={
-                  <ProtectedRoute
-                    requiredPermission={{ action: 'use', subject: 'invoice_analysis' }}
-                  >
+                  <ProtectedRoute>
                     <MultiUploadDashboard />
                   </ProtectedRoute>
                 }

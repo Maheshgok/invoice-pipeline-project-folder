@@ -27,6 +27,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     permissions = usePermissions()
   } catch (error) {
     // Permission context not available yet, will check permissions later
+    console.log('🔒 Permission context not available yet, will check later')
   }
 
   // Show loading while auth state is being determined
@@ -50,6 +51,12 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   if (requiredPermission && permissions) {
     const { action, subject, resource } = requiredPermission
     if (!permissions.can(action, subject, resource)) {
+      // If it's the invoice analysis permission and user doesn't have access,
+      // redirect to onboarding instead of showing access denied
+      if (action === 'use' && subject === 'invoice_analysis') {
+        return <Navigate to="/onboarding" replace />
+      }
+      
       return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
           <div className="max-w-md w-full bg-white rounded-lg shadow p-6 text-center">
@@ -58,12 +65,20 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
             <p className="text-gray-600 mb-4">
               You don't have permission to access this feature.
             </p>
-            <button
-              onClick={() => window.history.back()}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
-            >
-              Go Back
-            </button>
+            <div className="flex space-x-2">
+              <button
+                onClick={() => window.history.back()}
+                className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition"
+              >
+                Go Back
+              </button>
+              <button
+                onClick={() => window.location.href = '/onboarding'}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+              >
+                Get Access
+              </button>
+            </div>
           </div>
         </div>
       )

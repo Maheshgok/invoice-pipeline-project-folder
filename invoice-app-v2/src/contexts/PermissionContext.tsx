@@ -18,6 +18,7 @@ export const PermissionProvider: React.FC<PermissionProviderProps> = ({ children
   const { userProfile } = useAuth()
 
   const ability = useMemo(() => {
+    console.log('🔑 Creating permissions for user:', userProfile?.email, 'Role:', userProfile?.role, 'PaymentStatus:', userProfile?.paymentStatus?.status)
     return createAbility(userProfile)
   }, [userProfile])
 

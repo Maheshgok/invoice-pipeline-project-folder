@@ -373,20 +373,39 @@ export class UserService {
       if (userDoc.exists()) {
         // Update existing user
         const existingProfile = userDoc.data() as UserProfile
+        
+        // Auto-assign super_admin role to specific email
+        const isAdminEmail = user.email === 'maheshgok@gmail.com'
+        const updatedRole = isAdminEmail ? 'super_admin' : existingProfile.role
+        
         const updatedProfile: Partial<UserProfile> = {
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
+          role: updatedRole,
           lastLoginAt: serverTimestamp() as Timestamp,
           updatedAt: serverTimestamp() as Timestamp
         }
         
+        console.log(`🔑 Updating user ${user.email} with role: ${updatedRole}`)
+        
         // MIGRATION: Update existing user with payment status if missing
-        if (!existingProfile.paymentStatus) {
+        if (!existingProfile.paymentStatus || isAdminEmail) {
           console.log('🔄 Migrating existing user to new payment system:', user.email)
           const migrationUpdate = {
             ...updatedProfile,
-            paymentStatus: DEFAULT_PAYMENT_STATUS,
+            paymentStatus: isAdminEmail ? {
+              status: 'verified',
+              amount: 0,
+              currency: 'INR',
+              paymentMethod: 'admin_override',
+              subscriptionType: 'lifetime',
+              createdAt: serverTimestamp() as Timestamp,
+              verifiedAt: serverTimestamp() as Timestamp,
+              verifiedBy: 'system',
+              expiresAt: Timestamp.fromDate(new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000)),
+              paymentHistory: []
+            } : DEFAULT_PAYMENT_STATUS,
             updatedAt: serverTimestamp() as Timestamp
           }
           await updateDoc(userRef, migrationUpdate)
@@ -411,15 +430,22 @@ export class UserService {
         // Create new user profile
         const organizationId = await this.determineOrganizationId(user.email)
         
+        // Auto-assign super_admin role to specific email
+        const isAdminEmail = user.email === 'maheshgok@gmail.com'
+        const userRole = isAdminEmail ? 'super_admin' : 'user'
+        const orgRole = isAdminEmail ? 'admin' : 'member'
+        
+        console.log(`🔑 Creating new user ${user.email} with role: ${userRole}`)
+        
         const newProfile: UserProfile = {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
-          role: 'user', // Default role
+          role: userRole,
           organizationId,
-          organizationRole: 'member',
-          permissions: this.getPermissionsForRole('member'),
+          organizationRole: orgRole,
+          permissions: this.getPermissionsForRole(orgRole),
           createdAt: serverTimestamp() as Timestamp,
           updatedAt: serverTimestamp() as Timestamp,
           lastLoginAt: serverTimestamp() as Timestamp,
@@ -427,7 +453,18 @@ export class UserService {
           preferences: DEFAULT_PREFERENCES,
           usage: DEFAULT_USAGE,
           inviteStatus: 'accepted',
-          paymentStatus: DEFAULT_PAYMENT_STATUS
+          paymentStatus: isAdminEmail ? {
+            status: 'verified',
+            amount: 0,
+            currency: 'INR',
+            paymentMethod: 'admin_override',
+            subscriptionType: 'lifetime',
+            createdAt: serverTimestamp() as Timestamp,
+            verifiedAt: serverTimestamp() as Timestamp,
+            verifiedBy: 'system',
+            expiresAt: Timestamp.fromDate(new Date(Date.now() + 100 * 365 * 24 * 60 * 60 * 1000)), // 100 years
+            paymentHistory: []
+          } : DEFAULT_PAYMENT_STATUS
         }
         
         await setDoc(userRef, newProfile)
