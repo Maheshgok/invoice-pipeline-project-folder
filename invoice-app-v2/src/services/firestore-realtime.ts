@@ -199,22 +199,25 @@ class RealtimeFirestoreService {
    */
   private setupUserIsolatedListener(user: any, onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     console.log('🏠 Setting up user-isolated listener for UID:', user.uid)
+    console.log('🏠 User-isolated collection path:', `users/${user.uid}/invoice_results`)
     
     // Clean up any existing listeners to prevent duplicates
     this.cleanup()
     
     const userCollectionPath = `users/${user.uid}/invoice_results`
     
+    // Since we're querying a user-specific subcollection, we don't need the userUID filter
+    // This was causing the query to return 0 results due to field name mismatch
     const userQuery = query(
       collection(db, userCollectionPath),
-      where('userUID', '==', user.uid),
+      orderBy('created_at', 'desc'), // Order by creation time
       limit(50)
     )
 
     const unsubscribe = onSnapshot(
       userQuery,
       (snapshot) => {
-        console.log('🏠 User-isolated data snapshot:', snapshot.docs.length, 'documents')
+        console.log('🏠 User-isolated data snapshot:', snapshot.docs.length, 'documents from', userCollectionPath)
         
         if (snapshot.docs.length === 0) {
           console.log('🔄 User collection empty, falling back to legacy collection...')

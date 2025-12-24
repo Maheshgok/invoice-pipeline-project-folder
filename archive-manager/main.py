@@ -123,12 +123,17 @@ def get_collection_paths(user_context: Dict) -> Dict[str, str]:
             'archive': 'invoice_results_archive'
         }
 
-def build_user_query(collection_ref, user_context: Dict):
+def build_user_query(collection_ref, user_context: Dict, collection_path: str):
     """Build appropriate query filter based on user context and permissions"""
     organization_id = user_context.get('organization_id')
     organization_role = user_context.get('organization_role')
     user_uid = user_context['uid']
     user_email = user_context['email']
+    
+    # For user-isolated collections (users/{uid}/...), no additional filtering needed
+    if collection_path.startswith(f'users/{user_uid}/'):
+        print(f"📂 Using user-isolated collection: {collection_path} - no additional filtering needed")
+        return collection_ref
     
     # For organization collections, filter based on user permissions
     if organization_id:
@@ -141,7 +146,7 @@ def build_user_query(collection_ref, user_context: Dict):
             return collection_ref.where('organizationId', '==', organization_id)\
                                 .where('userUID', '==', user_uid)
     else:
-        # For user-isolated or legacy collections, filter by user identifiers
+        # For legacy collections, filter by user identifiers
         return collection_ref.where('user_email', '==', user_email)
 
 @app.route('/health', methods=['GET'])
@@ -189,15 +194,17 @@ def archive_completed_results():
         return jsonify({'error': 'Authentication required'}), 401
     
     user_email = user_context['email']
-    print(f"🔍 Processing archive request for user: {user_email} (UID: {user_context['uid'][:8]}...)")
+    user_uid = user_context['uid']
+    print(f"🔍 Processing archive request for user: {user_email} (UID: {user_uid[:8]}...)")
     
     try:
         # Get appropriate collection paths
         collection_paths = get_collection_paths(user_context)
+        print(f"📂 Archive paths - Active: {collection_paths['active']}, Archive: {collection_paths['archive']}")
         
         # Query for completed results using organization-aware filtering
         active_ref = db.collection(collection_paths['active'])
-        completed_query = build_user_query(active_ref, user_context)\
+        completed_query = build_user_query(active_ref, user_context, collection_paths['active'])\
                                           .where('status', '==', 'completed')
         
         print(f"🔍 Querying collection: {collection_paths['active']}")
@@ -246,6 +253,7 @@ def archive_completed_results():
             batch.commit()
         
         print(f"✅ Archived {len(completed_docs)} completed results for user: {user_email}")
+        print(f"📊 Archive summary - From: {collection_paths['active']} → To: {collection_paths['archive']}")
         
         return jsonify({
             'message': 'Completed results archived successfully',
@@ -269,14 +277,17 @@ def archive_displayed_results():
         return jsonify({'error': 'Authentication required'}), 401
     
     user_email = user_context['email']
+    user_uid = user_context['uid']
+    print(f"📦 Archive displayed request for user: {user_email} (UID: {user_uid[:8]}...)")
     
     try:
         # Get appropriate collection paths
         collection_paths = get_collection_paths(user_context)
+        print(f"📂 Archive paths - Active: {collection_paths['active']}, Archive: {collection_paths['archive']}")
         
         # Query for displayed results using organization-aware filtering
         active_ref = db.collection(collection_paths['active'])
-        displayed_query = build_user_query(active_ref, user_context)\
+        displayed_query = build_user_query(active_ref, user_context, collection_paths['active'])\
                                           .where('frontend_status', '==', 'displayed')
         
         displayed_docs = displayed_query.get()
@@ -320,6 +331,7 @@ def archive_displayed_results():
             batch.commit()
         
         print(f"✅ Archived {len(displayed_docs)} displayed results for user: {user_email}")
+        print(f"📊 Archive summary - From: {collection_paths['active']} → To: {collection_paths['archive']}"))
         
         return jsonify({
             'message': 'Displayed results archived successfully',
@@ -358,7 +370,7 @@ def archive_old_results():
         
         # Query for old results using organization-aware filtering
         active_ref = db.collection(collection_paths['active'])
-        old_query = build_user_query(active_ref, user_context)\
+        old_query = build_user_query(active_ref, user_context, collection_paths['active'])\
                                    .where('created_at', '<', cutoff_iso)
         
         old_docs = old_query.get()
@@ -445,7 +457,7 @@ def get_archived_results():
         
         # Query archived results using organization-aware filtering
         archive_ref = db.collection(collection_paths['archive'])
-        query = build_user_query(archive_ref, user_context)\
+        query = build_user_query(archive_ref, user_context, collection_paths['archive'])\
                                .where('archived_at', '>=', cutoff_iso)\
                                .order_by('archived_at', direction=firestore.Query.DESCENDING)\
                                .limit(limit)\
