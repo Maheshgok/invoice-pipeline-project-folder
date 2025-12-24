@@ -241,7 +241,7 @@ export const useMultiUploadSimplified = () => {
       
       // Archive completed results after download (re-enabled for download-only archiving)
       try {
-        const result = await archiveService.archiveCompletedResults()
+        const result = await archiveService.archiveCompletedResultsHybrid()
         if (result.archived_count > 0) {
           console.log(`📦 Archived ${result.archived_count} completed results`)
         }
@@ -300,7 +300,7 @@ export const useMultiUploadSimplified = () => {
   // Archive completed results
   const archiveCompletedResults = useCallback(async () => {
     try {
-      const result = await archiveService.archiveCompletedResults()
+      const result = await archiveService.archiveCompletedResultsHybrid()
       
       if (result.archived_count > 0) {
         toast.success(`📦 Archived ${result.archived_count} completed results`)

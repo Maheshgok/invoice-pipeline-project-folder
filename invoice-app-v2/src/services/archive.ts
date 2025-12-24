@@ -7,6 +7,8 @@
 import { authService } from './auth'
 import { userService } from './userService'
 import { getApiUrl } from '../config/api'
+import { secureDatastoreService } from './secureDatastoreService'
+import { where } from 'firebase/firestore'
 
 export interface ArchiveResponse {
   message: string
@@ -199,6 +201,134 @@ class ArchiveService {
     } catch (error) {
       console.error('❌ Archive service health check failed:', error)
       return false
+    }
+  }
+
+  /**
+   * LOCAL ARCHIVE METHOD: Archive completed results using secure datastore
+   * This creates archive collections dynamically and handles user isolation
+   */
+  async archiveCompletedResultsLocal(): Promise<{ archived_count: number; message: string }> {
+    try {
+      console.log('📦 Starting local archive of completed results...')
+      
+      // Query completed results from active collection
+      const completedResults = await secureDatastoreService.query({
+        collection: 'active',
+        constraints: [
+          where('status', 'in', ['completed', 'displayed'])
+        ]
+      })
+
+      if (completedResults.length === 0) {
+        console.log('📦 No completed results to archive')
+        return {
+          archived_count: 0,
+          message: 'No completed results found to archive'
+        }
+      }
+
+      console.log(`📦 Found ${completedResults.length} completed results to archive`)
+
+      // Prepare documents for batch archiving
+      const documentsToArchive = completedResults.map(result => ({
+        id: result.id,
+        data: {
+          ...result,
+          // Remove the id since it will be duplicated
+          id: undefined
+        }
+      }))
+
+      // Use batch archive for efficiency
+      await secureDatastoreService.batchArchiveDocuments(documentsToArchive)
+
+      console.log(`✅ Successfully archived ${completedResults.length} completed results`)
+      
+      return {
+        archived_count: completedResults.length,
+        message: `Successfully archived ${completedResults.length} completed results`
+      }
+
+    } catch (error) {
+      console.error('❌ Local archive failed:', error)
+      throw new Error(`Local archive failed: ${error}`)
+    }
+  }
+
+  /**
+   * LOCAL ARCHIVE METHOD: Archive displayed results using secure datastore
+   */
+  async archiveDisplayedResultsLocal(): Promise<{ archived_count: number; message: string }> {
+    try {
+      console.log('📦 Starting local archive of displayed results...')
+      
+      // Query displayed results from active collection
+      const displayedResults = await secureDatastoreService.query({
+        collection: 'active',
+        constraints: [
+          where('frontendStatus', '==', 'displayed')
+        ]
+      })
+
+      if (displayedResults.length === 0) {
+        console.log('📦 No displayed results to archive')
+        return {
+          archived_count: 0,
+          message: 'No displayed results found to archive'
+        }
+      }
+
+      console.log(`📦 Found ${displayedResults.length} displayed results to archive`)
+
+      // Archive each document
+      for (const result of displayedResults) {
+        await secureDatastoreService.archiveDocument(result.id, {
+          ...result,
+          id: undefined // Remove duplicate id
+        })
+      }
+
+      console.log(`✅ Successfully archived ${displayedResults.length} displayed results`)
+      
+      return {
+        archived_count: displayedResults.length,
+        message: `Successfully archived ${displayedResults.length} displayed results`
+      }
+
+    } catch (error) {
+      console.error('❌ Local archive of displayed results failed:', error)
+      throw new Error(`Local archive of displayed results failed: ${error}`)
+    }
+  }
+
+  /**
+   * HYBRID ARCHIVE METHOD: Try cloud service first, fallback to local
+   * This ensures archiving always works even if cloud service is down
+   */
+  async archiveCompletedResultsHybrid(): Promise<ArchiveResponse> {
+    try {
+      // Try cloud service first
+      console.log('📦 Attempting cloud-based archive...')
+      return await this.archiveCompletedResults()
+    } catch (cloudError) {
+      console.warn('⚠️ Cloud archive failed, falling back to local archive:', cloudError)
+      
+      try {
+        // Fallback to local archive
+        const localResult = await this.archiveCompletedResultsLocal()
+        
+        // Convert to expected ArchiveResponse format
+        return {
+          message: localResult.message,
+          archived_count: localResult.archived_count,
+          user_email: authService.getCurrentUser()?.email || 'unknown',
+          archive_timestamp: new Date().toISOString()
+        }
+      } catch (localError) {
+        console.error('❌ Both cloud and local archive failed:', localError)
+        throw new Error(`Archive failed - Cloud: ${cloudError}, Local: ${localError}`)
+      }
     }
   }
 }
