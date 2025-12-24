@@ -8,11 +8,14 @@ import { smartListenerManager } from './smartListenerManager'
 import { memoryManager } from './memoryManager'
 import { openAICircuitBreaker } from './openAICircuitBreaker'
 import { collectionPathResolver } from './collectionPathResolver'
+import { secureDatastoreService } from './secureDatastoreService'
+import { datastoreConfigManager } from './datastoreConfigManager'
 
 export interface ServiceStats {
   authTokenManager: ReturnType<typeof authTokenManager.getStats>
   smartListenerManager: ReturnType<typeof smartListenerManager.getStats>
   circuitBreaker: ReturnType<typeof openAICircuitBreaker.getStats>
+  secureDatastore: ReturnType<typeof secureDatastoreService.getServiceStats>
 }
 
 class CentralizedServiceManager {
@@ -43,6 +46,11 @@ class CentralizedServiceManager {
       // Initialize authentication token management
       console.log('🔐 Initializing authentication token management...')
       authTokenManager.initializeGlobalTokenManagement()
+
+      // Initialize secure datastore configuration
+      console.log('🔒 Initializing secure datastore configuration...')
+      await datastoreConfigManager.initializeConfig()
+      await secureDatastoreService.initialize()
 
       // Initialize memory management
       console.log('🧠 Initializing memory management...')
@@ -92,7 +100,8 @@ class CentralizedServiceManager {
     return {
       authTokenManager: authTokenManager.getStats(),
       smartListenerManager: smartListenerManager.getStats(),
-      circuitBreaker: openAICircuitBreaker.getStats()
+      circuitBreaker: openAICircuitBreaker.getStats(),
+      secureDatastore: secureDatastoreService.getServiceStats()
     }
   }
 
