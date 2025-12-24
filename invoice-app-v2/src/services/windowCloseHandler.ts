@@ -1,5 +1,4 @@
-import { archiveService } from './archive'
-import { authService } from './auth'
+import { cleanupManager, CleanupTrigger } from './cleanupManager'
 
 class WindowCloseHandler {
   private cleanupInProgress = false
@@ -67,35 +66,20 @@ class WindowCloseHandler {
   }
 
   /**
-   * Handle unload event - send beacon for server-side cleanup
+   * Handle unload event - perform lightweight cleanup only
    */
   private handleUnload = () => {
     if (this.user && this.hasResults) {
-      try {
-        const logoutData = JSON.stringify({
-          uid: this.user.id || this.user.uid,
-          email: this.user.email,
-          hasResults: this.hasResults,
-          timestamp: new Date().toISOString(),
-          action: 'window_close'
-        })
-        
-        // Use sendBeacon for reliable data transmission during unload
-        if (navigator.sendBeacon) {
-          navigator.sendBeacon('/api/user-close', logoutData)
-        }
-        
-        console.log('📡 Sent window close beacon for user:', this.user.email)
-      } catch (error) {
-        console.error('❌ Error sending close beacon:', error)
-      }
+      console.log('📡 Window unload detected for user:', this.user.email)
+      // Note: Removed sendBeacon call as the endpoint doesn't exist
+      // If needed, implement proper endpoint first
     }
   }
 
   /**
    * Handle pagehide event - perform cleanup and logout
    */
-  private handlePageHide = async (event: PageTransitionEvent) => {
+  private handlePageHide = async (_event: PageTransitionEvent) => {
     if (this.user && !this.cleanupInProgress) {
       console.log('🚪 Page hiding - triggering cleanup for user:', this.user.email)
       
@@ -155,28 +139,29 @@ class WindowCloseHandler {
   }
 
   /**
-   * Execute the actual cleanup operations
+   * Execute the actual cleanup operations using centralized manager
    */
   private async executeCleanup() {
     if (!this.user) return
 
-    console.log('🧹 Starting cleanup for user:', this.user.email)
+    console.log('🧹 Starting centralized cleanup for user:', this.user.email)
 
     try {
-      // Archive results if any exist
-      if (this.hasResults) {
-        console.log('📦 Archiving results before cleanup...')
-        await Promise.race([
-          archiveService.archiveCompletedResults(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Archive timeout')), 10000))
-        ])
-        console.log('✅ Results archived successfully')
+      const result = await cleanupManager.performCleanup(
+        CleanupTrigger.WINDOW_CLOSE,
+        this.hasResults,
+        this.user
+      )
+
+      if (result.success) {
+        // Clear results tracking
+        this.hasResults = false
+        console.log('✅ Centralized cleanup completed:', result)
+      } else {
+        console.error('❌ Centralized cleanup failed:', result.error)
+        throw new Error(result.error || 'Cleanup failed')
       }
 
-      // Clear results tracking
-      this.hasResults = false
-
-      console.log('✅ Cleanup completed for user:', this.user.email)
     } catch (error) {
       console.error('❌ Cleanup error:', error)
       throw error

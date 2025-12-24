@@ -37,6 +37,9 @@ export interface UserProfile {
   usageStats: UserUsageStats
   invitedBy?: string  // UID of admin who invited this user
   inviteStatus: 'pending' | 'accepted' | 'rejected'
+  approvalStatus: 'pending' | 'approved' | 'rejected' | 'suspended'  // Manual approval by super admin
+  approvedBy?: string  // Super admin UID who approved the user
+  approvedAt?: Timestamp  // When the user was approved
   paymentStatus: PaymentStatus
 }
 

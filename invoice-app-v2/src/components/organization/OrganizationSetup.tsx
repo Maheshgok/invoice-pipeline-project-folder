@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react'
-import { Building2, Users, MapPin, Shield, Check, ArrowRight, ArrowLeft, AlertCircle } from 'lucide-react'
+import { Building2, Users, MapPin, Shield, Check, ArrowRight, ArrowLeft, AlertCircle, CreditCard } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { organizationService } from '../../services/organizationService'
 import { userService } from '../../services/userService'
 import { authService } from '../../services/auth'
+import { pricingService } from '../../services/pricingService'
 
 interface OrganizationFormData {
   // Organization Details
@@ -48,6 +49,7 @@ const STEPS = [
   { id: 'address', title: 'Address & Location', icon: MapPin },
   { id: 'admin', title: 'Admin User Setup', icon: Shield },
   { id: 'settings', title: 'Preferences', icon: Users },
+  { id: 'pricing', title: 'Pricing Plan', icon: CreditCard },
   { id: 'review', title: 'Review & Create', icon: Check }
 ]
 

@@ -23,7 +23,15 @@ from firebase_admin import auth as firebase_auth, credentials
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, origins=["*"])
+
+# SECURITY FIX: Restrict CORS to allowed origins only
+allowed_origins = [
+    "https://invoiceparse.netlify.app",
+    "https://profound-babka-8bbaa6.netlify.app", 
+    "http://localhost:3000",
+    "http://localhost:3001"
+]
+CORS(app, origins=allowed_origins, supports_credentials=True)
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
@@ -40,6 +48,16 @@ ARCHIVE_COLLECTION = 'invoice_results_archive'
 
 # Environment variables
 PROJECT_ID = os.getenv('GOOGLE_CLOUD_PROJECT', 'watch-mail-trial')
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 def verify_firebase_token(auth_header: str) -> Optional[Dict]:
     """Verify Firebase ID token and return full user context"""

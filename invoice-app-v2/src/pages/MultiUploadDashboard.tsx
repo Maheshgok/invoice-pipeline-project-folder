@@ -7,6 +7,12 @@ import { getApiUrl } from '../config/api'
 import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 import { authService } from '../services/auth'
 import { userService } from '../services/userService'
+import { pricingService } from '../services/pricingService'
+import { smartListenerManager, type ProcessingResult } from '../services/smartListenerManager'
+import { memoryManager } from '../services/memoryManager'
+import { authTokenManager } from '../services/authTokenManager'
+import { collectionPathResolver } from '../services/collectionPathResolver'
+import { centralizedServiceManager } from '../services/centralizedServiceManager'
 import AdminDashboard from '../components/admin/AdminDashboard'
 import OrganizationSetup from '../components/organization/OrganizationSetup'
 import OrganizationManagement from '../components/organization/OrganizationManagement'
@@ -27,6 +33,10 @@ const MultiUploadDashboard: React.FC = () => {
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 })
   const [activeTab, setActiveTab] = useState<'dashboard' | 'admin' | 'organization'>('dashboard')
   const [showOrganizationSetup, setShowOrganizationSetup] = useState(false)
+  
+  // SmartListenerManager integration state
+  const [smartListenerResults, setSmartListenerResults] = useState<ProcessingResult[]>([])
+  const [listenerInitialized, setListenerInitialized] = useState(false)
   
   // Check permissions
   const canUpload = hasPermission('canUpload')
@@ -170,12 +180,96 @@ const MultiUploadDashboard: React.FC = () => {
     return null
   }, [batchState.files, syncManager])
 
+  // Enhanced document viewer with memory management
+  const handleImageClick = useCallback(async (invoiceId: string, url?: string) => {
+    console.log('🖼️ Image click - invoiceId:', invoiceId)
+    setDocumentLoading(prev => ({ ...prev, [invoiceId]: true }))
+    setDocumentError(null)
+    
+    try {
+      const imageUrl = url || await getDocumentUrlForInvoice(invoiceId)
+      
+      if (imageUrl) {
+        // Clean up previous image if it was a blob URL
+        if (selectedImage && selectedImage.startsWith('blob:')) {
+          memoryManager.releaseBlobUrl(selectedImage)
+        }
+        
+        // Track the new blob URL if it is one
+        if (imageUrl.startsWith('blob:')) {
+          memoryManager.trackBlobUrl(imageUrl, `document-${invoiceId}`)
+        }
+        
+        setSelectedImage(imageUrl)
+      } else {
+        console.error('❌ Could not get document URL for:', invoiceId)
+        setDocumentError('Document not found')
+      }
+    } catch (error) {
+      console.error('❌ Error loading document:', error)
+      setDocumentError('Failed to load document')
+    } finally {
+      setDocumentLoading(prev => ({ ...prev, [invoiceId]: false }))
+    }
+  }, [getDocumentUrlForInvoice, selectedImage])
+
+  const closeImageViewer = useCallback(() => {
+    // Clean up blob URL when closing viewer
+    if (selectedImage && selectedImage.startsWith('blob:')) {
+      memoryManager.releaseBlobUrl(selectedImage)
+    }
+    setSelectedImage(null)
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [selectedImage])
+
+  // Clean up all blob URLs on component unmount
+  useEffect(() => {
+    return () => {
+      memoryManager.cleanup()
+      console.log('🧹 Component unmount: cleaned up all blob URLs')
+    }
+  }, [])
+  
+  // Initialize centralized services and SmartListenerManager on component mount
+  useEffect(() => {
+    // Initialize all services through centralized manager
+    centralizedServiceManager.initialize()
+      .then(() => {
+        console.log('✅ All centralized services initialized')
+      })
+      .catch((error) => {
+        console.error('❌ Service initialization failed:', error)
+        toast.error('Failed to initialize services')
+      })
+    
+    // Setup SmartListenerManager event listeners
+    const unsubscribeResults = smartListenerManager.onResultsUpdate((results) => {
+      console.log('📡 Received results from SmartListenerManager:', results.length)
+      setSmartListenerResults(results)
+    })
+    
+    const unsubscribeError = smartListenerManager.onError((error) => {
+      console.error('❌ SmartListenerManager error:', error)
+      toast.error(`Listener error: ${error.message}`)
+    })
+    
+    return () => {
+      centralizedServiceManager.cleanup()
+      unsubscribeResults()
+      unsubscribeError()
+    }
+  }, [])
+
   // Handle window close/refresh - reliable archive trigger
   useEffect(() => {
     if (!user?.email || !isInitialized) return
 
     // Use pagehide for actual page unload detection
     const handlePageHide = (e: PageTransitionEvent) => {
+      // Clean up memory before page unload
+      memoryManager.cleanup()
+      
       // Only archive if page is actually being unloaded (not just cached)
       if (!e.persisted && batchState.completedFiles > 0) {
         console.log('🔄 Page unloading - triggering archive for cleanup...')
@@ -187,6 +281,9 @@ const MultiUploadDashboard: React.FC = () => {
 
     // Conservative beforeunload - only for actual navigation/close
     const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Clean up memory
+      memoryManager.cleanup()
+      
       if (batchState.completedFiles > 0) {
         console.log('🔄 Window unloading - triggering archive...')
         archiveCompletedResults().catch(err => 
@@ -239,7 +336,36 @@ const MultiUploadDashboard: React.FC = () => {
     }
   }, [])
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
+  // Enhanced upload handler with smart listener initialization
+  const handleFileUpload = useCallback(async (files: FileList) => {
+    try {
+      // Ensure services are initialized before upload
+      if (!centralizedServiceManager.isInitialized()) {
+        console.log('⚠️ Services not initialized, initializing...')
+        await centralizedServiceManager.initialize()
+      }
+
+      // Start the upload process immediately (no listeners yet to avoid delays)
+      const uploadResults = await uploadFiles(files)
+      
+      // Initialize listeners AFTER upload completes (performance optimization)
+      if (uploadResults && uploadResults.length > 0) {
+        console.log('🚀 Starting smart listener initialization after upload...')
+        const firstJobId = uploadResults[0]?.jobId || 'batch_upload'
+        await centralizedServiceManager.initializeSmartListeners(firstJobId)
+        setListenerInitialized(true)
+        toast.success('Upload completed and listeners initialized!')
+      } else {
+        console.warn('⚠️ No upload results to track')
+        toast.success('Upload completed')
+      }
+    } catch (error) {
+      console.error('❌ Upload error:', error)
+      toast.error(`Upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }, [uploadFiles])
+
+  const handleDrop = useCallback(async (e: React.DragEvent) => {
     e.preventDefault()
     e.stopPropagation()
     setDragActive(false)
@@ -251,8 +377,18 @@ const MultiUploadDashboard: React.FC = () => {
       return
     }
 
-    // Filter valid files
+    // Check usage limits before processing
+    try {
+      await checkUsageLimits()
+    } catch (error: any) {
+      toast.error(error.message)
+      return
+    }
+
+    // Filter and validate files
     const validFiles = files.filter(file => {
+      if (!validateFileSize(file)) return false
+      
       if (file.type.includes('image') || file.type === 'application/pdf') {
         return true
       } else {
@@ -261,15 +397,15 @@ const MultiUploadDashboard: React.FC = () => {
       }
     })
     
-    // Upload all valid files at once using the simplified system
+    // Upload all valid files using enhanced handler
     if (validFiles.length > 0) {
       const fileList = new DataTransfer()
       validFiles.forEach(file => fileList.items.add(file))
-      uploadFiles(fileList.files)
+      await handleFileUpload(fileList.files)
     }
-  }, [uploadFiles, uploadedFiles.length])
+  }, [handleFileUpload, uploadedFiles.length, checkUsageLimits, validateFileSize])
 
-  const handleFileInput = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileInput = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || [])
     
     if (uploadedFiles.length + files.length > MAX_QUEUE_SIZE) {
@@ -277,8 +413,20 @@ const MultiUploadDashboard: React.FC = () => {
       return
     }
 
-    // Filter valid files
+    // Check usage limits before processing
+    try {
+      await checkUsageLimits()
+    } catch (error: any) {
+      toast.error(error.message)
+      // Reset input
+      e.target.value = ''
+      return
+    }
+
+    // Filter and validate files
     const validFiles = files.filter(file => {
+      if (!validateFileSize(file)) return false
+      
       if (file.type.includes('image') || file.type === 'application/pdf') {
         return true
       } else {
@@ -287,14 +435,14 @@ const MultiUploadDashboard: React.FC = () => {
       }
     })
     
-    // Upload all valid files at once using the simplified system
+    // Upload all valid files using enhanced handler
     if (validFiles.length > 0) {
-      uploadFiles(e.target.files)
+      await handleFileUpload(e.target.files!)
     }
     
     // Reset input
     e.target.value = ''
-  }, [uploadFiles, uploadedFiles.length])
+  }, [handleFileUpload, uploadedFiles.length, checkUsageLimits, validateFileSize])
 
   const getStatusIcon = (status: string) => {
     switch (status) {

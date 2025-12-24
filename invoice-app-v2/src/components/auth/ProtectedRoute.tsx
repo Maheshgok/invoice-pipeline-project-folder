@@ -47,8 +47,88 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/login" state={{ from: location }} replace />
   }
 
-  // Check required permission if specified
-  if (requiredPermission && permissions) {
+  // Show loading while user profile is being loaded
+  if (!userProfile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="flex flex-col items-center space-y-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-gray-600">Loading user profile...</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Check approval status for manual approval flow
+  if (userProfile.approvalStatus === 'pending') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full bg-white rounded-lg shadow p-6 text-center">
+          <div className="text-yellow-500 text-5xl mb-4">⏳</div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Account Pending Approval</h2>
+          <p className="text-gray-600 mb-4">
+            Your account is currently under review. You will receive an email notification once approved.
+          </p>
+          <p className="text-sm text-gray-500">
+            If you have questions, please contact support.
+          </p>
+          <button
+            onClick={() => window.location.href = '/login'}
+            className="mt-4 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Handle rejected users
+  if (userProfile.approvalStatus === 'rejected') {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="max-w-md w-full bg-white rounded-lg shadow p-6 text-center">
+          <div className="text-red-500 text-5xl mb-4">❌</div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-2">Account Access Denied</h2>
+          <p className="text-gray-600 mb-4">
+            Your account application has been declined. Please contact support for more information.
+          </p>
+          <button
+            onClick={() => window.location.href = '/login'}
+            className="bg-gray-600 text-white px-4 py-2 rounded-lg hover:bg-gray-700 transition"
+          >
+            Sign Out
+          </button>
+        </div>
+      </div>
+    )
+  }
+
+  // Check payment status if payment is required
+  if (requirePayment) {
+    const paymentStatus = userProfile.paymentStatus?.status
+    
+    // Handle expired trials
+    if (paymentStatus === 'expired' || 
+        (paymentStatus === 'pending' && userProfile.paymentStatus?.expiresAt && 
+         new Date() > userProfile.paymentStatus.expiresAt.toDate())) {
+      return <Navigate to="/onboarding" replace />
+    }
+    
+    // Redirect to onboarding if payment not completed or verified
+    if (!paymentStatus || 
+        !['paid', 'verified', 'free_trial'].includes(paymentStatus)) {
+      return <Navigate to="/onboarding" replace />
+    }
+    
+    // Users with 'paid' status need admin verification before full access
+    if (paymentStatus === 'paid' && userProfile.approvalStatus !== 'approved') {
+      return <Navigate to="/onboarding" replace />
+    }
+  }
+
+  // Check required permission if specified and user is approved
+  if (requiredPermission && permissions && userProfile.approvalStatus === 'approved') {
     const { action, subject, resource } = requiredPermission
     if (!permissions.can(action, subject, resource)) {
       // If it's the invoice analysis permission and user doesn't have access,

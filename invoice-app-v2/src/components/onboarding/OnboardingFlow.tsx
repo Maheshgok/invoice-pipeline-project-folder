@@ -21,7 +21,7 @@ const OnboardingFlow: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [paymentAmount, setPaymentAmount] = useState(999) // Default amount in INR
-  const [organizationData, setOrganizationData] = useState<{
+  const [organizationData] = useState<{
     organizationId: string
     organizationName: string
     isNew: boolean
@@ -107,7 +107,7 @@ const OnboardingFlow: React.FC = () => {
     }
   }
 
-  const handleOrganizationComplete = async (organizationData: any) => {
+  const handleOrganizationComplete = async (_organizationData: any) => {
     try {
       setLoading(true)
       // Organization setup is handled in OrganizationStep component
@@ -157,10 +157,10 @@ const OnboardingFlow: React.FC = () => {
             </div>
 
             <button
-              onClick={() => setCurrentStep(3)}
+              onClick={() => setCurrentStep(2)}
               className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors"
             >
-              Continue to Plan Selection
+              Continue to Organization Setup
             </button>
           </div>
         )

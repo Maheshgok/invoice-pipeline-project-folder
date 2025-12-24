@@ -1,4 +1,4 @@
-import { AbilityBuilder, Ability, defineAbility } from '@casl/ability'
+import { AbilityBuilder, Ability } from '@casl/ability'
 import type { UserProfile } from '../services/userService'
 
 // Define action types
