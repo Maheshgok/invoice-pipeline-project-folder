@@ -220,20 +220,19 @@ def archive_completed_results():
         collection_paths = get_collection_paths(user_context)
         print(f"📂 Archive paths - Active: {collection_paths['active']}, Archive: {collection_paths['archive']}")
         
-        # Query for completed results using organization-aware filtering
+        # Query for ALL results (sweep entire active collection for this user)
         active_ref = db.collection(collection_paths['active'])
-        completed_query = build_user_query(active_ref, user_context, collection_paths['active'])\
-                                          .where('status', '==', 'completed')
+        all_query = build_user_query(active_ref, user_context, collection_paths['active'])
         
-        print(f"🔍 Querying collection: {collection_paths['active']}")
-        completed_docs = completed_query.get()
+        print(f"🔍 Querying ALL documents in collection: {collection_paths['active']}")
+        all_docs = all_query.get()
         
-        print(f"📊 Found {len(completed_docs)} completed documents")
+        print(f"📊 Found {len(all_docs)} total documents to archive")
         
-        if not completed_docs:
-            print("ℹ️ No completed results to archive")
+        if not all_docs:
+            print("ℹ️ No documents to archive - active collection is empty")
             return jsonify({
-                'message': 'No completed results to archive',
+                'message': 'No documents to archive - active collection is empty',
                 'archived_count': 0,
                 'user_email': user_email
             })
@@ -243,7 +242,7 @@ def archive_completed_results():
         archived_count = 0
         batch_size = 500  # Firestore batch limit
         
-        for doc in completed_docs:
+        for doc in all_docs:
             if archived_count >= batch_size:
                 # Commit current batch and start new one
                 batch.commit()
@@ -253,7 +252,7 @@ def archive_completed_results():
             # Add document to archive with additional metadata
             doc_data = doc.to_dict()
             doc_data['archived_at'] = datetime.utcnow().isoformat()
-            doc_data['archive_reason'] = 'completed_auto_archive'
+            doc_data['archive_reason'] = 'sweep_all_documents'
             doc_data['original_doc_id'] = doc.id
             doc_data['original_collection'] = collection_paths['active']
             
@@ -270,12 +269,12 @@ def archive_completed_results():
         if archived_count > 0:
             batch.commit()
         
-        print(f"✅ Archived {len(completed_docs)} completed results for user: {user_email}")
+        print(f"✅ Archived {len(all_docs)} documents for user: {user_email}")
         print(f"📊 Archive summary - From: {collection_paths['active']} → To: {collection_paths['archive']}")
         
         return jsonify({
-            'message': 'Completed results archived successfully',
-            'archived_count': len(completed_docs),
+            'message': 'All documents archived successfully',
+            'archived_count': len(all_docs),
             'user_email': user_email,
             'archive_timestamp': datetime.utcnow().isoformat()
         })
@@ -349,7 +348,7 @@ def archive_displayed_results():
             batch.commit()
         
         print(f"✅ Archived {len(displayed_docs)} displayed results for user: {user_email}")
-        print(f"📊 Archive summary - From: {collection_paths['active']} → To: {collection_paths['archive']}"))
+        print(f"📊 Archive summary - From: {collection_paths['active']} → To: {collection_paths['archive']}")
         
         return jsonify({
             'message': 'Displayed results archived successfully',
