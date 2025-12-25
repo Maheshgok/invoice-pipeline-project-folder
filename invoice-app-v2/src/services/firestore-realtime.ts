@@ -85,6 +85,9 @@ class RealtimeFirestoreService {
       // Check if user has organization
       if (!userProfile.organizationId) {
         console.log('👤 No organization assigned, using user-isolated collection')
+        console.log('🔍 DEBUG: User profile organizationId:', userProfile.organizationId)
+        console.log('🔍 DEBUG: User UID:', user.uid)
+        console.log('🔍 DEBUG: Target collection will be:', `users/${user.uid}/invoice_results`)
         this.setupUserIsolatedListener(user, onUpdate, onError)
         return
       }
@@ -200,6 +203,8 @@ class RealtimeFirestoreService {
   private setupUserIsolatedListener(user: any, onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     console.log('🏠 Setting up user-isolated listener for UID:', user.uid)
     console.log('🏠 User-isolated collection path:', `users/${user.uid}/invoice_results`)
+    console.log('🔍 DEBUG: About to query collection:', `users/${user.uid}/invoice_results`)
+    console.log('🔍 DEBUG: Query conditions: userUID ==', user.uid)
     
     // Clean up any existing listeners to prevent duplicates
     this.cleanup()
@@ -218,6 +223,12 @@ class RealtimeFirestoreService {
       userQuery,
       (snapshot) => {
         console.log('🏠 User-isolated data snapshot:', snapshot.docs.length, 'documents from', userCollectionPath)
+        console.log('🔍 DEBUG: Snapshot details:', snapshot.docs.map(doc => ({
+          id: doc.id,
+          status: doc.data().status,
+          userUID: doc.data().userUID,
+          created_at: doc.data().created_at
+        })))
         
         if (snapshot.docs.length === 0) {
           console.log('🔄 User collection empty, falling back to legacy collection...')
