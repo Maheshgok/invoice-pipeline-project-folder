@@ -77,15 +77,18 @@ class WindowCloseHandler {
   }
 
   /**
-   * Handle pagehide event - perform cleanup and logout
+   * Handle pagehide event - perform cleanup only on actual page unload
    */
-  private handlePageHide = async (_event: PageTransitionEvent) => {
-    if (this.user && !this.cleanupInProgress) {
-      console.log('🚪 Page hiding - triggering cleanup for user:', this.user.email)
-      
-      // Don't await this to avoid blocking the page close
-      this.performAsyncCleanup()
+  private handlePageHide = async (event: PageTransitionEvent) => {
+    // Only cleanup on actual navigation away (not just tab switching)
+    if (event.persisted || !this.user || this.cleanupInProgress) {
+      return // Don't cleanup if page is just being cached
     }
+    
+    console.log('🚪 Page actually unloading - triggering cleanup for user:', this.user.email)
+    
+    // Don't await this to avoid blocking the page close
+    this.performAsyncCleanup()
   }
 
   /**
@@ -93,15 +96,16 @@ class WindowCloseHandler {
    */
   private handleVisibilityChange = () => {
     if (document.visibilityState === 'hidden' && this.user && this.hasResults) {
-      console.log('👁️ Page hidden with results - scheduling cleanup check')
+      console.log('👁️ Page hidden with results - will cleanup only on actual page close')
       
-      // Delay cleanup to see if user returns quickly
+      // Only schedule cleanup after a very long delay (30 minutes)
+      // This gives users plenty of time to return without losing their results
       setTimeout(() => {
         if (document.visibilityState === 'hidden' && this.user && this.hasResults) {
-          console.log('⏰ Page still hidden after delay - triggering cleanup')
+          console.log('⏰ Page still hidden after extended delay - triggering cleanup')
           this.performAsyncCleanup()
         }
-      }, 45000) // 45 seconds delay
+      }, 1800000) // 30 minutes delay instead of 45 seconds
     }
   }
 

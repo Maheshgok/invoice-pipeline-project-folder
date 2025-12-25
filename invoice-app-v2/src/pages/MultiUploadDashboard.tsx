@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings, Building2, CreditCard } from 'lucide-react'
+import { Upload, Download, FileText, CheckCircle, Clock, AlertCircle, X, LogOut, User, Settings, Building2, CreditCard, Archive } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { getApiUrl } from '../config/api'
 // Import the new simplified hook
@@ -829,6 +829,27 @@ const MultiUploadDashboard: React.FC = () => {
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Journal Entries</h2>
             <div className="flex items-center space-x-3">
+              <button
+                onClick={async () => {
+                  try {
+                    const result = await archiveCompletedResults()
+                    if (result.archived_count > 0) {
+                      toast.success(`📦 Archived ${result.archived_count} completed results`)
+                    } else {
+                      toast('📭 No completed results to archive', { icon: '📭' })
+                    }
+                  } catch (error) {
+                    console.error('❌ Manual archive failed:', error)
+                    toast.error('Failed to archive results')
+                  }
+                }}
+                disabled={journalEntries.length === 0}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={journalEntries.length === 0 ? "No results to archive" : "Archive completed results to clean up interface"}
+              >
+                <Archive className="w-4 h-4 mr-2" />
+                Archive Results
+              </button>
               <button
                 onClick={downloadCSV}
                 disabled={journalEntries.length === 0}

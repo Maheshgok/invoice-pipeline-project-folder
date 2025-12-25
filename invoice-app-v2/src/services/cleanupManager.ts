@@ -25,7 +25,7 @@ class CleanupManager {
   private static instance: CleanupManager
   private cleanupInProgress = false
   private lastCleanup: number = 0
-  private readonly MIN_CLEANUP_INTERVAL = 30000 // 30 seconds minimum between cleanups
+  private readonly MIN_CLEANUP_INTERVAL = 300000 // 5 minutes minimum between cleanups
 
   private constructor() {}
 

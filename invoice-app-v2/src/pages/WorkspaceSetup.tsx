@@ -5,6 +5,12 @@ import { CheckCircle, Settings, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import WorkspaceStep from '../components/onboarding/WorkspaceStep'
 
+interface WorkspaceSetup {
+  workspaceId: string
+  storageQuota: number
+  initialized: boolean
+}
+
 const WorkspaceSetup: React.FC = () => {
   const { user, userProfile, refreshUserProfile } = useAuth()
   const [isCompleting, setIsCompleting] = useState(false)
@@ -44,7 +50,7 @@ const WorkspaceSetup: React.FC = () => {
     )
   }
 
-  const handleWorkspaceComplete = async () => {
+  const handleWorkspaceComplete = async (workspaceData: WorkspaceSetup) => {
     try {
       setIsCompleting(true)
       await refreshUserProfile()
@@ -59,6 +65,11 @@ const WorkspaceSetup: React.FC = () => {
     } finally {
       setIsCompleting(false)
     }
+  }
+
+  const handleWorkspaceBack = () => {
+    // Navigate back to previous step or home
+    window.location.href = '/'
   }
 
   return (
@@ -98,7 +109,7 @@ const WorkspaceSetup: React.FC = () => {
           <div className="bg-white rounded-lg shadow-lg p-6">
             <WorkspaceStep 
               onComplete={handleWorkspaceComplete}
-              loading={isCompleting}
+              onBack={handleWorkspaceBack}
             />
           </div>
 
