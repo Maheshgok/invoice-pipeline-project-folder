@@ -12,6 +12,9 @@ service cloud.firestore {
     match /users/{userId}/invoice_results/{resultId} {
       allow read, write: if request.auth != null 
         && request.auth.uid == userId;
+      // Allow service account writes for queue-processor
+      allow write: if request.auth == null  // Service account context
+        && request.resource.data.userUID == userId;  // Verify data integrity
     }
     
     // Organizations - allow reading for organization discovery during signup
@@ -36,6 +39,9 @@ service cloud.firestore {
       // Allow creation for authenticated users in the organization
       allow create: if request.auth != null 
         && request.auth.uid == request.resource.data.userUID;
+      // Allow service account writes for queue-processor
+      allow write: if request.auth == null  // Service account context
+        && request.resource.data.organizationId == orgId;  // Verify data integrity
     }
     
     // User invites - can read invites for your email

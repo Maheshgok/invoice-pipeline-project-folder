@@ -46,8 +46,8 @@ class RealtimeFirestoreService {
   private recentResultsCache: Map<string, InvoiceProcessingResult> = new Map()
 
   /**
-   * Listen to user's active results with organization-aware data routing
-   * Uses proper collection isolation with indexing fallbacks
+   * Listen to user's active results with USER-ISOLATED strategy
+   * Simplified to always use user-isolated collections for consistency
    */
   listenToActiveResults(onUpdate: (results: InvoiceProcessingResult[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
@@ -56,10 +56,11 @@ class RealtimeFirestoreService {
       return
     }
 
-    console.log('🔥 Setting up organization-aware listener for UID:', user.uid)
-    console.log('📊 Using collection routing with proper data isolation')
+    console.log('🔥 Setting up USER-ISOLATED listener for UID:', user.uid)
+    console.log('📊 Using user-isolated collection strategy for consistency')
 
-    this.setupSmartOrganizationListener(onUpdate, onError)
+    // SIMPLIFIED: Always use user-isolated strategy
+    this.setupUserIsolatedListener(user, onUpdate, onError)
   }
 
   /**
@@ -231,8 +232,9 @@ class RealtimeFirestoreService {
         })))
         
         if (snapshot.docs.length === 0) {
-          console.log('🔄 User collection empty, falling back to legacy collection...')
-          this.setupLegacyListener(user, onUpdate, onError)
+          console.log('� User collection is empty - no documents found')
+          console.log('🔍 Expected collection path:', userCollectionPath)
+          onUpdate([]) // Return empty array instead of fallback
           return
         }
         
