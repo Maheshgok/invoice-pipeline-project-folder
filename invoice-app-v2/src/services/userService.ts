@@ -41,6 +41,7 @@ export interface UserProfile {
   approvedBy?: string  // Super admin UID who approved the user
   approvedAt?: Timestamp  // When the user was approved
   paymentStatus: PaymentStatus
+  workspace_initialized?: boolean  // Whether user workspace is set up
 }
 
 export interface PaymentStatus {

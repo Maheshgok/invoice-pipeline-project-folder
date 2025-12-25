@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../contexts/AuthContext'
-import { Upload, FileText, User, LogOut, Trash2, Eye } from 'lucide-react'
+import { Upload, FileText, User, LogOut, Trash2, Eye, AlertTriangle, Settings } from 'lucide-react'
 import FileUpload from '../components/FileUpload'
 import InvoiceViewer from '../components/invoice/InvoiceViewer'
 import DataEditor from '../components/invoice/DataEditor'
@@ -8,7 +8,7 @@ import { InvoiceData, UploadedFile } from '../types'
 import toast from 'react-hot-toast'
 
 const Dashboard: React.FC = () => {
-  const { user, logout } = useAuth()
+  const { user, logout, userProfile } = useAuth()
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([])
   const [selectedFile, setSelectedFile] = useState<UploadedFile | null>(null)
   const [invoiceData, setInvoiceData] = useState<InvoiceData | null>(null)
@@ -253,7 +253,34 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 flex">
+      <div className="flex-1 flex flex-col">
+        {/* Workspace Initialization Warning */}
+        {!userProfile?.workspace_initialized && (
+          <div className="bg-amber-50 border-l-4 border-amber-400 p-4 m-4">
+            <div className="flex">
+              <AlertTriangle className="h-5 w-5 text-amber-400 flex-shrink-0" />
+              <div className="ml-3">
+                <h3 className="text-sm font-medium text-amber-800">
+                  Workspace Setup Required
+                </h3>
+                <p className="text-sm text-amber-700 mt-1">
+                  Complete your workspace setup to start uploading invoices.
+                </p>
+                <div className="mt-3">
+                  <button
+                    onClick={() => window.location.href = '/onboarding'}
+                    className="inline-flex items-center px-3 py-2 border border-transparent text-sm leading-4 font-medium rounded-md text-amber-700 bg-amber-100 hover:bg-amber-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500"
+                  >
+                    <Settings className="h-4 w-4 mr-2" />
+                    Setup Workspace
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+        
+        <div className="flex-1 flex">
         {/* Left Panel - Invoice Preview */}
         <div className="flex-1 flex flex-col">
           {selectedFile ? (
@@ -285,6 +312,7 @@ const Dashboard: React.FC = () => {
             />
           </div>
         )}
+        </div>
       </div>
     </div>
   )

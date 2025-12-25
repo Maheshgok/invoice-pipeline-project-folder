@@ -36,7 +36,8 @@ const OnboardingFlow: React.FC = () => {
   // Check if user should see onboarding
   const shouldShowOnboarding = !userProfile?.paymentStatus || 
                                userProfile?.paymentStatus?.status === 'pending' || 
-                               userProfile?.paymentStatus?.status === 'paid'
+                               userProfile?.paymentStatus?.status === 'paid' ||
+                               !userProfile?.workspace_initialized
 
   const steps: OnboardingStep[] = [
     {
