@@ -17,6 +17,7 @@ from firebase_admin import credentials, auth as firebase_auth
 
 # Import Cloud Tasks Manager
 from cloud_tasks_manager import CloudTasksManager
+from workspace_manager import initialize_workspace_endpoint, get_workspace_status
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -144,6 +145,20 @@ def upload_file():
         user_context = verify_auth_token(auth_header)
         user_email = user_context['email']  # For backward compatibility in logs
         logger.info(f"Upload request authenticated for user: {user_email} (UID: {user_context['uid'][:8]}...)")
+        
+        # CRITICAL: Validate workspace exists before allowing upload
+        doc_ref = firestore_client.collection('users').document(user_context['uid'])
+        doc = doc_ref.get()
+        
+        if not doc.exists or not doc.to_dict().get('workspace_initialized'):
+            logger.error(f"Workspace not initialized for user: {user_email}")
+            return jsonify({
+                "error": "Workspace not initialized",
+                "message": "Please complete workspace setup in onboarding before uploading files",
+                "action": "redirect_to_onboarding"
+            }), 403
+            
+        logger.info(f"✅ Workspace validated for user: {user_email}")
     except ValueError as e:
         logger.error(f"Authentication failed: {e}")
         return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401
@@ -167,9 +182,10 @@ def upload_file():
         import hashlib
         import secrets
         
-        # Generate unique path with timestamp
+        # Generate unique path with timestamp and user isolation
         timestamp = datetime.utcnow().strftime('%Y/%m/%d/%H-%M-%S')
-        filename = f"raw/{timestamp}_{file.filename}"
+        user_folder = user_context['uid'][:8]  # First 8 chars of UID for privacy
+        filename = f"users/{user_folder}/raw/{timestamp}_{file.filename}"
         
         logger.info(f"Processing upload for file: {filename}")
         
@@ -648,6 +664,16 @@ def health_check():
         "cloud_tasks_enabled": True,
         "queue_path": cloud_tasks_manager.queue_path
     }), 200
+
+@app.route('/initialize-workspace', methods=['POST'])
+def initialize_workspace():
+    """Initialize user's isolated workspace structure"""
+    return initialize_workspace_endpoint(request, jsonify)
+
+@app.route('/workspace-status', methods=['GET']) 
+def workspace_status():
+    """Get user's workspace status"""
+    return get_workspace_status(request, jsonify)
 
 if __name__ == "__main__":
     # Set default environment variables for local testing

@@ -7,6 +7,7 @@ import toast from 'react-hot-toast'
 import PaymentStep from './PaymentStep'
 import VerificationStep from './VerificationStep'
 import OrganizationStep from './OrganizationStep'
+import WorkspaceStep from './WorkspaceStep'
 
 interface OnboardingStep {
   id: number
@@ -25,6 +26,11 @@ const OnboardingFlow: React.FC = () => {
     organizationId: string
     organizationName: string
     isNew: boolean
+  } | null>(null)
+  const [workspaceData, setWorkspaceData] = useState<{
+    workspaceId: string
+    storageQuota: number
+    initialized: boolean
   } | null>(null)
 
   // Check if user should see onboarding
@@ -49,6 +55,13 @@ const OnboardingFlow: React.FC = () => {
     },
     {
       id: 3,
+      title: 'Initialize Workspace',
+      description: 'Set up your isolated file storage environment', 
+      icon: <FileText className="w-6 h-6" />,
+      completed: !!workspaceData?.initialized
+    },
+    {
+      id: 4,
       title: 'Choose Plan & Payment',
       description: 'Select your subscription plan and make payment',
       icon: <CreditCard className="w-6 h-6" />,
@@ -56,14 +69,14 @@ const OnboardingFlow: React.FC = () => {
                  userProfile?.paymentStatus?.status === 'verified'
     },
     {
-      id: 4,
+      id: 5,
       title: 'Payment Verification',
       description: 'Waiting for admin verification of your payment',
       icon: <Shield className="w-6 h-6" />,
       completed: userProfile?.paymentStatus?.status === 'verified'
     },
     {
-      id: 5,
+      id: 6,
       title: 'Start Processing',
       description: 'Upload and process your first invoice',
       icon: <FileText className="w-6 h-6" />,
@@ -97,7 +110,7 @@ const OnboardingFlow: React.FC = () => {
       setPaymentAmount(selectedAmount)
       await userService.initializePayment(selectedAmount, subscriptionType)
       await refreshUserProfile()
-      setCurrentStep(4)
+      setCurrentStep(5) // Move to payment after plan selection
       toast.success('Plan selected! Please proceed with payment.')
     } catch (error: any) {
       console.error('Plan selection error:', error)
@@ -112,11 +125,25 @@ const OnboardingFlow: React.FC = () => {
       setLoading(true)
       // Organization setup is handled in OrganizationStep component
       await refreshUserProfile()
-      setCurrentStep(3)
+      setCurrentStep(3) // Move to workspace step
       toast.success('Organization setup completed!')
     } catch (error: any) {
       console.error('Organization setup error:', error)
       toast.error(error.message || 'Failed to complete organization setup')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleWorkspaceComplete = async (workspace: any) => {
+    try {
+      setLoading(true)
+      setWorkspaceData(workspace)
+      setCurrentStep(4) // Move to plan selection
+      toast.success('Workspace initialized successfully!')
+    } catch (error: any) {
+      console.error('Workspace setup error:', error)
+      toast.error(error.message || 'Failed to initialize workspace')
     } finally {
       setLoading(false)
     }
@@ -133,7 +160,7 @@ const OnboardingFlow: React.FC = () => {
       })
       
       await refreshUserProfile()
-      setCurrentStep(5)
+      setCurrentStep(6) // Move to verification after payment
       toast.success('Payment completed! Waiting for verification.')
     } catch (error: any) {
       console.error('Payment completion error:', error)
@@ -174,6 +201,14 @@ const OnboardingFlow: React.FC = () => {
         )
 
       case 3:
+        return (
+          <WorkspaceStep
+            onComplete={handleWorkspaceComplete}
+            onBack={() => setCurrentStep(2)}
+          />
+        )
+
+      case 4:
         return (
           <div className="text-center space-y-6">
             <div>
@@ -239,7 +274,7 @@ const OnboardingFlow: React.FC = () => {
           </div>
         )
 
-      case 4:
+      case 5:
         return (
           <PaymentStep
             amount={paymentAmount}
@@ -249,7 +284,7 @@ const OnboardingFlow: React.FC = () => {
           />
         )
 
-      case 5:
+      case 6:
         return (
           <VerificationStep
             paymentStatus={userProfile?.paymentStatus}

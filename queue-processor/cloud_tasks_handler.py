@@ -60,11 +60,26 @@ class CloudTasksHandler:
         bucket_path = data.get('bucket_path')
         source = data.get('source', 'cloud_tasks')
         
-        # Extract user context fields from payload
+        # Extract user context fields from payload (NEW: Full validation)
         user_email = data.get('user_email')
         user_uid = data.get('user_uid')
         organization_id = data.get('organization_id')
         organization_role = data.get('organization_role')
+        expected_user_folder = data.get('expected_user_folder')
+        user_context = data.get('user_context', {})
+        
+        # CRITICAL: Validate bucket path matches expected user folder
+        if expected_user_folder and bucket_path:
+            if f"users/{expected_user_folder}/raw/" not in bucket_path:
+                raise ValueError(f"Security violation: Bucket path '{bucket_path}' does not match expected user folder 'users/{expected_user_folder}/raw/'")
+        
+        # Additional validation: Ensure bucket path follows user-isolated structure
+        if bucket_path and not bucket_path.startswith("users/"):
+            raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must start with 'users/'")
+        
+        # Cross-validate user context from payload vs task context
+        if user_context and user_context.get('uid') != user_uid:
+            raise ValueError(f"User context mismatch: payload UID '{user_context.get('uid')}' != task UID '{user_uid}'")
         
         if not job_id or not bucket_path:
             missing_fields = []

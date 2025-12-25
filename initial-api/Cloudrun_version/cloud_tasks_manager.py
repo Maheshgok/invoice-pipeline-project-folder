@@ -108,16 +108,18 @@ class CloudTasksManager:
             task_name: Full Cloud Tasks task name
         """
         try:
-            # Prepare task payload with full user context
+            # Prepare task payload with full user context and validation
             task_payload = {
                 "job_id": job_id,
                 "bucket_path": bucket_path,
+                "user_context": user_context,  # Full user context for validation
                 "user_email": user_context['email'],  # For backward compatibility
                 "user_uid": user_context['uid'],
                 "organization_id": user_context.get('organization_id'),
                 "organization_role": user_context.get('organization_role'),
                 "timestamp": datetime.utcnow().isoformat(),
-                "source": "cloud_tasks_manager"
+                "source": "cloud_tasks_manager",
+                "expected_user_folder": user_context['uid'][:8]  # For path validation
             }
             
             # Create HTTP request for the task

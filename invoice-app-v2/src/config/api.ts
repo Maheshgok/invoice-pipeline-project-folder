@@ -19,6 +19,8 @@ export const API_CONFIG = {
     CLOUD_TASKS_STATUS: '/cloud-tasks/status',
     CLOUD_TASKS_QUEUE_STATS: '/cloud-tasks/queue-stats',
     SIGNED_URL: '/signed-url',
+    INITIALIZE_WORKSPACE: '/initialize-workspace',
+    WORKSPACE_STATUS: '/workspace-status',
     
     // Archive API
     ARCHIVE_COMPLETED: '/archive-completed',
@@ -53,6 +55,8 @@ export const getApiUrl = {
   cloudTasksStatus: (jobId: string) => `${API_CONFIG.INITIAL_API_URL}${API_CONFIG.ENDPOINTS.CLOUD_TASKS_STATUS}/${jobId}`,
   cloudTasksQueueStats: () => `${API_CONFIG.INITIAL_API_URL}${API_CONFIG.ENDPOINTS.CLOUD_TASKS_QUEUE_STATS}`,
   signedUrl: (path?: string) => `${API_CONFIG.INITIAL_API_URL}${API_CONFIG.ENDPOINTS.SIGNED_URL}${path ? `?path=${path}` : ''}`,
+  initializeWorkspace: () => `${API_CONFIG.INITIAL_API_URL}${API_CONFIG.ENDPOINTS.INITIALIZE_WORKSPACE}`,
+  workspaceStatus: () => `${API_CONFIG.INITIAL_API_URL}${API_CONFIG.ENDPOINTS.WORKSPACE_STATUS}`,
   
   // Archive API endpoints  
   archiveCompleted: () => `${API_CONFIG.ARCHIVE_API_URL}${API_CONFIG.ENDPOINTS.ARCHIVE_COMPLETED}`,

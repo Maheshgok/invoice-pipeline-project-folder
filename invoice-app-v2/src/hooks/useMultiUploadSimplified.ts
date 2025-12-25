@@ -136,17 +136,37 @@ export const useMultiUploadSimplified = () => {
 
       if (!uploadResponse.ok) {
         let errorMessage = `Upload failed: ${uploadResponse.status}`
+        let shouldRedirectToOnboarding = false
         
         try {
           const errorData = await uploadResponse.json()
           errorMessage = errorData.error || errorMessage
+          
+          // Check for workspace validation errors
+          if (errorData.action === 'redirect_to_onboarding') {
+            shouldRedirectToOnboarding = true
+            errorMessage = errorData.message || 'Please complete workspace setup'
+          }
         } catch {
           if (uploadResponse.status === 502) {
             errorMessage = 'Service unavailable (502)'
           } else if (uploadResponse.status === 503) {
             errorMessage = 'Service temporarily unavailable (503)'
+          } else if (uploadResponse.status === 403) {
+            errorMessage = 'Access denied - please check your workspace setup'
+            shouldRedirectToOnboarding = true
           }
         }
+        
+        // Handle workspace setup redirection
+        if (shouldRedirectToOnboarding) {
+          toast.error(errorMessage + ' - Redirecting to setup...')
+          setTimeout(() => {
+            window.location.href = '/onboarding'
+          }, 2000)
+          return
+        }
+        
         throw new Error(errorMessage)
       }
 
