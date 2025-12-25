@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { PermissionProvider } from './contexts/PermissionContext'
 import MultiUploadDashboard from './pages/MultiUploadDashboard'
 import Login from './pages/Login'
+import WorkspaceSetup from './pages/WorkspaceSetup'
 import OnboardingFlow from './components/onboarding/OnboardingFlow'
 import PaymentManagementDashboard from './components/admin/PaymentManagementDashboard'
 import ProtectedRoute from './components/auth/ProtectedRoute'
@@ -16,6 +17,14 @@ function App() {
           <div className="min-h-screen bg-gray-50">
             <Routes>
               <Route path="/login" element={<Login />} />
+              <Route 
+                path="/workspace-setup" 
+                element={
+                  <ProtectedRoute requirePayment={false}>
+                    <WorkspaceSetup />
+                  </ProtectedRoute>
+                } 
+              />
               <Route 
                 path="/onboarding" 
                 element={

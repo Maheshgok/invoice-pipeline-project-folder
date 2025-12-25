@@ -38,6 +38,14 @@ const OnboardingFlow: React.FC = () => {
                                userProfile?.paymentStatus?.status === 'pending' || 
                                userProfile?.paymentStatus?.status === 'paid' ||
                                !userProfile?.workspace_initialized
+  
+  // Debug logging
+  console.log('🔍 Onboarding Debug:', {
+    hasPaymentStatus: !!userProfile?.paymentStatus,
+    paymentStatus: userProfile?.paymentStatus?.status,
+    workspaceInitialized: userProfile?.workspace_initialized,
+    shouldShowOnboarding
+  })
 
   const steps: OnboardingStep[] = [
     {

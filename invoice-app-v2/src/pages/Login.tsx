@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
 import { FileText, LogIn, Mail, Lock, Eye, EyeOff } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const Login: React.FC = () => {
   const { user, signInWithGoogle, signInWithEmail, signUpWithEmail, loading } = useAuth()
+  const location = useLocation()
   const [isSignUp, setIsSignUp] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [formData, setFormData] = useState({
@@ -17,7 +18,8 @@ const Login: React.FC = () => {
 
   // Redirect if already authenticated
   if (user && !loading) {
-    return <Navigate to="/" replace />
+    const from = (location.state as any)?.from?.pathname || '/'
+    return <Navigate to={from} replace />
   }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
