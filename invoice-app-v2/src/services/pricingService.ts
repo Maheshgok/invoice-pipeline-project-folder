@@ -236,9 +236,9 @@ class PricingService {
   }
 
   /**
-   * Update pricing configuration (Super admin only)
+   * Update pricing configuration (Super admin only) - with validation
    */
-  async updatePricingConfig(config: Partial<PricingConfig>): Promise<void> {
+  async updatePricingConfigSecure(config: Partial<PricingConfig>): Promise<void> {
     try {
       const user = authService.getCurrentUser()
       if (!user) {

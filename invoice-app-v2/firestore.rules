@@ -6,6 +6,21 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, write: if request.auth != null 
         && request.auth.uid == userId;
+      // Allow super_admin to read all user profiles for payment management
+      allow read: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+      // Allow super_admin to write to any user profile for payment verification
+      allow write: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+    
+    // Allow super_admin to query users collection for payment management
+    match /users/{document=**} {
+      allow read: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
     
     // User-specific invoice results with user-isolated paths
@@ -56,6 +71,20 @@ service cloud.firestore {
       allow read: if request.auth != null 
         && request.auth.token.email == resource.data.user_email;
       allow write: if false; // Only backend should write
+    }
+    
+    // System configuration - only super_admin can access
+    match /system_config/{configId} {
+      allow read, write: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+    
+    // Payment requests and related collections - super_admin access
+    match /payment_requests/{document=**} {
+      allow read, write: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
     
     // For development/testing only - remove in production

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react'
-import { Settings, Save, Plus, Trash2, CreditCard, Shield } from 'lucide-react'
+import { Settings, Save, Plus, Trash2, CreditCard, Shield, Upload, QrCode } from 'lucide-react'
 import { userService } from '../../services/userService'
+import { cloudStorageService } from '../../services/cloudStorageService'
 import toast from 'react-hot-toast'
 
 interface SuperAdminSettingsProps {
@@ -11,6 +12,7 @@ interface UPIConfig {
   vpa: string // UPI ID like maheshgok@paytm
   name: string // Display name for payments
   businessName: string // Business name
+  qrCodeUrl?: string // QR code image URL
   isActive: boolean
 }
 
@@ -33,6 +35,7 @@ export const SuperAdminSettings: React.FC<SuperAdminSettingsProps> = () => {
       vpa: 'maheshgok@paytm',
       name: 'Invoice Processor',
       businessName: 'Invoice Processing Services',
+      qrCodeUrl: '',
       isActive: true
     },
     systemSettings: {
@@ -114,6 +117,58 @@ export const SuperAdminSettings: React.FC<SuperAdminSettingsProps> = () => {
         [field]: value
       }
     }))
+  }
+
+  const handleQRCodeUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      setSaving(true)
+      toast.loading('Uploading QR code to cloud storage...')
+      
+      // Delete old QR code if exists
+      if (config.upiConfig.qrCodeUrl) {
+        await cloudStorageService.deleteQRCode(config.upiConfig.qrCodeUrl)
+      }
+      
+      // Upload new QR code to cloud storage
+      const downloadURL = await cloudStorageService.uploadQRCode(file)
+      
+      // Update config with cloud URL
+      updateUPIConfig('qrCodeUrl', downloadURL)
+      
+      toast.dismiss()
+      toast.success('QR code uploaded to cloud storage!')
+      
+    } catch (error: any) {
+      toast.dismiss()
+      console.error('Error uploading QR code:', error)
+      toast.error(error.message || 'Failed to upload QR code')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleRemoveQRCode = async () => {
+    try {
+      if (config.upiConfig.qrCodeUrl) {
+        setSaving(true)
+        toast.loading('Removing QR code from cloud storage...')
+        
+        await cloudStorageService.deleteQRCode(config.upiConfig.qrCodeUrl)
+        updateUPIConfig('qrCodeUrl', '')
+        
+        toast.dismiss()
+        toast.success('QR code removed successfully')
+      }
+    } catch (error: any) {
+      toast.dismiss()
+      console.error('Error removing QR code:', error)
+      toast.error('Failed to remove QR code')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const updateSystemSetting = (field: keyof SuperAdminConfig['systemSettings'], value: boolean) => {
@@ -259,6 +314,56 @@ export const SuperAdminSettings: React.FC<SuperAdminSettingsProps> = () => {
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
             <p className="text-xs text-gray-500 mt-1">Your business name for receipts</p>
+          </div>
+
+          {/* QR Code Upload */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              UPI QR Code Image
+            </label>
+            <div className="space-y-3">
+              {config.upiConfig.qrCodeUrl ? (
+                <div className="flex items-start space-x-4">
+                  <img 
+                    src={config.upiConfig.qrCodeUrl} 
+                    alt="UPI QR Code" 
+                    className="w-24 h-24 object-contain border border-gray-200 rounded"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm text-gray-600 mb-2">Current QR code</p>
+                    <button
+                      onClick={handleRemoveQRCode}
+                      disabled={saving}
+                      className="text-sm text-red-600 hover:text-red-700 disabled:opacity-50"
+                    >
+                      Remove QR Code
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center p-6 border-2 border-dashed border-gray-300 rounded-lg">
+                  <QrCode className="w-8 h-8 text-gray-400 mx-auto mb-2" />
+                  <p className="text-sm text-gray-500">No QR code uploaded</p>
+                </div>
+              )}
+              
+              <label className={`inline-flex items-center px-4 py-2 text-white text-sm rounded-lg cursor-pointer transition-colors ${
+                saving ? 'bg-gray-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'
+              }`}>
+                <Upload className="w-4 h-4 mr-2" />
+                {saving ? 'Uploading...' : (config.upiConfig.qrCodeUrl ? 'Replace QR Code' : 'Upload QR Code')}
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleQRCodeUpload}
+                  disabled={saving}
+                  className="hidden"
+                />
+              </label>
+            </div>
+            <p className="text-xs text-gray-500 mt-1">
+              Upload your UPI QR code image (PNG, JPG, etc.) - stored securely in cloud storage
+            </p>
           </div>
 
           <div className="flex items-center space-x-3">

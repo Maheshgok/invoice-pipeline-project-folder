@@ -5,9 +5,12 @@ import { PermissionProvider } from './contexts/PermissionContext'
 import MultiUploadDashboard from './pages/MultiUploadDashboard'
 import Login from './pages/Login'
 import WorkspaceSetup from './pages/WorkspaceSetup'
+import PaymentRenewal from './pages/PaymentRenewal'
 import OnboardingFlow from './components/onboarding/OnboardingFlow'
 import PaymentManagementDashboard from './components/admin/PaymentManagementDashboard'
-import ProtectedRoute from './components/auth/ProtectedRoute'
+import { AdminDashboard } from './components/admin/AdminDashboard'
+import ProtectedRoute from './components/ProtectedRoute'
+import AuthProtectedRoute from './components/auth/ProtectedRoute'
 
 function App() {
   return (
@@ -20,28 +23,44 @@ function App() {
               <Route 
                 path="/workspace-setup" 
                 element={
-                  <ProtectedRoute requirePayment={false}>
+                  <AuthProtectedRoute requirePayment={false}>
                     <WorkspaceSetup />
-                  </ProtectedRoute>
+                  </AuthProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/payment/renewal" 
+                element={
+                  <AuthProtectedRoute requirePayment={false}>
+                    <PaymentRenewal />
+                  </AuthProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/admin" 
+                element={
+                  <AuthProtectedRoute requirePayment={false}>
+                    <AdminDashboard />
+                  </AuthProtectedRoute>
                 } 
               />
               <Route 
                 path="/onboarding" 
                 element={
-                  <ProtectedRoute requirePayment={false}>
+                  <AuthProtectedRoute requirePayment={false}>
                     <OnboardingFlow />
-                  </ProtectedRoute>
+                  </AuthProtectedRoute>
                 } 
               />
               <Route 
                 path="/admin/payments" 
                 element={
-                  <ProtectedRoute 
+                  <AuthProtectedRoute 
                     requirePayment={false}
                     requiredPermission={{ action: 'manage', subject: 'payments' }}
                   >
                     <PaymentManagementDashboard />
-                  </ProtectedRoute>
+                  </AuthProtectedRoute>
                 } 
               />
               <Route

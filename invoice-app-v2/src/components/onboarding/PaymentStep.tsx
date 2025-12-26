@@ -133,14 +133,23 @@ const PaymentStep: React.FC<PaymentStepProps> = ({
             <div className="text-center">
               <h5 className="font-medium text-gray-900 mb-3">Scan QR Code</h5>
               <div className="bg-white border-2 border-gray-200 rounded-lg p-4 inline-block">
-                {/* QR Code placeholder - you would use a library like qrcode.js */}
-                <div className="w-48 h-48 bg-gray-100 rounded border-2 border-dashed border-gray-300 flex items-center justify-center">
-                  <div className="text-center">
-                    <QrCode className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">QR Code</p>
-                    <p className="text-xs text-gray-400">₹{amount}</p>
+                {upiConfig.qrCodeUrl ? (
+                  // Display uploaded QR code
+                  <img 
+                    src={upiConfig.qrCodeUrl} 
+                    alt="UPI QR Code" 
+                    className="w-48 h-48 object-contain"
+                  />
+                ) : (
+                  // Fallback placeholder if no QR code uploaded
+                  <div className="w-48 h-48 bg-gray-100 rounded border-2 border-dashed border-gray-300 flex items-center justify-center">
+                    <div className="text-center">
+                      <QrCode className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                      <p className="text-sm text-gray-500">QR Code</p>
+                      <p className="text-xs text-gray-400">₹{amount}</p>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
               <p className="text-sm text-gray-600 mt-2">Open any UPI app and scan to pay</p>
             </div>

@@ -956,6 +956,7 @@ export class UserService {
    */
   async verifyUserPayment(userUid: string, transactionRef?: string, notes?: string): Promise<void> {
     try {
+      console.log('🔥 PAYMENT VERIFICATION V2 - NEW CODE LOADED') // Debug marker to verify new code is loaded
       const currentUser = authService.getCurrentUser()
       if (!currentUser) throw new Error('Admin not authenticated')
 
@@ -987,7 +988,7 @@ export class UserService {
         paymentMethod: currentPaymentStatus.paymentMethod,
         status: 'completed',
         transactionRef: transactionRef,
-        paidAt: serverTimestamp() as Timestamp,
+        paidAt: Timestamp.now(), // Use Timestamp.now() instead of serverTimestamp() for array elements
         verifiedBy: currentUser.uid,
         notes: notes
       }
@@ -1012,15 +1013,31 @@ export class UserService {
           expiresAt = Timestamp.fromDate(new Date(now.getFullYear(), now.getMonth() + 1, now.getDate()))
       }
 
-      // Update payment status
+      // Create clean payment history without any potential serverTimestamp objects
+      const existingHistory = currentPaymentStatus.paymentHistory || []
+      const cleanHistory = existingHistory.map(record => ({
+        ...record,
+        // Ensure timestamps are converted to proper Timestamp objects
+        paidAt: record.paidAt instanceof Timestamp ? record.paidAt : Timestamp.now()
+      }))
+
+      // Update payment status - create new object to avoid serverTimestamp issues
       const updatedPaymentStatus: PaymentStatus = {
-        ...currentPaymentStatus,
         status: 'verified',
+        amount: currentPaymentStatus.amount,
+        currency: currentPaymentStatus.currency,
+        paymentMethod: currentPaymentStatus.paymentMethod,
+        subscriptionType: currentPaymentStatus.subscriptionType,
+        autoRenew: currentPaymentStatus.autoRenew || false,
         transactionRef: transactionRef,
-        verifiedAt: serverTimestamp() as Timestamp,
+        verifiedAt: Timestamp.now(),
         verifiedBy: currentUser.uid,
         expiresAt: expiresAt,
-        paymentHistory: [...(currentPaymentStatus.paymentHistory || []), paymentRecord]
+        // Ensure createdAt is a proper Timestamp, not serverTimestamp()
+        createdAt: (currentPaymentStatus.createdAt && currentPaymentStatus.createdAt instanceof Timestamp) 
+          ? currentPaymentStatus.createdAt 
+          : Timestamp.now(),
+        paymentHistory: [...cleanHistory, paymentRecord]
       }
 
       // Update user profile
@@ -1033,6 +1050,52 @@ export class UserService {
       console.log('✅ Payment verified for user:', userUid)
     } catch (error) {
       console.error('❌ Error verifying payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Verify user payment for subscription renewal (for user self-service)
+   */
+  async verifyUserSubscriptionPayment(transactionId: string, amount: string, periodDays: number): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('User not authenticated')
+
+      const userRef = doc(db, 'users', currentUser.uid)
+      const now = new Date()
+      const expiryDate = new Date(now.getTime() + periodDays * 24 * 60 * 60 * 1000)
+      
+      const paymentStatus = {
+        isPaid: true,
+        expiresAt: Timestamp.fromDate(expiryDate),
+        lastPayment: {
+          transactionId,
+          amount: parseInt(amount),
+          paidAt: Timestamp.now(),
+          method: 'UPI'
+        },
+        plan: `${periodDays} days`,
+        paymentHistory: [
+          {
+            transactionId,
+            amount: parseInt(amount),
+            paidAt: Timestamp.now(),
+            method: 'UPI',
+            periodDays
+          }
+        ]
+      }
+
+      await updateDoc(userRef, {
+        paymentStatus,
+        isActive: true,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User subscription payment verified successfully')
+    } catch (error) {
+      console.error('❌ Error verifying subscription payment:', error)
       throw error
     }
   }
@@ -1084,6 +1147,7 @@ export class UserService {
           vpa: 'maheshgok@paytm',
           name: 'Invoice Processor',
           businessName: 'Invoice Processing Services',
+          qrCodeUrl: '',
           isActive: true
         },
         systemSettings: {
@@ -1154,8 +1218,179 @@ export class UserService {
         vpa: 'maheshgok@paytm',
         name: 'Invoice Processor',
         businessName: 'Invoice Processing Services',
+        qrCodeUrl: '',
         isActive: true
       }
+    }
+  }
+
+  /**
+   * Get all users for admin management (super admin only)
+   */
+  async getAllUsersForAdmin(): Promise<Array<UserProfile & { id: string }>> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      // Check admin permissions
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can view all users')
+      }
+
+      const usersRef = collection(db, 'users')
+      const snapshot = await getDocs(usersRef)
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data() as UserProfile
+      }))
+    } catch (error) {
+      console.error('❌ Error fetching all users:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Suspend user service (super admin only)
+   */
+  async suspendUserService(userUid: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can suspend users')
+      }
+
+      const userRef = doc(db, 'users', userUid)
+      await updateDoc(userRef, {
+        isActive: false,
+        suspendedAt: serverTimestamp(),
+        suspendedBy: currentUser.uid,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User service suspended:', userUid)
+    } catch (error) {
+      console.error('❌ Error suspending user service:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Activate user service (super admin only)
+   */
+  async activateUserService(userUid: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can activate users')
+      }
+
+      const userRef = doc(db, 'users', userUid)
+      await updateDoc(userRef, {
+        isActive: true,
+        suspendedAt: null,
+        suspendedBy: null,
+        reactivatedAt: serverTimestamp(),
+        reactivatedBy: currentUser.uid,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User service activated:', userUid)
+    } catch (error) {
+      console.error('❌ Error activating user service:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Extend user subscription (super admin only)
+   */
+  async extendSubscription(userUid: string, days: number): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can extend subscriptions')
+      }
+
+      const userRef = doc(db, 'users', userUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      const currentExpiresAt = userData.paymentStatus?.expiresAt
+      
+      let newExpiresAt: Timestamp
+      if (currentExpiresAt) {
+        const currentExpiry = currentExpiresAt.toDate ? currentExpiresAt.toDate() : new Date(currentExpiresAt)
+        const extendedDate = new Date(currentExpiry.getTime() + days * 24 * 60 * 60 * 1000)
+        newExpiresAt = Timestamp.fromDate(extendedDate)
+      } else {
+        const extendedDate = new Date(Date.now() + days * 24 * 60 * 60 * 1000)
+        newExpiresAt = Timestamp.fromDate(extendedDate)
+      }
+
+      const updatedPaymentStatus = {
+        ...userData.paymentStatus,
+        expiresAt: newExpiresAt,
+        extendedAt: serverTimestamp(),
+        extendedBy: currentUser.uid,
+        extendedDays: days
+      }
+
+      await updateDoc(userRef, {
+        paymentStatus: updatedPaymentStatus,
+        isActive: true,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log(`✅ Subscription extended by ${days} days for user:`, userUid)
+    } catch (error) {
+      console.error('❌ Error extending subscription:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Send payment reminder to user
+   */
+  async sendPaymentReminder(userUid: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can send payment reminders')
+      }
+
+      // TODO: Implement email service integration
+      // For now, just log the action
+      console.log('📧 Payment reminder sent to user:', userUid)
+      
+      // Store reminder history
+      const userRef = doc(db, 'users', userUid)
+      await updateDoc(userRef, {
+        lastReminderSent: serverTimestamp(),
+        reminderSentBy: currentUser.uid,
+        updatedAt: serverTimestamp()
+      })
+
+    } catch (error) {
+      console.error('❌ Error sending payment reminder:', error)
+      throw error
     }
   }
 }
