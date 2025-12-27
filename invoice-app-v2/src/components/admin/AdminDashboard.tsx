@@ -1,5 +1,6 @@
 import React, { useState } from 'react'
-import { Settings, Users, Shield, CreditCard } from 'lucide-react'
+import { Settings, Users, Shield, CreditCard, Home } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { SuperAdminSettings } from './SuperAdminSettings'
 import UserManagement from './UserManagement'
 import { useAuth } from '../../contexts/AuthContext'
@@ -84,6 +85,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                   <h1 className="text-2xl font-bold text-gray-900">Super Admin Dashboard</h1>
                   <p className="text-gray-600">Comprehensive system management</p>
                 </div>
+              </div>
+              <div className="flex items-center space-x-3">
+                <Link 
+                  to="/dashboard" 
+                  className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <Home className="w-5 h-5" />
+                  <span className="font-medium">Dashboard</span>
+                </Link>
               </div>
             </div>
           </div>

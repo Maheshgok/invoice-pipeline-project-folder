@@ -1,5 +1,6 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
+import type { UserProfile } from '../services/userService'
 
 // Utility function to safely convert Firestore Timestamp to Date
 const toDate = (timestamp: any): Date => {
@@ -32,10 +33,10 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Redirect to login if not authenticated
   if (!user) {
-    return <Navigate to="/auth/signin" replace />
+    return <Navigate to="/login" replace />
   }
 
-  // Allow super admins to bypass subscription checks
+  // Allow super admins to bypass all subscription checks completely
   if (userProfile?.role === 'super_admin') {
     return <>{children}</>
   }
@@ -47,14 +48,20 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     if (expiresAt) {
       const expiryDate = toDate(expiresAt)
       const now = new Date()
+      const fifteenDaysFromNow = new Date(now.getTime() + 15 * 24 * 60 * 60 * 1000)
       
-      // If subscription is expired, redirect to renewal
+      // Only redirect to renewal if subscription expires within 15 days
+      if (expiryDate <= fifteenDaysFromNow && expiryDate > now) {
+        return <Navigate to="/payment/renewal" replace />
+      }
+      // If already expired, also redirect to renewal
       if (expiryDate <= now) {
         return <Navigate to="/payment/renewal" replace />
       }
     }
-  } else if (requiresSubscription && !(userProfile?.paymentStatus as any)?.isPaid) {
-    // If no payment status or not paid, redirect to payment renewal
+  } else if (requiresSubscription && !(userProfile?.paymentStatus as any)?.isPaid && 
+             userProfile?.role && userProfile.role !== ('super_admin' as UserProfile['role'])) {
+    // If no payment status or not paid, redirect to payment renewal (but not for super admins)
     return <Navigate to="/payment/renewal" replace />
   }
 

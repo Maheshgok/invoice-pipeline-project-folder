@@ -11,7 +11,6 @@ import {
   ArrowRight,
   Star,
   Globe,
-  Clock,
   LogIn,
   LayoutDashboard
 } from 'lucide-react'

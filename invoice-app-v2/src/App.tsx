@@ -25,6 +25,8 @@ function App() {
               <Route path="/login" element={<Login />} />
               {/* Legacy auth route redirect */}
               <Route path="/auth/signin" element={<Navigate to="/login" replace />} />
+              {/* Legacy payment route redirect */}
+              <Route path="/payment/setup" element={<Navigate to="/payment/renewal" replace />} />
               
               {/* Protected routes */}
               <Route 
@@ -78,6 +80,8 @@ function App() {
                   </AuthProtectedRoute>
                 } 
               />
+              {/* Catch all route - redirect to landing page */}
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           <Toaster
             position="top-right"

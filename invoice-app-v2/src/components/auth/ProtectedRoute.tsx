@@ -106,24 +106,29 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   // Check payment status if payment is required
   if (requirePayment) {
-    const paymentStatus = userProfile.paymentStatus?.status
-    
-    // Handle expired trials
-    if (paymentStatus === 'expired' || 
-        (paymentStatus === 'pending' && userProfile.paymentStatus?.expiresAt && 
-         new Date() > userProfile.paymentStatus.expiresAt.toDate())) {
-      return <Navigate to="/onboarding" replace />
-    }
-    
-    // Redirect to onboarding if payment not completed or verified
-    if (!paymentStatus || 
-        !['paid', 'verified', 'free_trial'].includes(paymentStatus)) {
-      return <Navigate to="/onboarding" replace />
-    }
-    
-    // Users with 'paid' status need admin verification before full access
-    if (paymentStatus === 'paid' && userProfile.approvalStatus !== 'approved') {
-      return <Navigate to="/onboarding" replace />
+    // Super admins and users with verified status bypass payment checks
+    if (userProfile.role === 'super_admin' || userProfile.paymentStatus?.status === 'verified') {
+      // Skip payment checks for super admins and verified users
+    } else {
+      const paymentStatus = userProfile.paymentStatus?.status
+      
+      // Handle expired trials
+      if (paymentStatus === 'expired' || 
+          (paymentStatus === 'pending' && userProfile.paymentStatus?.expiresAt && 
+           new Date() > userProfile.paymentStatus.expiresAt.toDate())) {
+        return <Navigate to="/onboarding" replace />
+      }
+      
+      // Redirect to onboarding if payment not completed or verified
+      if (!paymentStatus || 
+          !['paid', 'verified', 'free_trial'].includes(paymentStatus)) {
+        return <Navigate to="/onboarding" replace />
+      }
+      
+      // Users with 'paid' status need admin verification before full access
+      if (paymentStatus === 'paid' && userProfile.approvalStatus !== 'approved') {
+        return <Navigate to="/onboarding" replace />
+      }
     }
   }
 
