@@ -600,7 +600,7 @@ const UserManagement: React.FC<UserManagementProps> = () => {
                       >
                         <div className="font-medium text-sm text-gray-900">{pkg.name}</div>
                         <div className="text-xs text-gray-500">
-                          {pkg.type?.replace('_', ' ') || 'Time based'} - {pkg.duration} days - ${pkg.price}
+                          {pkg.type?.replace('_', ' ') || 'Time based'} - {pkg.duration} days - ₹{pkg.price}
                         </div>
                         {(pkg.type === 'consumption_based' || pkg.type === 'hybrid') && pkg.analysisLimit && (
                           <div className="text-xs text-blue-600">{pkg.analysisLimit} analysis credits</div>
