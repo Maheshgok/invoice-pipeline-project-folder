@@ -215,16 +215,11 @@ class SessionSecurityService {
   }
 
   /**
-   * Get client IP address
+   * Get client IP address (simplified for CSP compliance)
    */
   private async getClientIP(): Promise<string> {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json')
-      const data = await response.json()
-      return data.ip
-    } catch {
-      return 'unknown'
-    }
+    // Return a placeholder since external IP fetching violates CSP
+    return 'client-ip-masked'
   }
 
   /**
@@ -439,14 +434,26 @@ class SessionSecurityService {
   private async getActiveUserSessions(userUid: string): Promise<UserSession[]> {
     try {
       const sessionsRef = collection(db, `users/${userUid}/sessions`)
-      const activeSessionsQuery = query(
-        sessionsRef,
-        where('isActive', '==', true),
-        orderBy('lastActivity', 'desc')
-      )
       
-      const snapshot = await getDocs(activeSessionsQuery)
-      return snapshot.docs.map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
+      // Try with compound query first, fallback to simple query if index missing
+      try {
+        const activeSessionsQuery = query(
+          sessionsRef,
+          where('isActive', '==', true),
+          orderBy('lastActivity', 'desc')
+        )
+        const snapshot = await getDocs(activeSessionsQuery)
+        return snapshot.docs.map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
+      } catch (indexError) {
+        console.warn('⚠️ Firestore index missing, using simple query:', indexError)
+        // Fallback to simple query without ordering
+        const simpleQuery = query(
+          sessionsRef,
+          where('isActive', '==', true)
+        )
+        const snapshot = await getDocs(simpleQuery)
+        return snapshot.docs.map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
+      }
     } catch (error) {
       console.error('❌ Error getting active sessions:', error)
       return []

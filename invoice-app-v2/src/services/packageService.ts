@@ -31,13 +31,24 @@ class PackageService {
   async getAllPackages(): Promise<PackageDefinition[]> {
     try {
       const packagesRef = collection(db, 'packages')
-      const q = query(packagesRef, orderBy('createdAt', 'desc'))
-      const snapshot = await getDocs(q)
       
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as PackageDefinition[]
+      // Try with ordering first, fallback if index is missing
+      try {
+        const q = query(packagesRef, orderBy('createdAt', 'desc'))
+        const snapshot = await getDocs(q)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as PackageDefinition[]
+      } catch (indexError) {
+        console.warn('⚠️ Firestore index missing for packages, using simple query')
+        // Fallback to simple query without ordering
+        const snapshot = await getDocs(packagesRef)
+        return snapshot.docs.map(doc => ({
+          id: doc.id,
+          ...doc.data()
+        })) as PackageDefinition[]
+      }
     } catch (error) {
       console.error('❌ Error loading packages:', error)
       throw error
