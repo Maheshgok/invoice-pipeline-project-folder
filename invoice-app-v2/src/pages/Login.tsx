@@ -18,7 +18,7 @@ const Login: React.FC = () => {
 
   // Redirect if already authenticated
   if (user && !loading) {
-    const from = (location.state as any)?.from?.pathname || '/'
+    const from = (location.state as any)?.from?.pathname || '/dashboard'
     return <Navigate to={from} replace />
   }
 

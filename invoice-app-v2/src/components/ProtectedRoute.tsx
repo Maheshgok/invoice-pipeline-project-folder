@@ -54,8 +54,8 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
       }
     }
   } else if (requiresSubscription && !(userProfile?.paymentStatus as any)?.isPaid) {
-    // If no payment status or not paid, redirect to payment setup
-    return <Navigate to="/payment/setup" replace />
+    // If no payment status or not paid, redirect to payment renewal
+    return <Navigate to="/payment/renewal" replace />
   }
 
   // Check if user service is suspended

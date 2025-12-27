@@ -1,7 +1,8 @@
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './contexts/AuthContext'
 import { PermissionProvider } from './contexts/PermissionContext'
+import LandingPage from './pages/LandingPage'
 import MultiUploadDashboard from './pages/MultiUploadDashboard'
 import Login from './pages/Login'
 import WorkspaceSetup from './pages/WorkspaceSetup'
@@ -19,7 +20,21 @@ function App() {
         <Router>
           <div className="min-h-screen bg-gray-50">
             <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<Login />} />
+              {/* Legacy auth route redirect */}
+              <Route path="/auth/signin" element={<Navigate to="/login" replace />} />
+              
+              {/* Protected routes */}
+              <Route 
+                path="/dashboard" 
+                element={
+                  <ProtectedRoute>
+                    <MultiUploadDashboard />
+                  </ProtectedRoute>
+                } 
+              />
               <Route 
                 path="/workspace-setup" 
                 element={
@@ -62,14 +77,6 @@ function App() {
                     <PaymentManagementDashboard />
                   </AuthProtectedRoute>
                 } 
-              />
-              <Route
-                path="/*"
-                element={
-                  <ProtectedRoute>
-                    <MultiUploadDashboard />
-                  </ProtectedRoute>
-                }
               />
             </Routes>
           <Toaster
