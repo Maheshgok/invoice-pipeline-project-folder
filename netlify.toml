@@ -1,3 +1,4 @@
+# Netlify configuration for invoice-app-v2
 [build]
   base = "invoice-app-v2"
   publish = "invoice-app-v2/dist"
@@ -6,19 +7,8 @@
 [build.environment]
   NODE_VERSION = "18"
   NPM_FLAGS = "--prefer-offline --no-audit"
-  SECRETS_SCAN_OMIT_KEYS = "VITE_GOOGLE_CLIENT_ID,VITE_API_BASE_URL,VITE_FIREBASE_API_KEY,VITE_FIREBASE_AUTH_DOMAIN,VITE_FIREBASE_PROJECT_ID,VITE_FIREBASE_STORAGE_BUCKET,VITE_FIREBASE_MESSAGING_SENDER_ID,VITE_FIREBASE_APP_ID"
 
-[[redirects]]
-  from = "/oauth2/callback"
-  to = "/index.html"
-  status = 200
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/auth-:splat"
-  status = 200
-  force = true
-
+# SPA routing - redirect all other routes to index.html
 [[redirects]]
   from = "/*"
   to = "/index.html"
