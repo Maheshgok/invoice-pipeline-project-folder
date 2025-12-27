@@ -1,4 +1,5 @@
 import { userService } from './userService'
+import { sessionSecurityService } from './sessionSecurityService'
 import toast from 'react-hot-toast'
 
 /**
@@ -6,10 +7,16 @@ import toast from 'react-hot-toast'
  */
 class AnalysisService {
   /**
-   * Check if user can perform analysis based on their package
+   * Check if user can perform analysis based on their package and security restrictions
    */
   async canPerformAnalysis(userUid?: string): Promise<boolean> {
     try {
+      // First check session security
+      if (!sessionSecurityService.canPerformSecureOperations()) {
+        return false
+      }
+
+      // Then check user package limits
       return await userService.canPerformAnalysis(userUid)
     } catch (error) {
       console.error('❌ Error checking analysis permission:', error)
@@ -18,10 +25,23 @@ class AnalysisService {
   }
 
   /**
-   * Process invoice analysis with consumption tracking
+   * Process invoice analysis with consumption tracking and security validation
    */
   async processInvoiceAnalysis(file: File, userUid?: string): Promise<any> {
     try {
+      // Security check - validate session and tab restrictions
+      if (!sessionSecurityService.canPerformSecureOperations()) {
+        toast.error('Analysis functionality is restricted. Please ensure you are on the active tab.')
+        throw new Error('Security restriction: Analysis blocked')
+      }
+
+      // Validate session
+      const isValidSession = await sessionSecurityService.validateSession()
+      if (!isValidSession) {
+        toast.error('Your session has expired or is invalid. Please login again.')
+        throw new Error('Invalid session')
+      }
+
       // Check if user can perform analysis
       const canAnalyze = await this.canPerformAnalysis(userUid)
       if (!canAnalyze) {
@@ -53,18 +73,19 @@ class AnalysisService {
       // Simulate API call delay
       await new Promise(resolve => setTimeout(resolve, 2000))
       
-      // Mock successful analysis result
+      // Mock successful analysis result matching InvoiceData interface
       const analysisResult = {
-        success: true,
-        invoiceData: {
-          invoiceNumber: `INV-${Date.now()}`,
-          date: new Date().toISOString().split('T')[0],
-          totalAmount: Math.random() * 1000 + 100,
-          currency: 'USD',
-          vendorName: 'Sample Vendor',
-          confidence: 0.95
-        },
-        usedCredit: true
+        invoiceNumber: `INV-${Date.now()}`,
+        date: new Date().toISOString().split('T')[0],
+        dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        totalAmount: Math.random() * 1000 + 100,
+        taxAmount: Math.random() * 100 + 10,
+        currency: 'USD',
+        vendorName: 'Sample Vendor Corp',
+        vendorEmail: 'billing@samplevendor.com',
+        vendorAddress: '123 Business Street, City, State 12345',
+        confidence: 0.95,
+        processedAt: new Date()
       }
 
       // Update user stats after successful analysis
@@ -95,6 +116,12 @@ class AnalysisService {
 
     } catch (error) {
       console.error('❌ Error processing invoice analysis:', error)
+      
+      // If security check failed, don't increment usage
+      if (error instanceof Error && error.message.includes('Security restriction')) {
+        throw error
+      }
+      
       throw error
     }
   }

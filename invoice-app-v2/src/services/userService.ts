@@ -9,11 +9,27 @@ import {
   getDocs, 
   serverTimestamp,
   Timestamp,
-  writeBatch
+  writeBatch,
+  orderBy,
+  limit
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
 import type { User } from '../types/auth'
+
+// Session interface for security tracking
+export interface UserSession {
+  sessionId: string
+  userUid: string
+  deviceFingerprint: string
+  browserInfo: string
+  ipAddress: string
+  location?: string
+  createdAt: Timestamp
+  lastActivity: Timestamp
+  isActive: boolean
+  tabId?: string
+}
 
 export interface UserProfile {
   uid: string
@@ -1914,18 +1930,149 @@ export class UserService {
       return null
     }
   }
-      
-      // Store reminder history
-      const userRef = doc(db, 'users', userUid)
-      await updateDoc(userRef, {
-        lastReminderSent: serverTimestamp(),
-        reminderSentBy: currentUser.uid,
-        updatedAt: serverTimestamp()
-      })
 
+  /**
+   * Create a new user session
+   */
+  async createUserSession(session: UserSession): Promise<void> {
+    try {
+      const sessionRef = doc(db, `users/${session.userUid}/sessions`, session.sessionId)
+      await setDoc(sessionRef, {
+        ...session,
+        createdAt: serverTimestamp(),
+        lastActivity: serverTimestamp()
+      })
+      console.log('✅ User session created:', session.sessionId)
     } catch (error) {
-      console.error('❌ Error sending payment reminder:', error)
+      console.error('❌ Error creating user session:', error)
       throw error
+    }
+  }
+
+  /**
+   * Get user's active sessions
+   */
+  async getUserActiveSessions(userUid: string): Promise<UserSession[]> {
+    try {
+      const sessionsRef = collection(db, `users/${userUid}/sessions`)
+      const activeSessionsQuery = query(
+        sessionsRef,
+        where('isActive', '==', true),
+        orderBy('lastActivity', 'desc')
+      )
+      
+      const snapshot = await getDocs(activeSessionsQuery)
+      return snapshot.docs.map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
+    } catch (error) {
+      console.error('❌ Error getting active sessions:', error)
+      return []
+    }
+  }
+
+  /**
+   * Validate user session
+   */
+  async validateUserSession(sessionId: string): Promise<boolean> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) return false
+
+      const sessionRef = doc(db, `users/${currentUser.uid}/sessions`, sessionId)
+      const sessionDoc = await getDoc(sessionRef)
+      
+      if (!sessionDoc.exists()) return false
+      
+      const session = sessionDoc.data() as UserSession
+      
+      // Check if session is active and not too old
+      const now = new Date()
+      const lastActivity = session.lastActivity.toDate()
+      const hoursSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60)
+      
+      if (!session.isActive || hoursSinceActivity > 24) {
+        await this.deactivateUserSession(sessionId)
+        return false
+      }
+      
+      return true
+    } catch (error) {
+      console.error('❌ Error validating session:', error)
+      return false
+    }
+  }
+
+  /**
+   * Update session activity
+   */
+  async updateSessionActivity(sessionId: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) return
+
+      const sessionRef = doc(db, `users/${currentUser.uid}/sessions`, sessionId)
+      await updateDoc(sessionRef, {
+        lastActivity: serverTimestamp()
+      })
+    } catch (error) {
+      console.error('❌ Error updating session activity:', error)
+    }
+  }
+
+  /**
+   * Deactivate user session
+   */
+  async deactivateUserSession(sessionId: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) return
+
+      const sessionRef = doc(db, `users/${currentUser.uid}/sessions`, sessionId)
+      await updateDoc(sessionRef, {
+        isActive: false,
+        deactivatedAt: serverTimestamp()
+      })
+      console.log('✅ Session deactivated:', sessionId)
+    } catch (error) {
+      console.error('❌ Error deactivating session:', error)
+    }
+  }
+
+  /**
+   * Cleanup expired sessions
+   */
+  async cleanupExpiredSessions(userUid: string): Promise<void> {
+    try {
+      const sessionsRef = collection(db, `users/${userUid}/sessions`)
+      const sessionsQuery = query(
+        sessionsRef,
+        where('isActive', '==', true)
+      )
+      
+      const snapshot = await getDocs(sessionsQuery)
+      const batch = writeBatch(db)
+      let expiredCount = 0
+      
+      const now = new Date()
+      snapshot.docs.forEach(doc => {
+        const session = doc.data() as UserSession
+        const lastActivity = session.lastActivity.toDate()
+        const hoursSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60)
+        
+        if (hoursSinceActivity > 24) {
+          batch.update(doc.ref, {
+            isActive: false,
+            deactivatedAt: serverTimestamp()
+          })
+          expiredCount++
+        }
+      })
+      
+      if (expiredCount > 0) {
+        await batch.commit()
+        console.log(`✅ Cleaned up ${expiredCount} expired sessions`)
+      }
+    } catch (error) {
+      console.error('❌ Error cleaning up expired sessions:', error)
     }
   }
 }

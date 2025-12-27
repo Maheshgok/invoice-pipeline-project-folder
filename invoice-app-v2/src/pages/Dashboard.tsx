@@ -5,6 +5,8 @@ import FileUpload from '../components/FileUpload'
 import InvoiceViewer from '../components/invoice/InvoiceViewer'
 import DataEditor from '../components/invoice/DataEditor'
 import UsageIndicator from '../components/dashboard/UsageIndicator'
+import SecureAnalysisGuard from '../components/security/SecureAnalysisGuard'
+import SessionStatus from '../components/security/SessionStatus'
 import { analysisService } from '../services/analysisService'
 import { InvoiceData, UploadedFile } from '../types'
 import toast from 'react-hot-toast'
@@ -34,43 +36,30 @@ const Dashboard: React.FC = () => {
     setSelectedFile(file)
 
     try {
-      // Update file status
+      // Process through analysis service (includes security and usage checks)
+      const result = await analysisService.processInvoiceAnalysis(file.file)
+      
+      // Update file status and set processed data
       setUploadedFiles(prev =>
-        prev.map(f => f.id === file.id ? { ...f, status: 'processing' } : f)
+        prev.map(f => f.id === file.id ? { ...f, status: 'completed', invoiceData: result } : f)
       )
-
-      // Here you would call your processing API
-      // For now, we'll simulate processing with mock data
-      setTimeout(() => {
-        const mockInvoiceData: InvoiceData = {
-          invoiceNumber: 'INV-2024-001',
-          date: '2024-01-15',
-          dueDate: '2024-02-15',
-          totalAmount: 2200.00,
-          taxAmount: 200.00,
-          currency: 'USD',
-          vendorName: 'ACME Corp',
-          vendorEmail: 'billing@acme.com',
-          vendorAddress: '123 Business St, City, State 12345',
-          confidence: 0.95,
-          processedAt: new Date()
-        }
-
-        setInvoiceData(mockInvoiceData)
-        setUploadedFiles(prev =>
-          prev.map(f => f.id === file.id ? { ...f, status: 'completed', invoiceData: mockInvoiceData } : f)
-        )
-        setIsProcessing(false)
-        toast.success('Invoice processed successfully!')
-      }, 3000)
-
-    } catch (error) {
+      setInvoiceData(result)
+      toast.success('Invoice processed successfully!')
+      
+    } catch (error: any) {
       console.error('Processing error:', error)
       setUploadedFiles(prev =>
         prev.map(f => f.id === file.id ? { ...f, status: 'error' } : f)
       )
+      
+      if (error.message === 'Security restriction: Analysis blocked') {
+        // Security error already handled by analysisService
+        return
+      }
+      
+      toast.error(error.message || 'Failed to process invoice')
+    } finally {
       setIsProcessing(false)
-      toast.error('Failed to process invoice')
     }
   }
 
@@ -167,32 +156,42 @@ const Dashboard: React.FC = () => {
               </div>
             )}
 
+            {/* Session Status */}
+            {/* Session Status */}
+            <div className="p-4 border-b border-gray-200">
+              <SessionStatus />
+            </div>
+
             {/* Demo Analysis Button */}
             {userProfile && userProfile.role !== 'super_admin' && (
-              <div className="p-4 border-b border-gray-200">
-                <button
-                  onClick={async () => {
-                    try {
-                      const mockFile = new File(['test'], 'test-invoice.pdf', { type: 'application/pdf' })
-                      await analysisService.processInvoiceAnalysis(mockFile)
-                      toast.success('Demo analysis completed!')
-                      // Refresh user profile to show updated usage
-                      window.location.reload()
-                    } catch (error: any) {
-                      toast.error(error.message || 'Analysis failed')
-                    }
-                  }}
-                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-                >
-                  🧪 Demo Analysis (Test Credits)
-                </button>
-              </div>
+              <SecureAnalysisGuard>
+                <div className="p-4 border-b border-gray-200">
+                  <button
+                    onClick={async () => {
+                      try {
+                        const mockFile = new File(['test'], 'test-invoice.pdf', { type: 'application/pdf' })
+                        await analysisService.processInvoiceAnalysis(mockFile)
+                        toast.success('Demo analysis completed!')
+                        // Refresh user profile to show updated usage
+                        window.location.reload()
+                      } catch (error: any) {
+                        toast.error(error.message || 'Analysis failed')
+                      }
+                    }}
+                    className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+                  >
+                    🧪 Demo Analysis (Test Credits)
+                  </button>
+                </div>
+              </SecureAnalysisGuard>
             )}
 
             {/* File Upload */}
-            <div className="p-4 border-b border-gray-200">
-              <FileUpload onFilesAdded={handleFileUpload} />
-            </div>
+            <SecureAnalysisGuard>
+              <div className="p-4 border-b border-gray-200">
+                <FileUpload onFilesAdded={handleFileUpload} />
+              </div>
+            </SecureAnalysisGuard>
 
             {/* Files List */}
             <div className="p-4">

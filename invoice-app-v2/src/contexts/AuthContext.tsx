@@ -83,6 +83,18 @@ export function AuthProvider({ children }: AuthProviderProps) {
           // Initialize window close handler for this user
           windowCloseHandler.initialize(user)
           
+          // Initialize session security (only if not already started)
+          try {
+            const { sessionSecurityService } = await import('../services/sessionSecurityService')
+            const currentSession = sessionSecurityService.getCurrentSession()
+            if (!currentSession.sessionId) {
+              await sessionSecurityService.startSession(user.uid)
+              console.log('🔒 Session security initialized')
+            }
+          } catch (sessionError) {
+            console.warn('⚠️ Session security initialization failed:', sessionError)
+          }
+          
           // Create or update user profile
           try {
             const profile = await userService.createOrUpdateUserProfile(user)
@@ -97,6 +109,15 @@ export function AuthProvider({ children }: AuthProviderProps) {
           setUser(null)
           setUserProfile(null)
           windowCloseHandler.cleanup()
+          
+          // End session security
+          try {
+            const { sessionSecurityService } = await import('../services/sessionSecurityService')
+            await sessionSecurityService.endSession()
+            console.log('🔒 Session security ended')
+          } catch (sessionError) {
+            console.warn('⚠️ Session cleanup warning:', sessionError)
+          }
         }
       } catch (err: any) {
         console.error('❌ Auth state change error:', err)

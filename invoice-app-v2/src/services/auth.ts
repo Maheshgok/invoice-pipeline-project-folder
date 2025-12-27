@@ -15,6 +15,9 @@ import { auth } from '../config/firebase'
 import type { LoginCredentials } from '../types/auth'
 import type { UserProfile } from './userService'
 
+// Import session security service (will be dynamically imported to avoid circular dependency)
+declare const sessionSecurityService: any
+
 export class AuthService {
   private googleProvider: GoogleAuthProvider
 
@@ -51,8 +54,15 @@ export class AuthService {
       
       // First try popup method
       const result = await signInWithPopup(auth, this.googleProvider)
-      console.log(' Google sign-in successful:', result.user.email)
-      return result
+      console.log(' Google sign-in successful:', result.user.email)      
+      // Start session security tracking
+      try {
+        const { sessionSecurityService } = await import('./sessionSecurityService')
+        await sessionSecurityService.startSession(result.user.uid)
+      } catch (sessionError) {
+        console.warn('\u26a0\ufe0f Session security not available:', sessionError)
+      }
+            return result
       
     } catch (error: any) {
       console.error(' Google sign-in popup failed:', error)
@@ -87,8 +97,15 @@ export class AuthService {
     try {
       console.log(' Signing in with email:', credentials.email)
       const result = await signInWithEmailAndPassword(auth, credentials.email, credentials.password)
-      console.log(' Email sign-in successful:', result.user.email)
-      return result
+      console.log(' Email sign-in successful:', result.user.email)      
+      // Start session security tracking
+      try {
+        const { sessionSecurityService } = await import('./sessionSecurityService')
+        await sessionSecurityService.startSession(result.user.uid)
+      } catch (sessionError) {
+        console.warn('\u26a0\ufe0f Session security not available:', sessionError)
+      }
+            return result
     } catch (error: any) {
       console.error(' Email sign-in failed:', error)
       this.handleAuthError(error)
@@ -117,6 +134,14 @@ export class AuthService {
    */
   async signOut(): Promise<void> {
     try {
+      // End session security tracking
+      try {
+        const { sessionSecurityService } = await import('./sessionSecurityService')
+        await sessionSecurityService.endSession()
+      } catch (sessionError) {
+        console.warn('⚠️ Session cleanup warning:', sessionError)
+      }
+      
       await firebaseSignOut(auth)
       console.log(' User signed out successfully')
     } catch (error: any) {

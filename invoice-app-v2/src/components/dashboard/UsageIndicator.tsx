@@ -11,7 +11,7 @@ export const UsageIndicator: React.FC<UsageIndicatorProps> = ({
   userProfile, 
   className = '' 
 }) => {
-  const { paymentStatus, currentPackageValidity } = userProfile
+  const { currentPackageValidity } = userProfile
 
   // Calculate time-based usage
   const getTimeUsage = () => {
