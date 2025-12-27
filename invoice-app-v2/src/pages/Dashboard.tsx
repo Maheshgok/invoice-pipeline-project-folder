@@ -4,6 +4,8 @@ import { Upload, FileText, User, LogOut, Trash2, Eye, AlertTriangle, Settings } 
 import FileUpload from '../components/FileUpload'
 import InvoiceViewer from '../components/invoice/InvoiceViewer'
 import DataEditor from '../components/invoice/DataEditor'
+import UsageIndicator from '../components/dashboard/UsageIndicator'
+import { analysisService } from '../services/analysisService'
 import { InvoiceData, UploadedFile } from '../types'
 import toast from 'react-hot-toast'
 
@@ -157,6 +159,35 @@ const Dashboard: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {/* Usage Indicator */}
+            {userProfile && (
+              <div className="p-4 border-b border-gray-200">
+                <UsageIndicator userProfile={userProfile} />
+              </div>
+            )}
+
+            {/* Demo Analysis Button */}
+            {userProfile && userProfile.role !== 'super_admin' && (
+              <div className="p-4 border-b border-gray-200">
+                <button
+                  onClick={async () => {
+                    try {
+                      const mockFile = new File(['test'], 'test-invoice.pdf', { type: 'application/pdf' })
+                      await analysisService.processInvoiceAnalysis(mockFile)
+                      toast.success('Demo analysis completed!')
+                      // Refresh user profile to show updated usage
+                      window.location.reload()
+                    } catch (error: any) {
+                      toast.error(error.message || 'Analysis failed')
+                    }
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
+                >
+                  🧪 Demo Analysis (Test Credits)
+                </button>
+              </div>
+            )}
 
             {/* File Upload */}
             <div className="p-4 border-b border-gray-200">

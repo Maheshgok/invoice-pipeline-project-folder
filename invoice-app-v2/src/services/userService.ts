@@ -42,6 +42,11 @@ export interface UserProfile {
   approvedAt?: Timestamp  // When the user was approved
   paymentStatus: PaymentStatus
   workspace_initialized?: boolean  // Whether user workspace is set up
+  // Consumption tracking fields
+  packageConsumption: number  // Analysis completed in current package
+  totalConsumption: number    // Lifetime analysis completed by user
+  currentPackageValidity: PackageValidity  // Current package limits and remaining
+  packageUsageHistory?: UsageRecord[]  // History of package usage
 }
 
 export interface PaymentStatus {
@@ -70,6 +75,47 @@ export interface PaymentRecord {
   paidAt: Timestamp
   verifiedBy?: string
   notes?: string
+}
+
+export interface UsageRecord {
+  id: string
+  packageId: string
+  packageName: string
+  packageType: 'time_based' | 'consumption_based' | 'hybrid'
+  activatedAt: Timestamp
+  expiresAt?: Timestamp
+  analysisUsed?: number
+  analysisLimit?: number
+  remainingCredits?: number
+  status: 'active' | 'expired' | 'depleted'
+}
+
+export interface PackageValidity {
+  packageId: string
+  packageName: string
+  packageType: 'time_based' | 'consumption_based' | 'hybrid'
+  analysisLimit: number      // For time-based unlimited: 10000, else as per package
+  analysisRemaining: number  // Remaining analysis count
+  activatedAt: Timestamp
+  expiresAt?: Timestamp     // For time-based packages
+  timeRemaining?: number    // Days remaining for time-based packages
+  status: 'active' | 'expired' | 'depleted' | 'suspended'
+}
+
+export interface PackageDefinition {
+  id: string
+  name: string
+  type: 'time_based' | 'consumption_based' | 'hybrid'
+  duration: number          // Days for time-based packages
+  analysisLimit: number     // Number of analysis allowed (10000 for unlimited)
+  price: number
+  currency: string
+  features: string[]
+  isActive: boolean
+  isUnlimited: boolean      // True for unlimited time-based packages
+  createdAt: Timestamp
+  updatedAt: Timestamp
+  createdBy: string         // Admin who created the package
 }
 
 export interface Organization {
@@ -497,6 +543,9 @@ export class UserService {
           preferences: DEFAULT_PREFERENCES,
           usage: DEFAULT_USAGE,
           inviteStatus: 'accepted',
+          packageConsumption: 0,
+          totalConsumption: 0,
+          currentPackageValidity: this.getDefaultPackageValidity(),
           paymentStatus: isAdminEmail ? {
             status: 'verified',
             amount: 0,
@@ -634,6 +683,23 @@ export class UserService {
       await this.updateUsageStats(updatedUsage)
     } catch (error) {
       console.error('❌ Error incrementing upload count:', error)
+    }
+  }
+
+  /**
+   * Get default package validity for new users
+   */
+  private getDefaultPackageValidity(): PackageValidity {
+    return {
+      packageId: 'default-trial',
+      packageName: 'Trial Package',
+      packageType: 'consumption_based',
+      analysisLimit: 5,
+      analysisRemaining: 5,
+      activatedAt: serverTimestamp() as Timestamp,
+      expiresAt: Timestamp.fromDate(new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)), // 7 days
+      timeRemaining: 7,
+      status: 'active'
     }
   }
 
@@ -1364,6 +1430,247 @@ export class UserService {
   }
 
   /**
+   * Record successful analysis completion and update consumption
+   */
+  async recordAnalysisCompletion(userUid?: string): Promise<boolean> {
+    try {
+      const currentUserUid = userUid || this.getCurrentUserUID()
+      if (!currentUserUid) throw new Error('User not authenticated')
+
+      const userRef = doc(db, 'users', currentUserUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User profile not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      const currentValidity = userData.currentPackageValidity
+
+      // Check if user has remaining analysis credits
+      if (currentValidity.analysisRemaining <= 0) {
+        console.log('❌ No analysis credits remaining')
+        return false
+      }
+
+      // Check if package is expired
+      if (currentValidity.status === 'expired' || currentValidity.status === 'depleted') {
+        console.log('❌ Package is expired or depleted')
+        return false
+      }
+
+      // Update consumption counters
+      const newPackageConsumption = userData.packageConsumption + 1
+      const newTotalConsumption = userData.totalConsumption + 1
+      const newAnalysisRemaining = Math.max(0, currentValidity.analysisRemaining - 1)
+
+      // Update package validity status
+      const updatedValidity: PackageValidity = {
+        ...currentValidity,
+        analysisRemaining: newAnalysisRemaining,
+        status: newAnalysisRemaining <= 0 ? 'depleted' : currentValidity.status
+      }
+
+      // Update user document
+      await updateDoc(userRef, {
+        packageConsumption: newPackageConsumption,
+        totalConsumption: newTotalConsumption,
+        currentPackageValidity: updatedValidity,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log(`✅ Analysis recorded for user ${currentUserUid}:`, {
+        packageConsumption: newPackageConsumption,
+        totalConsumption: newTotalConsumption,
+        analysisRemaining: newAnalysisRemaining
+      })
+
+      return true
+    } catch (error) {
+      console.error('❌ Error recording analysis completion:', error)
+      return false
+    }
+  }
+
+  /**
+   * Check if user can perform analysis based on current package validity
+   */
+  async canPerformAnalysis(userUid?: string): Promise<boolean> {
+    try {
+      const currentUserUid = userUid || this.getCurrentUserUID()
+      if (!currentUserUid) return false
+
+      const userProfile = await this.getUserProfile(currentUserUid)
+      if (!userProfile) return false
+
+      // Super admin bypass
+      if (userProfile.role === 'super_admin') return true
+
+      const validity = userProfile.currentPackageValidity
+      
+      // Check if package is active
+      if (validity.status !== 'active') return false
+      
+      // Check analysis credits
+      if (validity.analysisRemaining <= 0) return false
+      
+      // Check time expiry for time-based packages
+      if (validity.expiresAt) {
+        const now = new Date()
+        const expiryDate = validity.expiresAt.toDate()
+        if (expiryDate <= now) {
+          // Update status to expired
+          await this.updatePackageStatus(currentUserUid, 'expired')
+          return false
+        }
+      }
+
+      return true
+    } catch (error) {
+      console.error('❌ Error checking analysis permission:', error)
+      return false
+    }
+  }
+
+  /**
+   * Update package validity status
+   */
+  private async updatePackageStatus(userUid: string, status: 'active' | 'expired' | 'depleted' | 'suspended'): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data() as UserProfile
+        const updatedValidity = {
+          ...userData.currentPackageValidity,
+          status: status
+        }
+        
+        await updateDoc(userRef, {
+          currentPackageValidity: updatedValidity,
+          updatedAt: serverTimestamp()
+        })
+      }
+    } catch (error) {
+      console.error('❌ Error updating package status:', error)
+    }
+  }
+
+  /**
+   * Assign package to user with consumption tracking
+   */
+  async assignPackageToUser(userUid: string, packageData: {
+    packageId: string
+    packageName: string
+    packageType: 'time_based' | 'consumption_based' | 'hybrid'
+    duration?: number
+    analysisLimit?: number
+    isUnlimited?: boolean
+  }): Promise<void> {
+    try {
+      const userRef = doc(db, 'users', userUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      
+      // Calculate analysis limit (10000 for unlimited time-based packages)
+      const analysisLimit = packageData.isUnlimited ? 10000 : (packageData.analysisLimit || 100)
+      
+      // Calculate expiry date for time-based packages
+      let expiresAt: Timestamp | undefined
+      let timeRemaining: number | undefined
+      
+      if (packageData.packageType === 'time_based' || packageData.packageType === 'hybrid') {
+        const days = packageData.duration || 30
+        expiresAt = Timestamp.fromDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000))
+        timeRemaining = days
+      }
+
+      // Create new package validity
+      const newPackageValidity: PackageValidity = {
+        packageId: packageData.packageId,
+        packageName: packageData.packageName,
+        packageType: packageData.packageType,
+        analysisLimit: analysisLimit,
+        analysisRemaining: analysisLimit,
+        activatedAt: serverTimestamp() as Timestamp,
+        expiresAt: expiresAt,
+        timeRemaining: timeRemaining,
+        status: 'active'
+      }
+
+      // Update user profile
+      await updateDoc(userRef, {
+        packageConsumption: 0, // Reset package consumption for new package
+        currentPackageValidity: newPackageValidity,
+        paymentStatus: {
+          ...userData.paymentStatus,
+          status: 'verified',
+          expiresAt: expiresAt
+        },
+        updatedAt: serverTimestamp()
+      })
+
+      console.log(`✅ Package assigned to user ${userUid}:`, newPackageValidity)
+    } catch (error) {
+      console.error('❌ Error assigning package to user:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get user usage statistics
+   */
+  async getUserUsageStats(userUid?: string) {
+    try {
+      const currentUserUid = userUid || this.getCurrentUserUID()
+      if (!currentUserUid) return null
+
+      const userProfile = await this.getUserProfile(currentUserUid)
+      if (!userProfile) return null
+
+      const validity = userProfile.currentPackageValidity
+      
+      // Calculate time remaining
+      let daysRemaining: number | undefined
+      let subscriptionStatus: 'active' | 'expired' | 'expiring' = 'active'
+      
+      if (validity.expiresAt) {
+        const now = new Date()
+        const expiryDate = validity.expiresAt.toDate()
+        daysRemaining = Math.max(0, Math.ceil((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24)))
+        
+        if (daysRemaining <= 0) {
+          subscriptionStatus = 'expired'
+        } else if (daysRemaining <= 15) {
+          subscriptionStatus = 'expiring'
+        }
+      }
+
+      return {
+        packageConsumption: userProfile.packageConsumption,
+        totalConsumption: userProfile.totalConsumption,
+        packageType: validity.packageType,
+        analysisLimit: validity.analysisLimit,
+        analysisRemaining: validity.analysisRemaining,
+        remainingCredits: validity.analysisRemaining,
+        daysRemaining: daysRemaining,
+        subscriptionStatus: subscriptionStatus,
+        packageName: validity.packageName,
+        packageStatus: validity.status
+      }
+    } catch (error) {
+      console.error('❌ Error getting usage stats:', error)
+      return null
+    }
+  }
+
+  /**
    * Send payment reminder to user
    */
   async sendPaymentReminder(userUid: string): Promise<void> {
@@ -1379,6 +1686,234 @@ export class UserService {
       // TODO: Implement email service integration
       // For now, just log the action
       console.log('📧 Payment reminder sent to user:', userUid)
+    } catch (error) {
+      console.error('❌ Error sending payment reminder:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Track analysis completion for consumption-based packages
+   */
+  async incrementAnalysisCount(userUid?: string): Promise<boolean> {
+    try {
+      const targetUserUid = userUid || this.getCurrentUserUID()
+      if (!targetUserUid) throw new Error('User not authenticated')
+
+      const userRef = doc(this.db, 'users', targetUserUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      const currentAnalysisCount = userData.analysisCount || 0
+      const analysisLimit = userData.analysisLimit || 0
+      const packageType = userData.currentPackageType
+
+      // Check if user has consumption-based package and remaining credits
+      if ((packageType === 'consumption_based' || packageType === 'hybrid') && analysisLimit > 0) {
+        if (currentAnalysisCount >= analysisLimit) {
+          console.log('⚠️ User has reached analysis limit:', targetUserUid)
+          return false // Analysis limit reached
+        }
+      }
+
+      // Increment analysis count and update remaining credits
+      const newAnalysisCount = currentAnalysisCount + 1
+      const newRemainingCredits = Math.max(0, analysisLimit - newAnalysisCount)
+
+      await updateDoc(userRef, {
+        analysisCount: newAnalysisCount,
+        remainingCredits: newRemainingCredits,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('📊 Analysis count incremented for user:', targetUserUid, 'New count:', newAnalysisCount)
+      return true // Analysis allowed
+    } catch (error) {
+      console.error('❌ Error incrementing analysis count:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Check if user can perform analysis (has remaining credits)
+   */
+  async canPerformAnalysis(userUid?: string): Promise<boolean> {
+    try {
+      const targetUserUid = userUid || this.getCurrentUserUID()
+      if (!targetUserUid) return false
+
+      const userRef = doc(this.db, 'users', targetUserUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) return false
+
+      const userData = userDoc.data() as UserProfile
+
+      // Super admin has unlimited access
+      if (userData.role === 'super_admin') return true
+
+      // Check subscription status first
+      if (!this.hasValidSubscription(userData)) return false
+
+      const packageType = userData.currentPackageType || 'time_based'
+      const analysisCount = userData.analysisCount || 0
+      const analysisLimit = userData.analysisLimit || 0
+
+      // For time-based packages, check subscription validity only
+      if (packageType === 'time_based') return true
+
+      // For consumption-based and hybrid packages, check credits
+      if ((packageType === 'consumption_based' || packageType === 'hybrid') && analysisLimit > 0) {
+        return analysisCount < analysisLimit
+      }
+
+      return true
+    } catch (error) {
+      console.error('❌ Error checking analysis permission:', error)
+      return false
+    }
+  }
+
+  /**
+   * Assign package to user with consumption tracking setup
+   */
+  async assignPackageToUser(userUid: string, packageData: {
+    packageId: string
+    packageName: string
+    packageType: 'time_based' | 'consumption_based' | 'hybrid'
+    duration?: number
+    analysisLimit?: number
+  }): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can assign packages')
+      }
+
+      const userRef = doc(this.db, 'users', userUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User not found')
+      }
+
+      const now = new Date()
+      const updates: Partial<UserProfile> = {
+        currentPackageType: packageData.packageType,
+        updatedAt: serverTimestamp()
+      }
+
+      // Setup time-based tracking
+      if (packageData.packageType === 'time_based' || packageData.packageType === 'hybrid') {
+        if (packageData.duration) {
+          const expiresAt = new Date(now.getTime() + packageData.duration * 24 * 60 * 60 * 1000)
+          updates.paymentStatus = {
+            ...(userDoc.data() as UserProfile).paymentStatus,
+            expiresAt: Timestamp.fromDate(expiresAt),
+            status: 'paid',
+            subscriptionType: packageData.duration >= 365 ? 'yearly' : 'monthly'
+          }
+        }
+      }
+
+      // Setup consumption-based tracking
+      if (packageData.packageType === 'consumption_based' || packageData.packageType === 'hybrid') {
+        if (packageData.analysisLimit) {
+          updates.analysisLimit = packageData.analysisLimit
+          updates.remainingCredits = packageData.analysisLimit
+          updates.analysisCount = 0 // Reset count for new package
+        }
+      }
+
+      // Add usage history record
+      const usageRecord: UsageRecord = {
+        id: `${packageData.packageId}_${Date.now()}`,
+        packageId: packageData.packageId,
+        packageName: packageData.packageName,
+        packageType: packageData.packageType,
+        activatedAt: Timestamp.fromDate(now),
+        expiresAt: updates.paymentStatus?.expiresAt,
+        analysisLimit: packageData.analysisLimit,
+        analysisUsed: 0,
+        remainingCredits: packageData.analysisLimit || 0,
+        status: 'active'
+      }
+
+      const currentHistory = (userDoc.data() as UserProfile).packageUsageHistory || []
+      updates.packageUsageHistory = [...currentHistory, usageRecord]
+
+      await updateDoc(userRef, updates)
+
+      console.log('📦 Package assigned to user:', userUid, 'Package:', packageData.packageName)
+    } catch (error) {
+      console.error('❌ Error assigning package to user:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get usage statistics for a user
+   */
+  async getUserUsageStats(userUid?: string): Promise<{
+    analysisCount: number
+    analysisLimit: number
+    remainingCredits: number
+    packageType: string
+    subscriptionStatus: string
+    daysRemaining?: number
+  } | null> {
+    try {
+      const targetUserUid = userUid || this.getCurrentUserUID()
+      if (!targetUserUid) return null
+
+      const userRef = doc(this.db, 'users', targetUserUid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) return null
+
+      const userData = userDoc.data() as UserProfile
+      const analysisCount = userData.analysisCount || 0
+      const analysisLimit = userData.analysisLimit || 0
+      const remainingCredits = userData.remainingCredits || 0
+      const packageType = userData.currentPackageType || 'time_based'
+      
+      // Calculate subscription status and days remaining
+      let subscriptionStatus = 'inactive'
+      let daysRemaining: number | undefined
+
+      if (userData.paymentStatus?.expiresAt) {
+        const expiresAt = userData.paymentStatus.expiresAt.toDate()
+        const now = new Date()
+        const timeDiff = expiresAt.getTime() - now.getTime()
+        daysRemaining = Math.ceil(timeDiff / (1000 * 60 * 60 * 24))
+        
+        if (daysRemaining > 0) {
+          subscriptionStatus = 'active'
+        } else {
+          subscriptionStatus = 'expired'
+        }
+      }
+
+      return {
+        analysisCount,
+        analysisLimit,
+        remainingCredits,
+        packageType,
+        subscriptionStatus,
+        daysRemaining: daysRemaining && daysRemaining > 0 ? daysRemaining : undefined
+      }
+    } catch (error) {
+      console.error('❌ Error getting user usage stats:', error)
+      return null
+    }
+  }
       
       // Store reminder history
       const userRef = doc(db, 'users', userUid)

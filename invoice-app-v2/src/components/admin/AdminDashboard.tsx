@@ -1,17 +1,28 @@
 import React, { useState } from 'react'
-import { Settings, Users, Shield, CreditCard, Home } from 'lucide-react'
+import { Settings, Users, Shield, CreditCard, Home, Package, Database } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { SuperAdminSettings } from './SuperAdminSettings'
 import UserManagement from './UserManagement'
+import PackageManagement from './PackageManagement'
 import { useAuth } from '../../contexts/AuthContext'
+import { packageService } from '../../services/packageService'
+import toast from 'react-hot-toast'
 
 interface AdminDashboardProps {}
 
-type TabType = 'settings' | 'users' | 'payments' | 'reports'
+type TabType = 'settings' | 'users' | 'packages' | 'payments' | 'reports'
 
 export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   const { userProfile } = useAuth()
-  const [activeTab, setActiveTab] = useState<TabType>('users')
+  const [activeTab, setActiveTab] = useState<TabType>('packages')
+
+  const handleInitializePackages = async () => {
+    try {
+      await packageService.initializeDefaultPackages()
+    } catch (error) {
+      console.error('Error initializing packages:', error)
+    }
+  }
 
   // Redirect non-admins
   if (userProfile?.role !== 'super_admin') {
@@ -44,6 +55,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
       description: 'Manage users, subscriptions, and service access'
     },
     {
+      id: 'packages' as TabType,
+      label: 'Package Management',
+      icon: Package,
+      description: 'Configure subscription packages and pricing'
+    },
+    {
       id: 'payments' as TabType,
       label: 'Payment Overview',
       icon: CreditCard,
@@ -63,12 +80,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
         return <SuperAdminSettings />
       case 'users':
         return <UserManagement />
+      case 'packages':
+        return <PackageManagement />
       case 'payments':
         return <PaymentOverview />
       case 'reports':
         return <SystemReports />
       default:
-        return <SuperAdminSettings />
+        return <PackageManagement />
     }
   }
 
@@ -87,6 +106,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
                 </div>
               </div>
               <div className="flex items-center space-x-3">
+                <button
+                  onClick={handleInitializePackages}
+                  className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-lg transition-colors"
+                >
+                  <Database className="w-5 h-5" />
+                  <span className="font-medium">Initialize Packages</span>
+                </button>
                 <Link 
                   to="/dashboard" 
                   className="flex items-center space-x-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"

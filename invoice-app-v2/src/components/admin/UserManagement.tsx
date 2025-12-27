@@ -10,8 +10,10 @@ import {
   CheckCircle, 
   RefreshCw,
   Download,
-  Eye
+  Eye,
+  ChevronDown
 } from 'lucide-react'
+import { packageService, type PackageDefinition } from '../../services/packageService'
 import { userService, UserProfile } from '../../services/userService'
 import toast from 'react-hot-toast'
 
@@ -24,6 +26,7 @@ interface UserStats {
   expired: number
   expiringIn7Days: number
 }
+
 
 // Utility function to safely convert Firestore Timestamp to Date
 const toDate = (timestamp: any): Date => {
@@ -42,6 +45,7 @@ const UserManagement: React.FC<UserManagementProps> = () => {
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired' | 'suspended' | 'expiring'>('all')
   const [selectedUser, setSelectedUser] = useState<(UserProfile & { id: string }) | null>(null)
   const [showUserModal, setShowUserModal] = useState(false)
+  const [packages, setPackages] = useState<PackageDefinition[]>([])
   const [stats, setStats] = useState<UserStats>({
     total: 0,
     active: 0,
@@ -52,11 +56,21 @@ const UserManagement: React.FC<UserManagementProps> = () => {
 
   useEffect(() => {
     loadUsers()
+    loadPackages()
   }, [])
 
   useEffect(() => {
     filterUsers()
   }, [users, searchTerm, filterStatus])
+
+  const loadPackages = async () => {
+    try {
+      const packagesData = await packageService.getActivePackages()
+      setPackages(packagesData)
+    } catch (error) {
+      console.error('Error loading packages:', error)
+    }
+  }
 
   const loadUsers = async () => {
     try {
@@ -194,7 +208,24 @@ const UserManagement: React.FC<UserManagementProps> = () => {
     }
   }
 
-  const handleExtendSubscription = async (userUid: string, days: number) => {
+  const handleExtendSubscription = async (userUid: string, packageData: any) => {
+    try {
+      // Use the new assignPackageToUser method for better tracking
+      await userService.assignPackageToUser(userUid, {
+        packageId: packageData.id,
+        packageName: packageData.name,
+        packageType: packageData.type || 'time_based',
+        duration: packageData.duration,
+        analysisLimit: packageData.analysisLimit
+      })
+      toast.success(`Package "${packageData.name}" assigned successfully`)
+      loadUsers()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to assign package')
+    }
+  }
+
+  const handleExtendSubscriptionLegacy = async (userUid: string, days: number) => {
     try {
       await userService.extendSubscription(userUid, days)
       toast.success(`Subscription extended by ${days} days`)
@@ -486,28 +517,130 @@ const UserManagement: React.FC<UserManagementProps> = () => {
                 </div>
               </div>
 
+              {/* Usage Tracking */}
+              <div>
+                <h4 className="font-medium text-gray-900 mb-3">Usage Statistics</h4>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-sm text-gray-500">Package Type</label>
+                    <p className="font-medium capitalize">
+                      {selectedUser.currentPackageValidity?.packageType?.replace('_', ' ') || 'Not Set'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500">Package Consumption</label>
+                    <p className="font-medium">{selectedUser.packageConsumption || 0}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500">Total Consumption</label>
+                    <p className="font-medium">{selectedUser.totalConsumption || 0}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm text-gray-500">Remaining Credits</label>
+                    <p className="font-medium text-green-600">{selectedUser.currentPackageValidity?.analysisRemaining || 0}</p>
+                  </div>
+                </div>
+                
+                {/* Usage Progress Bar */}
+                {selectedUser.currentPackageValidity && selectedUser.currentPackageValidity.analysisLimit > 0 && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-sm text-gray-600 mb-1">
+                      <span>Package Usage Progress</span>
+                      <span>
+                        {Math.round(((selectedUser.packageConsumption || 0) / selectedUser.currentPackageValidity.analysisLimit) * 100)}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div 
+                        className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                        style={{ 
+                          width: `${Math.min(100, ((selectedUser.packageConsumption || 0) / selectedUser.currentPackageValidity.analysisLimit) * 100)}%` 
+                        }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-1">
+                      <span>{selectedUser.packageConsumption || 0} used</span>
+                      <span>{selectedUser.currentPackageValidity.analysisLimit} total</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Package Status */}
+                {selectedUser.currentPackageValidity && (
+                  <div className="mt-3 p-2 bg-gray-50 rounded-lg">
+                    <div className="text-sm">
+                      <span className="text-gray-500">Current Package: </span>
+                      <span className="font-medium">{selectedUser.currentPackageValidity.packageName}</span>
+                      <span className={`ml-2 px-2 py-1 rounded-full text-xs ${
+                        selectedUser.currentPackageValidity.status === 'active' ? 'bg-green-100 text-green-800' :
+                        selectedUser.currentPackageValidity.status === 'expired' ? 'bg-red-100 text-red-800' :
+                        selectedUser.currentPackageValidity.status === 'depleted' ? 'bg-amber-100 text-amber-800' :
+                        'bg-gray-100 text-gray-800'
+                      }`}>
+                        {selectedUser.currentPackageValidity.status}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Subscription Management */}
               <div>
                 <h4 className="font-medium text-gray-900 mb-3">Subscription Management</h4>
-                <div className="flex space-x-2">
-                  <button
-                    onClick={() => handleExtendSubscription(selectedUser.id, 30)}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                  >
-                    Extend 30 Days
-                  </button>
-                  <button
-                    onClick={() => handleExtendSubscription(selectedUser.id, 90)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                  >
-                    Extend 90 Days
-                  </button>
-                  <button
-                    onClick={() => handleExtendSubscription(selectedUser.id, 365)}
-                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
-                  >
-                    Extend 1 Year
-                  </button>
+                <div className="space-y-3">
+                  <div className="text-sm text-gray-600">
+                    Select a package to extend this user's subscription:
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                    {packages.map((pkg) => (
+                      <button
+                        key={pkg.id}
+                        onClick={() => handleExtendSubscription(selectedUser.id, pkg)}
+                        className="p-3 border border-gray-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 text-left transition-colors"
+                      >
+                        <div className="font-medium text-sm text-gray-900">{pkg.name}</div>
+                        <div className="text-xs text-gray-500">
+                          {pkg.type?.replace('_', ' ') || 'Time based'} - {pkg.duration} days - ${pkg.price}
+                        </div>
+                        {(pkg.type === 'consumption_based' || pkg.type === 'hybrid') && pkg.analysisLimit && (
+                          <div className="text-xs text-blue-600">{pkg.analysisLimit} analysis credits</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                  
+                  {packages.length === 0 && (
+                    <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg">
+                      No active packages available. Please configure packages in the Package Management section.
+                    </div>
+                  )}
+                  
+                  {/* Custom Extension */}
+                  <details className="mt-4">
+                    <summary className="text-sm font-medium text-gray-700 cursor-pointer hover:text-gray-900">
+                      <span className="flex items-center">
+                        <ChevronDown size={16} className="mr-1" />
+                        Custom Extension
+                      </span>
+                    </summary>
+                    <div className="mt-3 flex items-center space-x-2">
+                      <input
+                        type="number"
+                        placeholder="Days"
+                        className="px-3 py-2 border border-gray-300 rounded-lg text-sm w-24"
+                        onKeyPress={(e) => {
+                          if (e.key === 'Enter') {
+                            const days = parseInt((e.target as HTMLInputElement).value)
+                            if (days > 0) {
+                              handleExtendSubscriptionLegacy(selectedUser.id, days);
+                              (e.target as HTMLInputElement).value = ''
+                            }
+                          }
+                        }}
+                      />
+                      <span className="text-sm text-gray-500">days (press Enter)</span>
+                    </div>
+                  </details>
                 </div>
               </div>
 
