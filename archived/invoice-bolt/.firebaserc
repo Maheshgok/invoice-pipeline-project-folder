@@ -1,8 +1,0 @@
-{
-  "projects": {
-    "default": "watch-mail-trial",
-    "staging": "watch-mail-trial"
-  },
-  "targets": {},
-  "etags": {}
-}

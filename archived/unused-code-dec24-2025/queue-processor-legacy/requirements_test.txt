@@ -1,5 +1,0 @@
-flask==3.0.0
-google-cloud-firestore==2.13.1
-google-cloud-tasks==2.14.2
-firebase-admin==6.2.0
-gunicorn==21.2.0
