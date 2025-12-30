@@ -210,7 +210,10 @@ class ArchiveService {
    */
   async archiveCompletedResultsLocal(): Promise<{ archived_count: number; message: string }> {
     try {
-      console.log('📦 Starting local archive - sweeping ALL documents from active collection...')
+      console.log('📦 Starting local archive - querying ALL documents from active collection...')
+      
+      // Ensure secure datastore is initialized
+      await secureDatastoreService.initialize()
       
       // Query ALL documents in active collection for this user
       const allResults = await secureDatastoreService.query({
@@ -223,23 +226,34 @@ class ArchiveService {
         console.log('📦 No documents to archive - active collection is empty')
         return {
           archived_count: 0,
-          message: 'No documents found to archive'
+          message: 'No documents found to archive - collection is empty'
         }
       }
 
-      // Log what we're archiving
-      allResults.forEach((result, index) => {
-        console.log(`📄 Archiving document ${index + 1}: ${result.fileName || result.id} (status: ${result.status})`)
-      })
+      // Log what we're archiving (limit to first 5 for brevity)
+      const logLimit = Math.min(allResults.length, 5)
+      for (let i = 0; i < logLimit; i++) {
+        const result = allResults[i]
+        console.log(`📄 Will archive document ${i + 1}: ${result.fileName || result.id} (status: ${result.status})`)
+      }
+      if (allResults.length > logLimit) {
+        console.log(`📄 ... and ${allResults.length - logLimit} more documents`)
+      }
 
       // Prepare ALL documents for batch archiving
-      const documentsToArchive = allResults.map(result => ({
-        id: result.id,
-        data: {
-          ...result,
-          id: undefined // Remove duplicate id
+      const documentsToArchive = allResults.map(result => {
+        // Create a clean copy without the document ID to avoid conflicts
+        const { id, ...cleanData } = result
+        return {
+          id: result.id,
+          data: {
+            ...cleanData,
+            // Add archive metadata
+            archivedFromLocal: true,
+            originalStatus: result.status || 'unknown'
+          }
         }
-      }))
+      })
 
       // Use batch archive for efficiency - moves all documents from active to archive
       await secureDatastoreService.batchArchiveDocuments(documentsToArchive)
@@ -253,7 +267,7 @@ class ArchiveService {
 
     } catch (error) {
       console.error('❌ Local archive failed:', error)
-      throw new Error(`Local archive failed: ${error}`)
+      throw new Error(`Local archive failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -314,34 +328,51 @@ class ArchiveService {
         await secureDatastoreService.initialize()
         console.log('✅ Secure datastore service initialized')
       } catch (initError) {
-        console.warn('⚠️ Secure datastore service initialization failed:', initError)
+        console.warn('⚠️ Secure datastore service initialization failed, will try cloud first:', initError)
       }
       
-      // Try cloud service first
+      // Try cloud service first (but with shorter timeout)
       console.log('📦 Attempting cloud-based archive...')
-      return await this.archiveCompletedResults()
-    } catch (cloudError) {
-      console.warn('⚠️ Cloud archive failed, falling back to local archive:', cloudError)
-      
       try {
-        // Fallback to local archive
-        console.log('📦 Starting local archive fallback...')
-        const localResult = await this.archiveCompletedResultsLocal()
-        
-        // Convert to expected ArchiveResponse format
-        const hybridResponse = {
-          message: localResult.message,
-          archived_count: localResult.archived_count,
-          user_email: authService.getCurrentUser()?.email || 'unknown',
-          archive_timestamp: new Date().toISOString()
-        }
-        
-        console.log('✅ Local archive completed:', hybridResponse)
-        return hybridResponse
-      } catch (localError) {
-        console.error('❌ Both cloud and local archive failed:', localError)
-        throw new Error(`Archive failed - Cloud: ${cloudError}, Local: ${localError}`)
+        const cloudResult = await Promise.race([
+          this.archiveCompletedResults(),
+          new Promise<never>((_, reject) => 
+            setTimeout(() => reject(new Error('Cloud archive timeout (15s)')), 15000)
+          )
+        ])
+        console.log('✅ Cloud archive successful:', cloudResult.archived_count, 'documents')
+        return cloudResult
+      } catch (cloudError) {
+        console.warn('⚠️ Cloud archive failed, falling back to local archive:', cloudError)
       }
+      
+      // Fallback to local archive
+      console.log('📦 Starting local archive fallback...')
+      const localResult = await this.archiveCompletedResultsLocal()
+      
+      // Convert to expected ArchiveResponse format
+      const hybridResponse: ArchiveResponse = {
+        message: localResult.message,
+        archived_count: localResult.archived_count,
+        user_email: authService.getCurrentUser()?.email || 'unknown',
+        archive_timestamp: new Date().toISOString()
+      }
+      
+      console.log('✅ Local archive completed:', hybridResponse)
+      return hybridResponse
+      
+    } catch (error) {
+      console.error('❌ Both cloud and local archive failed:', error)
+      
+      // Last resort: return a basic response indicating the failure
+      const errorResponse: ArchiveResponse = {
+        message: `Archive failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        archived_count: 0,
+        user_email: authService.getCurrentUser()?.email || 'unknown',
+        archive_timestamp: new Date().toISOString()
+      }
+      
+      throw new Error(`Archive completely failed - Cloud: ${error instanceof Error ? error.message : 'Unknown'}, Local: Also failed`)
     }
   }
 }

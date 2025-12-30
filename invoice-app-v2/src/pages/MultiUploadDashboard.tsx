@@ -828,20 +828,30 @@ const MultiUploadDashboard: React.FC = () => {
               <button
                 onClick={async () => {
                   try {
+                    console.log('🔘 Manual archive button clicked')
+                    const hasData = journalEntries.length > 0 || batchState.completedFiles > 0
+                    
+                    if (!hasData) {
+                      toast('📭 No data to archive', { icon: '📭' })
+                      return
+                    }
+                    
                     const result = await archiveCompletedResults()
                     if (result.archived_count > 0) {
-                      toast.success(`📦 Archived ${result.archived_count} completed results`)
+                      toast.success(`📦 Successfully archived ${result.archived_count} completed results`)
+                      // Optionally refresh the data display
+                      console.log('✅ Manual archive successful, data should refresh automatically')
                     } else {
-                      toast('📭 No completed results to archive', { icon: '📭' })
+                      toast('📭 No completed results found to archive', { icon: '📭' })
                     }
                   } catch (error) {
                     console.error('❌ Manual archive failed:', error)
-                    toast.error('Failed to archive results')
+                    toast.error(`Archive failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
                   }
                 }}
-                disabled={journalEntries.length === 0}
+                disabled={journalEntries.length === 0 && batchState.completedFiles === 0}
                 className="inline-flex items-center px-4 py-2 border border-gray-300 text-sm font-medium rounded-md shadow-sm text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                title={journalEntries.length === 0 ? "No results to archive" : "Archive completed results to clean up interface"}
+                title={journalEntries.length === 0 && batchState.completedFiles === 0 ? "No results to archive" : "Archive all completed results to clean up the interface"}
               >
                 <Archive className="w-4 h-4 mr-2" />
                 Archive Results

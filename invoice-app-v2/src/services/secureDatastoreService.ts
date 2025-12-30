@@ -293,56 +293,68 @@ class SecureDatastoreService {
         collection: 'archive'
       })
 
-      // Start batch operation (Firestore batch limit is 500 operations)
-      const batch = writeBatch(db)
-      let operationCount = 0
-      const maxBatchSize = 250 // Conservative limit (2 operations per document)
-
-      const archiveCollectionRef = collection(db, archivePath)
       const currentUserId = datastoreConfigManager.getCurrentConfig()?.userId || 'system'
+      
+      // Process documents in smaller batches to avoid Firestore limits
+      const batchSize = 100 // Conservative limit (2 operations per document = 200 total)
+      const totalBatches = Math.ceil(documentsToArchive.length / batchSize)
+      let totalProcessed = 0
 
-      for (const docToArchive of documentsToArchive) {
-        if (operationCount >= maxBatchSize) {
-          // Execute current batch and start a new one
+      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        const startIdx = batchIndex * batchSize
+        const endIdx = Math.min(startIdx + batchSize, documentsToArchive.length)
+        const currentBatchDocs = documentsToArchive.slice(startIdx, endIdx)
+
+        console.log(`📦 Processing batch ${batchIndex + 1}/${totalBatches} (${currentBatchDocs.length} documents)`)
+
+        // Start new batch operation for this chunk
+        const batch = writeBatch(db)
+        const archiveCollectionRef = collection(db, archivePath)
+
+        for (const docToArchive of currentBatchDocs) {
+          try {
+            // Create archive document
+            const archiveDocRef = doc(archiveCollectionRef)
+            const archiveData = {
+              ...docToArchive.data,
+              // Archive metadata
+              originalId: docToArchive.id,
+              originalCollection: activePath,
+              archivedAt: new Date(),
+              archivedBy: currentUserId,
+              updatedAt: new Date(),
+              archiveVersion: '2.0',
+              batchIndex: batchIndex,
+              batchTimestamp: Date.now()
+            }
+
+            batch.set(archiveDocRef, archiveData)
+
+            // Remove from active collection
+            const activeRef = doc(db, activePath, docToArchive.id)
+            batch.delete(activeRef)
+          } catch (docError) {
+            console.error(`❌ Error preparing document ${docToArchive.id} for archive:`, docError)
+            // Continue with other documents in the batch
+          }
+        }
+
+        // Execute this batch
+        try {
           await batch.commit()
-          console.log(`📦 Committed batch with ${operationCount} operations`)
-          
-          // Reset for next batch
-          // Note: We'd need to create a new batch here, but for simplicity,
-          // let's process in chunks to avoid this complexity
-          break
+          totalProcessed += currentBatchDocs.length
+          console.log(`✅ Batch ${batchIndex + 1} completed: ${currentBatchDocs.length} documents archived`)
+        } catch (batchError) {
+          console.error(`❌ Batch ${batchIndex + 1} failed:`, batchError)
+          throw batchError // Stop processing if a batch fails
         }
-
-        // Create archive document
-        const archiveDocRef = doc(archiveCollectionRef)
-        const archiveData = {
-          ...docToArchive.data,
-          originalId: docToArchive.id,
-          originalCollection: activePath,
-          archivedAt: new Date(),
-          archivedBy: currentUserId,
-          updatedAt: new Date(),
-          archiveVersion: '2.0'
-        }
-
-        batch.set(archiveDocRef, archiveData)
-        operationCount++
-
-        // Remove from active collection
-        const activeRef = doc(db, activePath, docToArchive.id)
-        batch.delete(activeRef)
-        operationCount++
       }
 
-      // Execute final batch
-      if (operationCount > 0) {
-        await batch.commit()
-        console.log(`✅ Batch archive completed: ${documentsToArchive.length} documents archived`)
-      }
+      console.log(`✅ Batch archive completed: ${totalProcessed} documents archived successfully`)
 
     } catch (error) {
       console.error('❌ Batch archive operation failed:', error)
-      throw new Error(`Failed to batch archive documents: ${error}`)
+      throw new Error(`Failed to batch archive documents: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 

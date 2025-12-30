@@ -81,13 +81,38 @@ class WindowCloseHandler {
    */
   private handlePageHide = async (event: PageTransitionEvent) => {
     // Only cleanup on actual navigation away (not just tab switching)
-    if (event.persisted || !this.user || this.cleanupInProgress) {
+    if (event.persisted) {
+      console.log('📄 Page cached, not performing cleanup')
       return // Don't cleanup if page is just being cached
+    }
+    
+    if (!this.user || this.cleanupInProgress) {
+      return
     }
     
     console.log('🚪 Page actually unloading - triggering cleanup for user:', this.user.email)
     
-    // Don't await this to avoid blocking the page close
+    // Perform immediate synchronous cleanup if possible
+    if (this.hasResults) {
+      try {
+        // Use sendBeacon for fire-and-forget archive request
+        const token = await authService.getIdToken()
+        if (token && navigator.sendBeacon) {
+          const archiveData = JSON.stringify({
+            action: 'archive_on_close',
+            userUID: this.user.uid,
+            timestamp: Date.now()
+          })
+          
+          // Note: This would need a proper endpoint, for now just log
+          console.log('📡 Would send beacon for archive on close:', archiveData)
+        }
+      } catch (error) {
+        console.warn('⚠️ Beacon archive failed:', error)
+      }
+    }
+    
+    // Also trigger async cleanup (won't complete but starts the process)
     this.performAsyncCleanup()
   }
 

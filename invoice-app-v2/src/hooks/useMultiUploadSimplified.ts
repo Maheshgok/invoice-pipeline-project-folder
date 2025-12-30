@@ -259,15 +259,18 @@ export const useMultiUploadSimplified = () => {
     try {
       console.log('📥 Starting CSV download...')
       
-      // Archive completed results after download (re-enabled for download-only archiving)
+      // Archive completed results BEFORE download (critical for cleanup)
       try {
+        console.log('📦 Archiving completed results before download...')
         const result = await archiveService.archiveCompletedResultsHybrid()
         if (result.archived_count > 0) {
-          console.log(`📦 Archived ${result.archived_count} completed results`)
+          console.log(`✅ Archived ${result.archived_count} completed results before download`)
+          toast.success(`📦 Archived ${result.archived_count} results before download`)
         }
       } catch (archiveError) {
-        console.error('❌ Archive after download failed:', archiveError)
-        // Don't fail the download if archive fails
+        console.error('❌ Archive before download failed:', archiveError)
+        // Continue with download even if archive fails, but warn user
+        toast.error('Archive before download failed, but proceeding with download')
       }
 
       // Create CSV content
