@@ -194,6 +194,11 @@ class SessionSecurityService {
     try {
       if (!this.currentSessionId) return false
 
+      // Only validate if tab is visible to reduce false positives
+      if (document.visibilityState !== 'visible') {
+        return true // Assume valid if tab is hidden
+      }
+
       const sessionValid = await this.validateSessionDoc(this.currentSessionId)
       if (!sessionValid) {
         this.handleInvalidSession()
@@ -203,7 +208,8 @@ class SessionSecurityService {
       return true
     } catch (error) {
       console.error('❌ Error validating session:', error)
-      return false
+      // Don't invalidate on network errors
+      return true
     }
   }
 
@@ -250,11 +256,14 @@ class SessionSecurityService {
    */
   private startSessionMonitoring(): void {
     this.sessionCheckInterval = window.setInterval(async () => {
-      const isValid = await this.validateSession()
-      if (!isValid) {
-        this.handleInvalidSession()
+      // Only check if tab is active and visible
+      if (document.visibilityState === 'visible' && this.isActiveTab) {
+        const isValid = await this.validateSession()
+        if (!isValid) {
+          this.handleInvalidSession()
+        }
       }
-    }, 60000) // Check every minute
+    }, 120000) // Check every 2 minutes (reduced frequency)
   }
 
   /**
@@ -326,13 +335,21 @@ class SessionSecurityService {
    * Handle invalid session
    */
   private handleInvalidSession(): void {
-    console.log('🔒 Session invalidated - concurrent login detected')
-    toast.error('Your session has been terminated due to login from another device')
-    
-    // Redirect to login
-    setTimeout(() => {
-      window.location.href = '/login'
-    }, 2000)
+    // Only show error if we haven't already invalidated
+    if (this.currentSessionId) {
+      console.warn('🔒 Session invalidated:', this.currentSessionId)
+      
+      // Clear current session
+      this.currentSessionId = null
+      
+      // Only show toast if user is actively using the app
+      if (document.visibilityState === 'visible') {
+        toast.error('Session expired. Please refresh to continue.', {
+          duration: 4000,
+          position: 'top-center'
+        })
+      }
+    }
   }
 
   /**
@@ -381,10 +398,10 @@ class SessionSecurityService {
     window.addEventListener('beforeunload', () => {
       this.broadcastTabMessage('TAB_CLOSED', { tabId: this.tabId })
       if (this.currentSessionId) {
-        // Use sendBeacon for reliable cleanup
-        navigator.sendBeacon('/api/session/cleanup', JSON.stringify({
-          sessionId: this.currentSessionId
-        }))
+        // Cleanup session locally (beacon endpoint not available)
+        this.deactivateSessionDoc(this.currentSessionId).catch(err => {
+          console.warn('⚠️ Failed to cleanup session on unload:', err)
+        })
       }
     })
   }
@@ -495,7 +512,18 @@ class SessionSecurityService {
       
       // Check if session is active and not too old
       const now = new Date()
-      const lastActivity = session.lastActivity.toDate()
+      
+      // Handle both Firestore Timestamp and null/undefined cases
+      if (!session.lastActivity) {
+        console.warn('⚠️ Session missing lastActivity, invalidating')
+        await this.deactivateSessionDoc(sessionId)
+        return false
+      }
+      
+      const lastActivity = session.lastActivity.toDate ? 
+        session.lastActivity.toDate() : 
+        new Date(session.lastActivity)
+        
       const hoursSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60)
       
       if (!session.isActive || hoursSinceActivity > 24) {

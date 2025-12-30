@@ -61,22 +61,18 @@ const MultiUploadDashboard: React.FC = () => {
     syncManager
   } = useMultiUploadSimplified()
 
-  // Debug logging for journal entries
+  // Monitor component state for debugging (reduced logging)
   useEffect(() => {
-    console.log('🎯 COMPONENT DEBUG: journalEntries.length =', journalEntries.length)
-    console.log('🎯 COMPONENT DEBUG: journalEntries sample:', journalEntries.slice(0, 2))
-  }, [journalEntries.length])
-  
-  // Debug logging for archiving behavior
-  useEffect(() => {
-    console.log('🔍 DEBUG: Component state changed:', {
-      completedFiles: batchState.completedFiles,
-      totalFiles: batchState.totalFiles,
-      journalEntriesCount: journalEntries.length,
-      isInitialized,
-      userEmail: user?.email
-    })
-  }, [batchState.completedFiles, batchState.totalFiles, journalEntries.length, isInitialized, user?.email])
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Component state:', {
+        journalEntriesCount: journalEntries.length,
+        completedFiles: batchState.completedFiles,
+        totalFiles: batchState.totalFiles,
+        isInitialized,
+        userEmail: user?.email
+      })
+    }
+  }, [journalEntries.length, batchState.completedFiles, batchState.totalFiles, isInitialized, user?.email])
 
   // Track if there are results that need archiving
   useEffect(() => {
@@ -868,11 +864,7 @@ const MultiUploadDashboard: React.FC = () => {
           </div>
 
           <div className="overflow-x-auto max-h-96 overflow-y-auto">
-            {(() => {
-              console.log('🎯 RENDER DEBUG: journalEntries.length =', journalEntries.length)
-              console.log('🎯 RENDER DEBUG: journalEntries sample:', journalEntries.slice(0, 2))
-              return journalEntries.length === 0
-            })() ? (
+            {journalEntries.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="mx-auto h-12 w-12 text-gray-300 mb-2" />
                 <p>No journal entries generated yet</p>

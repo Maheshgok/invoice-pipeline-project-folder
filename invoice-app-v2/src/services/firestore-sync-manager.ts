@@ -130,9 +130,13 @@ export class FirestoreSyncManager {
    * Update journal entries from Firestore results
    */
   private updateJournalEntries(results: InvoiceProcessingResult[]): void {
-    console.log('📊 SYNC MANAGER: updateJournalEntries called with', results.length, 'results')
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 SYNC MANAGER: updateJournalEntries called with', results.length, 'results')
+    }
     const entries = realtimeFirestoreService.extractJournalEntriesFromResults(results)
-    console.log('📊 SYNC MANAGER: Extracted', entries.length, 'raw entries from firestore service')
+    if (process.env.NODE_ENV === 'development') {
+      console.log('📊 SYNC MANAGER: Extracted', entries.length, 'raw entries from firestore service')
+    }
     
     this.journalEntries = entries.map(entry => ({
       id: entry.id,
@@ -151,8 +155,10 @@ export class FirestoreSyncManager {
       isBalanced: entry.isBalanced
     }))
 
-    console.log('📊 SYNC MANAGER: Mapped to', this.journalEntries.length, 'journal entries')
-    console.log('📊 SYNC MANAGER: Sample entry:', this.journalEntries[0])
+    if (process.env.NODE_ENV === 'development' && this.journalEntries.length > 0) {
+      console.log('📊 SYNC MANAGER: Mapped to', this.journalEntries.length, 'journal entries')
+      console.log('📊 SYNC MANAGER: Sample entry:', this.journalEntries[0])
+    }
     this.notifyJournalListeners()
   }
 
@@ -215,10 +221,14 @@ export class FirestoreSyncManager {
    * Notify journal listeners
    */
   private notifyJournalListeners(): void {
-    console.log('🔔 SYNC MANAGER: Notifying', this.listeners.size, 'journal listeners with', this.journalEntries.length, 'entries')
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔔 SYNC MANAGER: Notifying', this.listeners.size, 'journal listeners with', this.journalEntries.length, 'entries')
+    }
     this.listeners.forEach((listener, index) => {
       try {
-        console.log(`🔔 SYNC MANAGER: Calling listener ${index + 1}`)
+        if (process.env.NODE_ENV === 'development') {
+          console.log(`🔔 SYNC MANAGER: Calling listener ${listener.toString().substring(0, 50)}...`)
+        }
         listener(this.journalEntries)
       } catch (error) {
         console.error('Error in journal listener:', error)

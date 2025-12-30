@@ -860,14 +860,17 @@ class RealtimeFirestoreService {
   extractJournalEntriesFromResults(results: InvoiceProcessingResult[]): any[] {
     const entries: any[] = []
     
-    console.log('🔍 Extracting journal entries from', results.length, 'results')
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔍 Extracting journal entries from', results.length, 'results')
+    }
     
     results.forEach((result, resultIndex) => {
-      console.log(`📋 Processing result ${resultIndex + 1}:`, {
-        jobId: result.jobId,
-        hasExtractedData: !!result.extractedData,
-        extractedDataKeys: result.extractedData ? Object.keys(result.extractedData) : []
-      })
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📋 Processing result ${resultIndex + 1}:`, {
+          jobId: result.jobId,
+          hasExtractedData: !!result.extractedData
+        })
+      }
 
       // Check both possible data structures
       let journalData = null
@@ -875,21 +878,29 @@ class RealtimeFirestoreService {
       // Structure 1: extractedData.double_entry_bookkeeping (original structure)
       if (result.extractedData?.double_entry_bookkeeping) {
         journalData = result.extractedData.double_entry_bookkeeping
-        console.log('📊 Found journal data in extractedData.double_entry_bookkeeping')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📊 Found journal data in extractedData.double_entry_bookkeeping')
+        }
       }
       // Structure 2: extractedData.extracted_data.double_entry_bookkeeping (new structure)
       else if (result.extractedData?.extracted_data?.double_entry_bookkeeping) {
         journalData = result.extractedData.extracted_data.double_entry_bookkeeping
-        console.log('📊 Found journal data in extractedData.extracted_data.double_entry_bookkeeping')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📊 Found journal data in extractedData.extracted_data.double_entry_bookkeeping')
+        }
       }
       
       if (journalData) {
         const journalSets = journalData.journal_entry_set || []
-        console.log('📝 Found', journalSets.length, 'journal entry sets')
+        if (process.env.NODE_ENV === 'development') {
+          console.log('📝 Found', journalSets.length, 'journal entry sets')
+        }
         
         journalSets.forEach((journalSet: any, setIndex: number) => {
           const journalEntries = journalSet.entries || []
-          console.log(`🔢 Set ${setIndex + 1} has`, journalEntries.length, 'entries')
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`🔢 Set ${setIndex + 1} has`, journalEntries.length, 'entries')
+          }
           
           // Calculate balance for this journal set
           const totalDebits = journalEntries.reduce((sum: number, entry: any) => 
@@ -898,7 +909,9 @@ class RealtimeFirestoreService {
             sum + (parseFloat(entry.credit_amount) || 0), 0)
           const isSetBalanced = Math.abs(totalDebits - totalCredits) < 0.01 // Allow for small rounding differences
           
-          console.log(`⚖️ Set ${setIndex + 1} balance: Debits: ₹${totalDebits}, Credits: ₹${totalCredits}, Balanced: ${isSetBalanced}`)
+          if (process.env.NODE_ENV === 'development') {
+            console.log(`⚖️ Set ${setIndex + 1} balance: Debits: ₹${totalDebits}, Credits: ₹${totalCredits}, Balanced: ${isSetBalanced}`)
+          }
           
           journalEntries.forEach((entry: any, entryIndex: number) => {
             const invoiceNumber = result.extractedData?.extracted_data?.invoice_number || 
@@ -931,27 +944,27 @@ class RealtimeFirestoreService {
               createdAt: result.createdAt
             }
             
-            console.log(`✅ Added journal entry:`, {
-              id: journalEntry.id,
-              invoiceId: journalEntry.invoiceId,
-              resultId: result.id,
-              resultJobId: result.jobId,
-              gcsPath: result.gcsPath,
-              accountName: journalEntry.accountName,
-              debitAmount: journalEntry.debitAmount,
-              creditAmount: journalEntry.creditAmount
-            })
+            if (process.env.NODE_ENV === 'development') {
+              console.log(`✅ Added journal entry:`, {
+                id: journalEntry.id,
+                invoiceId: journalEntry.invoiceId,
+                accountName: journalEntry.accountName,
+                debitAmount: journalEntry.debitAmount,
+                creditAmount: journalEntry.creditAmount
+              })
+            }
             
             entries.push(journalEntry)
           })
         })
-      } else {
+      } else if (process.env.NODE_ENV === 'development') {
         console.log('⚠️ No journal data found for job:', result.jobId)
-        console.log('Available data structure:', result.extractedData)
       }
     })
     
-    console.log('🎯 Total journal entries extracted:', entries.length)
+    if (process.env.NODE_ENV === 'development' && entries.length > 0) {
+      console.log('🎯 Total journal entries extracted:', entries.length)
+    }
     return entries
   }
 
