@@ -40,7 +40,13 @@ router.post('/:id/assign', async (req: AuthenticatedRequest, res, next) => {
     }
     
     // Verify package exists
-    const packageDoc = await db.collection('packages').doc(packageId).get()
+  const { id: packageIdParam } = req.params
+  if (!packageIdParam) {
+    res.status(400).json({ error: 'Package ID is required' })
+    return
+  }
+  
+  const packageDoc = await db.collection('packages').doc(packageIdParam).get()
     if (!packageDoc.exists) {
       throw new NotFoundError('Package not found')
     }

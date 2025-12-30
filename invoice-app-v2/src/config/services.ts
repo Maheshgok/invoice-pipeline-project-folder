@@ -68,7 +68,7 @@ export async function checkServiceHealth() {
 // Legacy API compatibility (for gradual migration)
 export const getApiUrl = {
   // Map old endpoints to new service-based ones
-  signedUrl: (encodedPath: string) => getServiceUrl.core.uploadSignedUrl(),
+  signedUrl: (_encodedPath: string) => getServiceUrl.core.uploadSignedUrl(),
   archiveCompleted: () => getServiceUrl.core.archive(),
   
   // New service-based endpoints

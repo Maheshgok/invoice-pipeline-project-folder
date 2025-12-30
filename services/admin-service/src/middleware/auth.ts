@@ -15,12 +15,13 @@ export async function authenticate(
   req: AuthenticatedRequest, 
   res: Response, 
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const authHeader = req.headers.authorization
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing or invalid authorization header' })
+      res.status(401).json({ error: 'Missing or invalid authorization header' })
+      return
     }
 
     const token = authHeader.substring(7)
@@ -41,6 +42,7 @@ export async function authenticate(
   } catch (error) {
     logger.error('Authentication failed:', error)
     res.status(401).json({ error: 'Invalid or expired token' })
+    return
   }
 }
 
@@ -48,27 +50,31 @@ export function requireAdmin(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) {
+): void {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' })
+    res.status(401).json({ error: 'Authentication required' })
+    return
   }
 
   if (!['admin', 'superadmin'].includes(req.user.role)) {
     logger.warn(`Access denied for user ${req.user.uid} with role ${req.user.role}`)
-    return res.status(403).json({ error: 'Admin access required' })
+    res.status(403).json({ error: 'Admin access required' })
+    return
   }
 
   next()
 }
 
 export function requireRole(roles: string[]) {
-  return (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+  return (req: AuthenticatedRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
-      return res.status(401).json({ error: 'Authentication required' })
+      res.status(401).json({ error: 'Authentication required' })
+      return
     }
 
     if (!roles.includes(req.user.role)) {
-      return res.status(403).json({ error: `Required role: ${roles.join(' or ')}` })
+      res.status(403).json({ error: `Required role: ${roles.join(' or ')}` })
+      return
     }
 
     next()

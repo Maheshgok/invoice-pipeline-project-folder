@@ -1,6 +1,6 @@
 // API client for Core Invoice service operations
 
-import { createCoreServiceClient } from '../../services/shared/api-client'
+import { createCoreServiceClient } from '../../../services/shared/api-client'
 import { SERVICE_URLS } from '../config/services'
 import { authTokenManager } from './authTokenManager'
 
@@ -40,12 +40,7 @@ class CoreInvoiceApiService {
   private client = createCoreServiceClient(SERVICE_URLS.core)
 
   constructor() {
-    // Set auth token when available
-    authTokenManager.onTokenChange((token) => {
-      if (token) {
-        this.client.setAuthToken(token)
-      }
-    })
+    // Client will handle auth via the authTokenManager when making requests
   }
 
   // File Upload
@@ -58,7 +53,7 @@ class CoreInvoiceApiService {
     const response = await fetch(`${SERVICE_URLS.core}/api/upload`, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${await authTokenManager.getToken()}`
+        'Authorization': `Bearer ${await authTokenManager.getValidToken()}`
       },
       body: formData
     })
@@ -120,7 +115,7 @@ class CoreInvoiceApiService {
   }
 
   async getResultStream(jobId: string): Promise<EventSource> {
-    const token = await authTokenManager.getToken()
+    const token = await authTokenManager.getValidToken()
     const eventSource = new EventSource(
       `${SERVICE_URLS.core}/api/results/${jobId}/stream?token=${token}`
     )
@@ -128,7 +123,7 @@ class CoreInvoiceApiService {
   }
 
   async downloadResultsCSV(jobId: string): Promise<Blob> {
-    const token = await authTokenManager.getToken()
+    const token = await authTokenManager.getValidToken()
     const response = await fetch(`${SERVICE_URLS.core}/api/results/${jobId}/csv`, {
       headers: {
         'Authorization': `Bearer ${token}`

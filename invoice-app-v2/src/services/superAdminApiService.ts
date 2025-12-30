@@ -1,8 +1,7 @@
 // API client for SuperAdmin service operations
 
-import { createSuperAdminServiceClient } from '../../services/shared/api-client'
+import { createSuperAdminServiceClient } from '../../../services/shared/api-client'
 import { SERVICE_URLS } from '../config/services'
-import { authTokenManager } from './authTokenManager'
 
 export interface SuperAdminUser {
   id: string
@@ -36,12 +35,7 @@ class SuperAdminApiService {
   private client = createSuperAdminServiceClient(SERVICE_URLS.superadmin)
 
   constructor() {
-    // Set auth token when available
-    authTokenManager.onTokenChange((token) => {
-      if (token) {
-        this.client.setAuthToken(token)
-      }
-    })
+    // Client will handle auth via the authTokenManager when making requests
   }
 
   // User Management

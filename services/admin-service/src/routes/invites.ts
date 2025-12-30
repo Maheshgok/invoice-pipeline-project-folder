@@ -45,7 +45,13 @@ router.delete('/:id', async (req: AuthenticatedRequest, res, next) => {
       throw new ValidationError('User not associated with an organization')
     }
     
-    const inviteDoc = await db.collection('invitations').doc(id).get()
+    const { id: inviteId } = req.params
+  if (!inviteId) {
+    res.status(400).json({ error: 'Invite ID is required' })
+    return
+  }
+  
+  const inviteDoc = await db.collection('invitations').doc(inviteId).get()
     
     if (!inviteDoc.exists) {
       throw new NotFoundError('Invitation not found')

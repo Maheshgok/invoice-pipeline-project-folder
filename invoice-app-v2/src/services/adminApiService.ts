@@ -1,8 +1,7 @@
 // API client for Admin service operations
 
-import { createAdminServiceClient } from '../../services/shared/api-client'
+import { createAdminServiceClient } from '../../../services/shared/api-client'
 import { SERVICE_URLS } from '../config/services'
-import { authTokenManager } from './authTokenManager'
 
 export interface AdminOrganization {
   id: string
@@ -57,12 +56,7 @@ class AdminApiService {
   private client = createAdminServiceClient(SERVICE_URLS.admin)
 
   constructor() {
-    // Set auth token when available
-    authTokenManager.onTokenChange((token) => {
-      if (token) {
-        this.client.setAuthToken(token)
-      }
-    })
+    // Client will handle auth via the authTokenManager when making requests
   }
 
   // Organization Management

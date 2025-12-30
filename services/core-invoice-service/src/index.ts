@@ -56,7 +56,7 @@ export const upload = multer({
     if (allowedMimes.includes(file.mimetype)) {
       cb(null, true)
     } else {
-      cb(new Error(`File type ${file.mimetype} not allowed`), false)
+      cb(null, false) // Use null instead of Error for rejection
     }
   }
 })

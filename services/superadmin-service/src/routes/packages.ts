@@ -1,6 +1,7 @@
 import express from 'express'
 import { db } from '../index'
 import { ValidationError, NotFoundError } from '../middleware/errorHandler'
+import { AuthenticatedRequest } from '../middleware/auth'
 import logger from '../utils/logger'
 import Joi from 'joi'
 
@@ -20,7 +21,7 @@ const packageCreateSchema = Joi.object({
 })
 
 // GET /api/packages - Get all packages
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const snapshot = await db.collection('packages')
       .orderBy('createdAt', 'desc')
@@ -41,23 +42,23 @@ router.get('/', async (req, res, next) => {
 })
 
 // POST /api/packages - Create new package
-router.post('/', async (req, res, next) => {
+router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { error, value } = packageCreateSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     const packageData = {
       ...value,
       createdAt: new Date(),
       updatedAt: new Date(),
-      createdBy: req.user!.uid
+      createdBy: req.user?.uid
     }
     
     const packageRef = await db.collection('packages').add(packageData)
     
-    logger.info(`Package ${packageRef.id} created by SuperAdmin ${req.user!.uid}`)
+    logger.info(`Package ${packageRef.id} created by SuperAdmin ${req.user?.uid}`)
     
     res.status(201).json({
       success: true,
@@ -73,12 +74,17 @@ router.post('/', async (req, res, next) => {
 })
 
 // PUT /api/packages/:id - Update package
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { id } = req.params
+    if (!id) {
+      res.status(400).json({ error: 'Package ID is required' })
+      return
+    }
+    
     const { error, value } = packageCreateSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     const packageRef = db.collection('packages').doc(id)
@@ -91,12 +97,12 @@ router.put('/:id', async (req, res, next) => {
     const updateData = {
       ...value,
       updatedAt: new Date(),
-      updatedBy: req.user!.uid
+      updatedBy: req.user?.uid
     }
     
     await packageRef.update(updateData)
     
-    logger.info(`Package ${id} updated by SuperAdmin ${req.user!.uid}`)
+    logger.info(`Package ${id} updated by SuperAdmin ${req.user?.uid}`)
     
     res.json({
       success: true,
@@ -108,9 +114,13 @@ router.put('/:id', async (req, res, next) => {
 })
 
 // DELETE /api/packages/:id - Delete package
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { id } = req.params
+    if (!id) {
+      res.status(400).json({ error: 'Package ID is required' })
+      return
+    }
     
     const packageRef = db.collection('packages').doc(id)
     const packageDoc = await packageRef.get()
@@ -121,7 +131,7 @@ router.delete('/:id', async (req, res, next) => {
     
     await packageRef.delete()
     
-    logger.info(`Package ${id} deleted by SuperAdmin ${req.user!.uid}`)
+    logger.info(`Package ${id} deleted by SuperAdmin ${req.user?.uid}`)
     
     res.json({
       success: true,

@@ -1,6 +1,7 @@
 import express from 'express'
 import { db, auth } from '../index'
 import { ValidationError, NotFoundError } from '../middleware/errorHandler'
+import { AuthenticatedRequest } from '../middleware/auth'
 import logger from '../utils/logger'
 import Joi from 'joi'
 
@@ -18,9 +19,12 @@ const userUpdateSchema = Joi.object({
 })
 
 // GET /api/users - Get organization users
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { organizationId } = req.user!
+    if (!req.user?.organizationId) {
+      throw new ValidationError('User not associated with an organization')
+    }
+    const { organizationId } = req.user
     
     if (!organizationId) {
       throw new ValidationError('User not associated with an organization')
@@ -46,9 +50,12 @@ router.get('/', async (req, res, next) => {
 })
 
 // POST /api/users/invite - Invite user to organization
-router.post('/invite', async (req, res, next) => {
+router.post('/invite', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { organizationId } = req.user!
+    if (!req.user?.organizationId) {
+      throw new ValidationError('User not associated with an organization')
+    }
+    const { organizationId } = req.user
     
     if (!organizationId) {
       throw new ValidationError('User not associated with an organization')
@@ -56,7 +63,7 @@ router.post('/invite', async (req, res, next) => {
     
     const { error, value } = userInviteSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     const { email, role } = value
@@ -100,10 +107,17 @@ router.post('/invite', async (req, res, next) => {
 })
 
 // PUT /api/users/:uid - Update user in organization
-router.put('/:uid', async (req, res, next) => {
+router.put('/:uid', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { organizationId } = req.user!
     const { uid } = req.params
+    if (!uid) {
+      throw new ValidationError('User ID is required')
+    }
+    
+    if (!req.user?.organizationId) {
+      throw new ValidationError('User not associated with an organization')
+    }
+    const { organizationId } = req.user
     
     if (!organizationId) {
       throw new ValidationError('User not associated with an organization')
@@ -111,7 +125,7 @@ router.put('/:uid', async (req, res, next) => {
     
     const { error, value } = userUpdateSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     // Verify user belongs to same organization
@@ -150,7 +164,7 @@ router.put('/:uid', async (req, res, next) => {
     
     await db.collection('users').doc(uid).update(updateData)
     
-    logger.info(`User ${uid} updated by admin ${req.user!.uid}`)
+    logger.info(`User ${uid} updated by admin ${req.user.uid}`)
     
     res.json({
       success: true,
@@ -162,10 +176,17 @@ router.put('/:uid', async (req, res, next) => {
 })
 
 // DELETE /api/users/:uid - Remove user from organization
-router.delete('/:uid', async (req, res, next) => {
+router.delete('/:uid', async (req: AuthenticatedRequest, res, next) => {
   try {
-    const { organizationId } = req.user!
     const { uid } = req.params
+    if (!uid) {
+      throw new ValidationError('User ID is required')
+    }
+    
+    if (!req.user?.organizationId) {
+      throw new ValidationError('User not associated with an organization')
+    }
+    const { organizationId } = req.user
     
     if (!organizationId) {
       throw new ValidationError('User not associated with an organization')

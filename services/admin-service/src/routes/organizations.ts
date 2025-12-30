@@ -76,7 +76,7 @@ router.post('/', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { error, value } = organizationCreateSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     // Check if user already has an organization
@@ -131,7 +131,7 @@ router.put('/', async (req: AuthenticatedRequest, res, next) => {
     
     const { error, value } = organizationUpdateSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     const updateData = {

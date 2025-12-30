@@ -91,10 +91,13 @@ router.post('/:uid/approve', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { error, value } = userApprovalSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     const { uid } = req.params
+    if (!uid) {
+      throw new ValidationError('User ID is required')
+    }
     const { approved, role, organizationId } = value
     
     // Update user document
@@ -141,10 +144,13 @@ router.put('/:uid', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { error, value } = userUpdateSchema.validate(req.body)
     if (error) {
-      throw new ValidationError(error.details[0].message)
+      throw new ValidationError(error.details?.[0]?.message || 'Validation failed')
     }
     
     const { uid } = req.params
+    if (!uid) {
+      throw new ValidationError('User ID is required')
+    }
     const { role, organizationId, packageId } = value
     
     const userRef = db.collection('users').doc(uid)
@@ -192,6 +198,9 @@ router.put('/:uid', async (req: AuthenticatedRequest, res, next) => {
 router.delete('/:uid', async (req: AuthenticatedRequest, res, next) => {
   try {
     const { uid } = req.params
+    if (!uid) {
+      throw new ValidationError('User ID is required')
+    }
     
     // Delete from Firebase Auth
     await auth.deleteUser(uid)

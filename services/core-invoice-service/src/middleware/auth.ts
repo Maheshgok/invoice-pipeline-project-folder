@@ -15,12 +15,13 @@ export async function authenticate(
   req: AuthenticatedRequest, 
   res: Response, 
   next: NextFunction
-) {
+): Promise<void> {
   try {
     const authHeader = req.headers.authorization
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      return res.status(401).json({ error: 'Missing or invalid authorization header' })
+      res.status(401).json({ error: 'Missing or invalid authorization header' })
+      return
     }
 
     const token = authHeader.substring(7)
@@ -41,6 +42,7 @@ export async function authenticate(
   } catch (error) {
     logger.error('Authentication failed:', error)
     res.status(401).json({ error: 'Invalid or expired token' })
+    return
   }
 }
 
@@ -48,9 +50,10 @@ export function requireValidUser(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-) {
+): void {
   if (!req.user) {
-    return res.status(401).json({ error: 'Authentication required' })
+    res.status(401).json({ error: 'Authentication required' })
+    return
   }
 
   // Check if user is approved (for regular users)
