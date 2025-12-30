@@ -4,7 +4,7 @@ Handles image analysis with OpenAI Vision API
 
 Latest Deployment: 2025-11-20 09:52 UTC
 OpenAI Library: ≥1.50.0 (latest compatible version)
-Key Improvements: Enhanced error handling, timeout configuration, retry logic
+Key Improvements: Enhanced error handling, timeout configuration, retry logic, external prompts
 Docker Image: queue-processor@sha256:fe48a8dac90b5ef3e824bbc32d2a4b00d81c349250e16e1f5453820f6c319ab3
 """
 import os
@@ -18,6 +18,9 @@ from google.cloud import storage
 from pdf2image import convert_from_bytes
 from PIL import Image
 import io
+
+# Import prompts from external files
+from prompts import get_invoice_prompt, get_system_prompt, prompt_config
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +52,14 @@ class OpenAIProcessor:
         if not self.api_key:
             raise ValueError("OPENAI_API_KEY environment variable or OPENAI_API_KEY_SECRET not set")
         
-        # Initialize OpenAI client with explicit configuration
+        # Initialize OpenAI client with configuration from external config
         try:
             self.client = OpenAI(
                 api_key=self.api_key,
-                timeout=120.0,  # Increased timeout for Cloud Run
-                max_retries=3   # Increased retries for better reliability
+                timeout=prompt_config.get('timeout', 120.0),
+                max_retries=prompt_config.get('max_retries', 3)
             )
-            logger.info("OpenAI client initialized successfully")
+            logger.info("OpenAI client initialized successfully with external configuration")
         except Exception as e:
             logger.error(f"Failed to initialize OpenAI client: {e}")
             raise
@@ -64,130 +67,20 @@ class OpenAIProcessor:
         # Initialize storage client with explicit project ID
         project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
         self.storage_client = storage.Client(project=project_id)
+        
+        # Get prompt configuration
+        self.prompt_version = prompt_config.get('prompt_version', 'default')
+        self.system_prompt_version = prompt_config.get('system_prompt_version', 'default')
+        self.model = prompt_config.get('model', 'gpt-4o')
+        self.max_tokens = prompt_config.get('max_tokens', 2000)
+        self.temperature = prompt_config.get('temperature', 0.1)
+        
         logger.info(f"OpenAI Processor initialized for project: {project_id}")
+        logger.info(f"Using prompt version: {self.prompt_version}")
+        logger.info(f"Using system prompt version: {self.system_prompt_version}")
+        logger.info(f"Using model: {self.model} with max_tokens: {self.max_tokens}, temperature: {self.temperature}")
         
-        # Indian purchase invoice processing prompt
-        self.invoice_prompt = """You are an accountant for an INDIAN business recording PURCHASE / VENDOR invoices
-in the BUYER'S books.
-
-ASSUMPTIONS
-- Every invoice image is a PURCHASE (vendor bill), never a sales invoice.
-- The business is always the CUSTOMER on the invoice.
-- Any GST/tax on the invoice is INPUT TAX (asset/debit), NOT output tax payable.
-
-TASK
-Read the invoice image and return a SINGLE JSON object with EXACTLY this shape
-(keys must match; use empty string/null/0 if something is not present):
-
-{
-  "vendor_name": "",
-  "invoice_number": "",
-  "invoice_date": "",
-  "due_date": "",
-  "total_amount": 0,
-  "currency": "",
-  "gstin": "",
-  "pan": "",
-  "items": [
-    {
-      "description": "",
-      "quantity": 0,
-      "unit_price": 0,
-      "total": 0,
-      "hsn_code": "",
-      "gst_rate": 0
-    }
-  ],
-  "tax_details": {
-    "cgst": 0,
-    "sgst": 0,
-    "igst": 0,
-    "total_gst": 0,
-    "taxable_amount": 0
-  },
-  "suggested_journal_entries": [
-    {
-      "account_name": "",
-      "account_type": "",
-      "debit_amount": 0,
-      "credit_amount": 0,
-      "narration": ""
-    }
-  ],
-  "double_entry_bookkeeping": {
-    "journal_entry_set": [
-      {
-        "entry_number": 1,
-        "date": "",
-        "entries": [
-          {
-            "account_name": "",
-            "account_code": "",
-            "account_type": "",
-            "debit_amount": 0,
-            "credit_amount": 0,
-            "narration": ""
-          }
-        ],
-        "total_debit": 0,
-        "total_credit": 0,
-        "is_balanced": true,
-        "entry_description": ""
-      }
-    ]
-  },
-  "compliance_notes": {
-    "gst_applicable": "",
-    "tds_applicable": "",
-    "accounting_standard": "",
-    "expense_category": ""
-  },
-  "extracted_table": [
-    []
-  ]
-}
-
-FIELD RULES
-- Dates: "DD-MM-YYYY" where possible.
-- Numeric fields: numbers only (no commas, no currency symbols).
-- If a field is missing on the invoice, use 0 for amounts and "" for strings.
-
-ACCOUNTING RULES (INDIA, PURCHASE SIDE)
-- ALWAYS treat tax as INPUT tax:
-  - Use accounts like "CGST Input Tax Credit", "SGST Input Tax Credit",
-    "IGST Input Tax Credit", "Input GST", "GST Input Tax Credit", "Tax Receivable".
-  - These MUST be "Current Asset" (or "Asset") accounts with DEBIT balances.
-  - NEVER create liability tax accounts such as "Sales Tax Payable",
-    "GST Payable", "Output GST", "Output CGST/SGST/IGST".
-- For each invoice, the main pattern is:
-  - Dr Expense/Asset accounts for taxable value (e.g. Office Expenses, Furniture, etc.)
-  - Dr Input GST (CGST + SGST or IGST) for tax amount
-  - Cr Accounts Payable / Vendor Name for total invoice amount
-- "suggested_journal_entries" MUST be consistent with
-  "double_entry_bookkeeping.journal_entry_set" in accounts and amounts.
-- In every journal entry line:
-  - EITHER debit_amount > 0 and credit_amount = 0
-  - OR credit_amount > 0 and debit_amount = 0
-  - NEVER have both > 0, and never both non-zero.
-- For each journal_entry_set:
-  - total_debit = sum of all debit_amount in entries
-  - total_credit = sum of all credit_amount in entries
-  - total_debit MUST EQUAL total_credit
-  - is_balanced MUST be true
-- The total invoice logic must be consistent:
-  taxable_amount + total_gst = total_amount (when tax is present).
-
-GENERAL
-- Focus only on the current invoice image.
-- Be conservative: do not invent extra taxes or charges not visible.
-- If something is unclear, use your best accounting judgment but keep
-  double-entry balanced and consistent with total_amount.
-
-OUTPUT FORMAT
-- Return ONLY the JSON object.
-- No explanations, no comments, no trailing commas."""
-        
-        logger.info("OpenAI Processor initialized")
+        logger.info("OpenAI Processor initialized with external prompt configuration")
 
     def process_image(self, bucket_path: str) -> Dict[str, Any]:
         """
@@ -272,24 +165,43 @@ OUTPUT FORMAT
                     "data": None
                 }
             
-            # Call OpenAI Vision API
-            logger.info(f"Calling OpenAI Vision API with model gpt-4o")
+            # Call OpenAI Vision API with external prompts and configuration
+            invoice_prompt = get_invoice_prompt(self.prompt_version)
+            system_prompt = get_system_prompt(self.system_prompt_version)
+            
+            logger.info(f"Calling OpenAI Vision API with model {self.model}")
+            logger.info(f"Using prompt version: {self.prompt_version}")
+            logger.info(f"Using system prompt version: {self.system_prompt_version}")
+            
             try:
-                response = self.client.chat.completions.create(
-                    model="gpt-4o",  # Updated to current vision model
-                    messages=[
+                # Prepare messages with system prompt if provided
+                messages = []
+                
+                # Add system message if system prompt is available
+                if system_prompt and system_prompt.strip():
+                    messages.append({
+                        "role": "system", 
+                        "content": system_prompt
+                    })
+                
+                # Add user message with invoice prompt and image
+                messages.append({
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": invoice_prompt},
                         {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": self.invoice_prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {"url": data_url}
-                                }
-                            ]
+                            "type": "image_url",
+                            "image_url": {"url": data_url}
                         }
-                    ],
-                    max_tokens=2000
+                    ]
+                })
+                
+                # Make API call with configuration parameters
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=self.max_tokens,
+                    temperature=self.temperature
                 )
                 logger.info(f"OpenAI API call successful, extracting response content")
             except Exception as api_error:
