@@ -25,7 +25,81 @@ export interface InvoiceProcessingResult {
   processedAt?: string
   userEmail: string
   userUID: string  // Added for better user isolation
-  extractedData?: any
+  extractedData?: {
+    document_type?: string
+    visibility_confidence?: string
+    vendor_details?: {
+      name?: string
+      gstin?: string
+      pan?: string
+      contact_number?: string
+      email?: string
+      address?: string
+    }
+    buyer_details?: {
+      name?: string
+      gstin?: string
+      address?: string
+      place_of_supply?: string
+    }
+    invoice_details?: {
+      invoice_number?: string
+      invoice_date?: string
+      due_date?: string
+      po_number?: string
+      challan_number?: string
+      reverse_charge?: string
+      transport_details?: string
+      terms_and_conditions?: string
+    }
+    currency?: string
+    items?: Array<{
+      serial_no?: string
+      description?: string
+      detailed_narration?: string
+      hsn_code?: string
+      quantity?: number
+      unit?: string
+      unit_price?: number
+      discount?: number
+      taxable_value?: number
+      gst_rate?: number
+      cgst_amount?: number
+      sgst_amount?: number
+      igst_amount?: number
+      line_total?: number
+    }>
+    tax_summary?: {
+      taxable_value?: number
+      cgst_total?: number
+      sgst_total?: number
+      igst_total?: number
+      total_gst?: number
+      round_off?: number
+      grand_total?: number
+    }
+    bank_details?: {
+      account_number?: string
+      ifsc?: string
+      bank_name?: string
+      upi_id?: string
+    }
+    compliance_flags?: {
+      gst_invoice_compliant?: string
+      mandatory_fields_missing?: string[]
+      gst_applicable?: string
+      tds_applicable?: string
+    }
+    extracted_table?: any[][]
+    raw_text_reference?: string
+    // Legacy fields for backward compatibility
+    vendor_name?: string
+    invoice_number?: string
+    invoice_date?: string
+    total_amount?: number
+    double_entry_bookkeeping?: any
+    extracted_data?: any
+  }
   error?: string
   jobId?: string
   gcsPath?: string
@@ -872,93 +946,202 @@ class RealtimeFirestoreService {
         })
       }
 
-      // Check both possible data structures
-      let journalData = null
-      
-      // Structure 1: extractedData.double_entry_bookkeeping (original structure)
-      if (result.extractedData?.double_entry_bookkeeping) {
-        journalData = result.extractedData.double_entry_bookkeeping
-        if (process.env.NODE_ENV === 'development') {
-          console.log('📊 Found journal data in extractedData.double_entry_bookkeeping')
-        }
-      }
-      // Structure 2: extractedData.extracted_data.double_entry_bookkeeping (new structure)
-      else if (result.extractedData?.extracted_data?.double_entry_bookkeeping) {
-        journalData = result.extractedData.extracted_data.double_entry_bookkeeping
-        if (process.env.NODE_ENV === 'development') {
-          console.log('📊 Found journal data in extractedData.extracted_data.double_entry_bookkeeping')
-        }
-      }
-      
-      if (journalData) {
-        const journalSets = journalData.journal_entry_set || []
-        if (process.env.NODE_ENV === 'development') {
-          console.log('📝 Found', journalSets.length, 'journal entry sets')
-        }
-        
-        journalSets.forEach((journalSet: any, setIndex: number) => {
-          const journalEntries = journalSet.entries || []
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`🔢 Set ${setIndex + 1} has`, journalEntries.length, 'entries')
-          }
-          
-          // Calculate balance for this journal set
-          const totalDebits = journalEntries.reduce((sum: number, entry: any) => 
-            sum + (parseFloat(entry.debit_amount) || 0), 0)
-          const totalCredits = journalEntries.reduce((sum: number, entry: any) => 
-            sum + (parseFloat(entry.credit_amount) || 0), 0)
-          const isSetBalanced = Math.abs(totalDebits - totalCredits) < 0.01 // Allow for small rounding differences
-          
-          if (process.env.NODE_ENV === 'development') {
-            console.log(`⚖️ Set ${setIndex + 1} balance: Debits: ₹${totalDebits}, Credits: ₹${totalCredits}, Balanced: ${isSetBalanced}`)
-          }
-          
-          journalEntries.forEach((entry: any, entryIndex: number) => {
-            const invoiceNumber = result.extractedData?.extracted_data?.invoice_number || 
-                                  result.extractedData?.invoice_number || 
-                                  'N/A'
-            const vendorName = result.extractedData?.extracted_data?.vendor_name || 
-                               result.extractedData?.vendor_name || 
-                               'Unknown'
-            const invoiceDate = result.extractedData?.extracted_data?.invoice_date || 
-                                result.extractedData?.invoice_date || 
-                                entry.date || 
-                                journalSet.date || 
-                                ''
+      // Create journal entries from the new GST-structured data
+      if (result.extractedData) {
+        const data = result.extractedData
+        const vendorName = data.vendor_details?.name || data.vendor_name || 'Unknown'
+        const invoiceNumber = data.invoice_details?.invoice_number || data.invoice_number || 'N/A'
+        const invoiceDate = data.invoice_details?.invoice_date || data.invoice_date || ''
+        const taxSummary = data.tax_summary
+        const items = data.items || []
 
-            const journalEntry = {
-              id: `${result.jobId}_${setIndex}_${entryIndex}`,
+        // Create journal entries based on the new structure
+        let entryIndex = 0
+        
+        // Entry 1: Debit expenses for taxable amounts
+        if (items.length > 0) {
+          items.forEach((item, itemIndex) => {
+            if (item.taxable_value && item.taxable_value > 0) {
+              const journalEntry = {
+                id: `${result.jobId}_exp_${itemIndex}`,
+                invoiceId: result.id,
+                invoiceNumber: invoiceNumber,
+                vendor: vendorName,
+                entryIndex: entryIndex++,
+                date: invoiceDate,
+                accountName: 'Expense - ' + (item.description || 'General'),
+                accountCode: '',
+                accountType: 'Expense',
+                debitAmount: parseFloat(item.taxable_value.toString()) || 0,
+                creditAmount: 0,
+                narration: item.detailed_narration || item.description || 'Purchase expense',
+                isBalanced: false,
+                userId: result.userEmail,
+                createdAt: result.createdAt
+              }
+              entries.push(journalEntry)
+            }
+          })
+        }
+
+        // Entry 2: Debit Input GST accounts
+        if (taxSummary) {
+          if (taxSummary.cgst_total && taxSummary.cgst_total > 0) {
+            const cgstEntry = {
+              id: `${result.jobId}_cgst`,
               invoiceId: result.id,
               invoiceNumber: invoiceNumber,
               vendor: vendorName,
-              entryIndex: entryIndex,
+              entryIndex: entryIndex++,
               date: invoiceDate,
-              accountName: entry.account_name || '',
-              accountCode: entry.account_code || '',
-              accountType: entry.account_type || '',
-              debitAmount: parseFloat(entry.debit_amount) || 0,
-              creditAmount: parseFloat(entry.credit_amount) || 0,
-              narration: entry.narration || journalSet.entry_description || '',
-              isBalanced: isSetBalanced, // Add balance status
+              accountName: 'CGST Input Tax Credit',
+              accountCode: '',
+              accountType: 'Current Asset',
+              debitAmount: parseFloat(taxSummary.cgst_total.toString()) || 0,
+              creditAmount: 0,
+              narration: 'CGST Input Tax Credit',
+              isBalanced: false,
               userId: result.userEmail,
               createdAt: result.createdAt
             }
-            
+            entries.push(cgstEntry)
+          }
+
+          if (taxSummary.sgst_total && taxSummary.sgst_total > 0) {
+            const sgstEntry = {
+              id: `${result.jobId}_sgst`,
+              invoiceId: result.id,
+              invoiceNumber: invoiceNumber,
+              vendor: vendorName,
+              entryIndex: entryIndex++,
+              date: invoiceDate,
+              accountName: 'SGST Input Tax Credit',
+              accountCode: '',
+              accountType: 'Current Asset',
+              debitAmount: parseFloat(taxSummary.sgst_total.toString()) || 0,
+              creditAmount: 0,
+              narration: 'SGST Input Tax Credit',
+              isBalanced: false,
+              userId: result.userEmail,
+              createdAt: result.createdAt
+            }
+            entries.push(sgstEntry)
+          }
+
+          if (taxSummary.igst_total && taxSummary.igst_total > 0) {
+            const igstEntry = {
+              id: `${result.jobId}_igst`,
+              invoiceId: result.id,
+              invoiceNumber: invoiceNumber,
+              vendor: vendorName,
+              entryIndex: entryIndex++,
+              date: invoiceDate,
+              accountName: 'IGST Input Tax Credit',
+              accountCode: '',
+              accountType: 'Current Asset',
+              debitAmount: parseFloat(taxSummary.igst_total.toString()) || 0,
+              creditAmount: 0,
+              narration: 'IGST Input Tax Credit',
+              isBalanced: false,
+              userId: result.userEmail,
+              createdAt: result.createdAt
+            }
+            entries.push(igstEntry)
+          }
+
+          // Entry 3: Credit Accounts Payable
+          if (taxSummary.grand_total && taxSummary.grand_total > 0) {
+            const payableEntry = {
+              id: `${result.jobId}_payable`,
+              invoiceId: result.id,
+              invoiceNumber: invoiceNumber,
+              vendor: vendorName,
+              entryIndex: entryIndex++,
+              date: invoiceDate,
+              accountName: `Accounts Payable - ${vendorName}`,
+              accountCode: '',
+              accountType: 'Current Liability',
+              debitAmount: 0,
+              creditAmount: parseFloat(taxSummary.grand_total.toString()) || 0,
+              narration: `Purchase from ${vendorName} - Invoice ${invoiceNumber}`,
+              isBalanced: true,
+              userId: result.userEmail,
+              createdAt: result.createdAt
+            }
+            entries.push(payableEntry)
+          }
+        }
+      }
+
+      // Fallback to legacy structure if new structure is not available
+      if (entries.length === 0) {
+        // Check both possible legacy data structures
+        let journalData = null
+        
+        // Structure 1: extractedData.double_entry_bookkeeping (original structure)
+        if (result.extractedData?.double_entry_bookkeeping) {
+          journalData = result.extractedData.double_entry_bookkeeping
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📊 Found legacy journal data in extractedData.double_entry_bookkeeping')
+          }
+        }
+        // Structure 2: extractedData.extracted_data.double_entry_bookkeeping (legacy structure)
+        else if (result.extractedData?.extracted_data?.double_entry_bookkeeping) {
+          journalData = result.extractedData.extracted_data.double_entry_bookkeeping
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📊 Found legacy journal data in extractedData.extracted_data.double_entry_bookkeeping')
+          }
+        }
+        
+        if (journalData) {
+          const journalSets = journalData.journal_entry_set || []
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📝 Found', journalSets.length, 'legacy journal entry sets')
+          }
+          
+          journalSets.forEach((journalSet: any, setIndex: number) => {
+            const journalEntries = journalSet.entries || []
             if (process.env.NODE_ENV === 'development') {
-              console.log(`✅ Added journal entry:`, {
-                id: journalEntry.id,
-                invoiceId: journalEntry.invoiceId,
-                accountName: journalEntry.accountName,
-                debitAmount: journalEntry.debitAmount,
-                creditAmount: journalEntry.creditAmount
-              })
+              console.log(`🔢 Legacy set ${setIndex + 1} has`, journalEntries.length, 'entries')
             }
             
-            entries.push(journalEntry)
+            journalEntries.forEach((entry: any, entryIndex: number) => {
+              const invoiceNumber = result.extractedData?.extracted_data?.invoice_number || 
+                                   result.extractedData?.invoice_number || 
+                                   'N/A'
+              const vendorName = result.extractedData?.extracted_data?.vendor_name || 
+                                 result.extractedData?.vendor_name || 
+                                 'Unknown'
+              const invoiceDate = result.extractedData?.extracted_data?.invoice_date || 
+                                  result.extractedData?.invoice_date || 
+                                  entry.date || 
+                                  journalSet.date || 
+                                  ''
+
+              const journalEntry = {
+                id: `${result.jobId}_${setIndex}_${entryIndex}`,
+                invoiceId: result.id,
+                invoiceNumber: invoiceNumber,
+                vendor: vendorName,
+                entryIndex: entryIndex,
+                date: invoiceDate,
+                accountName: entry.account_name || '',
+                accountCode: entry.account_code || '',
+                accountType: entry.account_type || '',
+                debitAmount: parseFloat(entry.debit_amount) || 0,
+                creditAmount: parseFloat(entry.credit_amount) || 0,
+                narration: entry.narration || journalSet.entry_description || '',
+                isBalanced: false,
+                userId: result.userEmail,
+                createdAt: result.createdAt
+              }
+              
+              entries.push(journalEntry)
+            })
           })
-        })
-      } else if (process.env.NODE_ENV === 'development') {
-        console.log('⚠️ No journal data found for job:', result.jobId)
+        } else if (process.env.NODE_ENV === 'development') {
+          console.log('⚠️ No journal data found for job:', result.jobId)
+        }
       }
     })
     

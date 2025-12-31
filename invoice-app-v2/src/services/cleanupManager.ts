@@ -25,7 +25,6 @@ class CleanupManager {
   private static instance: CleanupManager
   private cleanupInProgress = false
   private lastCleanup: number = 0
-  private readonly MIN_CLEANUP_INTERVAL = 300000 // 5 minutes minimum between cleanups
 
   private constructor() {}
 
@@ -56,18 +55,6 @@ class CleanupManager {
         trigger,
         timestamp: new Date().toISOString(),
         error: 'Cleanup already in progress'
-      }
-    }
-
-    // Rate limiting - prevent too frequent cleanup
-    if (now - this.lastCleanup < this.MIN_CLEANUP_INTERVAL) {
-      console.log(`⏱️ Cleanup rate limited, skipping ${trigger}`)
-      return {
-        success: false,
-        archived_count: 0,
-        trigger,
-        timestamp: new Date().toISOString(),
-        error: 'Rate limited'
       }
     }
 

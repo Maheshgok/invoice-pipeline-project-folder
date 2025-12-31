@@ -149,9 +149,10 @@ export class FirestoreSyncManager {
       creditAmount: entry.creditAmount,
       reference: entry.invoiceNumber,
       vendor: entry.vendor,
-      totalAmount: entry.totalAmount,
-      taxableAmount: entry.taxableAmount,
-      gstAmount: entry.gstAmount,
+      // Enhanced fields from new GST structure
+      totalAmount: this.getTotalAmountFromResult(entry.invoiceId, results),
+      taxableAmount: this.getTaxableAmountFromResult(entry.invoiceId, results),
+      gstAmount: this.getGstAmountFromResult(entry.invoiceId, results),
       isBalanced: entry.isBalanced
     }))
 
@@ -301,5 +302,26 @@ export class FirestoreSyncManager {
     this.allResults = []
     this.notifyJournalListeners()
     this.notifyResultListeners()
+  }
+
+  /**
+   * Helper methods to extract amounts from new GST structure
+   */
+  private getTotalAmountFromResult(invoiceId: string, results: InvoiceProcessingResult[]): number {
+    const result = results.find(r => r.id === invoiceId)
+    return result?.extractedData?.tax_summary?.grand_total || 
+           result?.extractedData?.total_amount || 0
+  }
+
+  private getTaxableAmountFromResult(invoiceId: string, results: InvoiceProcessingResult[]): number {
+    const result = results.find(r => r.id === invoiceId)
+    return result?.extractedData?.tax_summary?.taxable_value || 
+           result?.extractedData?.taxable_amount || 0
+  }
+
+  private getGstAmountFromResult(invoiceId: string, results: InvoiceProcessingResult[]): number {
+    const result = results.find(r => r.id === invoiceId)
+    return result?.extractedData?.tax_summary?.total_gst || 
+           result?.extractedData?.gst_amount || 0
   }
 }

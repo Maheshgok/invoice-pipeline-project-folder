@@ -144,6 +144,91 @@ class ResultManager:
             logger.error(f"Error storing result for job {job_id}: {e}")
             return False
 
+    def store_result_enhanced(self, job: Any, success: bool, result_data: Optional[Dict] = None, error: Optional[str] = None) -> bool:
+        """
+        Store job result in Firestore with enhanced GST-structured data
+        Returns: True if stored successfully, False otherwise
+        """
+        try:
+            doc_ref = self.firestore_client.collection('invoice_results').document(job.job_id)
+            
+            # Base document data with optimization fields
+            status = 'completed' if success else 'failed'
+            doc_data = {
+                'job_id': job.job_id,
+                'user_email': job.user_email,
+                'user_uid': getattr(job, 'user_uid', ''),
+                'bucket_path': job.bucket_path,
+                'created_at': job.created_at.isoformat() if hasattr(job.created_at, 'isoformat') else str(job.created_at),
+                'updated_at': datetime.now().isoformat(),
+                'retry_count': getattr(job, 'retry_count', 0),
+                'status': status,
+                # Performance optimization fields
+                'status_category': self._compute_status_category(status),
+                'priority_score': self._compute_priority_score(status),
+                'display_tier': self._compute_display_tier(status),
+                'processing_duration': 0,  # Will be computed if available
+                'file_size_category': 'medium',  # Default value
+                'user_activity_score': 1.0,  # Default value
+                'frontend_status': None
+            }
+            
+            if success and result_data:
+                # Store the complete OpenAI response with GST structure
+                sanitized_result = self._sanitize_for_firestore(result_data)
+                doc_data['result'] = sanitized_result
+                doc_data['completed_at'] = datetime.now().isoformat()
+                
+                # Extract key fields for easy querying from new GST structure
+                if isinstance(result_data, dict):
+                    # New GST structure
+                    vendor_details = result_data.get('vendor_details', {})
+                    if isinstance(vendor_details, dict):
+                        doc_data['vendor_name'] = vendor_details.get('name', '')
+                        doc_data['vendor_gstin'] = vendor_details.get('gstin', '')
+                    
+                    invoice_details = result_data.get('invoice_details', {})
+                    if isinstance(invoice_details, dict):
+                        doc_data['invoice_number'] = invoice_details.get('invoice_number', '')
+                        doc_data['invoice_date'] = invoice_details.get('invoice_date', '')
+                    
+                    tax_summary = result_data.get('tax_summary', {})
+                    if isinstance(tax_summary, dict):
+                        doc_data['total_amount'] = tax_summary.get('grand_total', 0)
+                        doc_data['taxable_amount'] = tax_summary.get('taxable_value', 0)
+                        doc_data['gst_amount'] = tax_summary.get('total_gst', 0)
+                    
+                    # Store confidence and compliance info
+                    doc_data['visibility_confidence'] = result_data.get('visibility_confidence', '')
+                    doc_data['document_type'] = result_data.get('document_type', '')
+                    
+                    compliance_flags = result_data.get('compliance_flags', {})
+                    if isinstance(compliance_flags, dict):
+                        doc_data['gst_compliant'] = compliance_flags.get('gst_invoice_compliant', '')
+                        doc_data['gst_applicable'] = compliance_flags.get('gst_applicable', '')
+                    
+                    # Legacy fallback for backward compatibility
+                    if not doc_data.get('vendor_name'):
+                        doc_data['vendor_name'] = result_data.get('vendor_name', '')
+                    if not doc_data.get('invoice_number'):
+                        doc_data['invoice_number'] = result_data.get('invoice_number', '')
+                    if not doc_data.get('total_amount'):
+                        doc_data['total_amount'] = result_data.get('total_amount', 0)
+                        
+            else:
+                doc_data['error'] = error
+                doc_data['failed_at'] = datetime.now().isoformat()
+            
+            # Store document
+            doc_ref.set(doc_data)
+            
+            logger.info(f"✅ Enhanced result stored: {job.job_id} - Status: {status}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Enhanced result storage failed for {job.job_id}: {e}")
+            return False
+
     def store_result_legacy(self, job: Any, success: bool, result_data: Optional[Dict] = None, error: Optional[str] = None) -> bool:
         """
         Store job result in Firestore

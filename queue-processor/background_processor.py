@@ -76,8 +76,8 @@ class BackgroundProcessor:
             result = self.openai_processor.process_image(job.bucket_path)
             
             if result["success"]:
-                # Step 2: Store successful result
-                stored = self.result_manager.store_result(job, True, result["data"])
+                # Step 2: Store successful result using enhanced GST structure
+                stored = self.result_manager.store_result_enhanced(job, True, result["data"])
                 
                 if stored:
                     # Step 3: Mark job as completed
@@ -90,7 +90,7 @@ class BackgroundProcessor:
                     logger.error(f"Job {job.job_id} failed due to storage error")
             else:
                 # Step 2: Store failed result
-                stored = self.result_manager.store_result(job, False, error=result["error"])
+                stored = self.result_manager.store_result_enhanced(job, False, error=result["error"])
                 
                 # Step 3: Mark job as failed (will trigger retry if eligible)
                 self.queue_manager.complete_job(job, False, error=result["error"])
@@ -103,7 +103,7 @@ class BackgroundProcessor:
             
             try:
                 # Try to store the error
-                self.result_manager.store_result(job, False, error=error_msg)
+                self.result_manager.store_result_enhanced(job, False, error=error_msg)
             except:
                 logger.error(f"Failed to store error result for job {job.job_id}")
             
