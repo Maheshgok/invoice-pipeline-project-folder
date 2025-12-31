@@ -18,12 +18,6 @@ const Login: React.FC = () => {
   const [systemInUse, setSystemInUse] = useState(false)
   const [checkingSystemUsage, setCheckingSystemUsage] = useState(false)
 
-  // Redirect if already authenticated
-  if (user && !loading) {
-    const from = (location.state as any)?.from?.pathname || '/dashboard'
-    return <Navigate to={from} replace />
-  }
-
   // Check system usage periodically
   useEffect(() => {
     let intervalId: NodeJS.Timeout
@@ -52,6 +46,12 @@ const Login: React.FC = () => {
       if (intervalId) clearInterval(intervalId)
     }
   }, [])
+
+  // Redirect if already authenticated (after all hooks)
+  if (user && !loading) {
+    const from = (location.state as any)?.from?.pathname || '/dashboard'
+    return <Navigate to={from} replace />
+  }
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
