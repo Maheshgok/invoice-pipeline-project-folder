@@ -26,6 +26,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
+  const [sessionInitialized, setSessionInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Refresh user profile
@@ -87,18 +88,21 @@ export function AuthProvider({ children }: AuthProviderProps) {
           try {
             const { sessionSecurityService } = await import('../services/sessionSecurityService')
             const currentSession = sessionSecurityService.getCurrentSession()
-            if (!currentSession.sessionId) {
+            if (!currentSession.sessionId && !sessionInitialized) {
+              setSessionInitialized(true)
               const sessionStarted = await sessionSecurityService.startSession(user.uid)
               if (!sessionStarted) {
                 console.log('🚫 Session blocked - system in use by another user')
                 // Force logout since session couldn't be started
                 await authService.signOut()
+                setSessionInitialized(false)
                 return
               }
               console.log('🔒 Session security initialized')
             }
           } catch (sessionError) {
             console.warn('⚠️ Session security initialization failed:', sessionError)
+            setSessionInitialized(false)
           }
           
           // Create or update user profile
@@ -114,6 +118,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
           console.log('❌ User not authenticated')
           setUser(null)
           setUserProfile(null)
+          setSessionInitialized(false)
           windowCloseHandler.cleanup()
           
           // End session security

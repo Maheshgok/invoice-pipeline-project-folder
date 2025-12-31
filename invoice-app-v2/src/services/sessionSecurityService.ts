@@ -484,46 +484,51 @@ class SessionSecurityService {
   
   /**
    * Check for any active sessions across all users (system-wide)
+   * Uses a centralized system status document to avoid permission issues
    */
   private async getAnyActiveGlobalSessions(): Promise<UserSession[]> {
     try {
-      // Query all user collections for active sessions
-      const usersRef = collection(db, 'users')
-      const usersSnapshot = await getDocs(usersRef)
+      // Instead of querying all users, check a global system status document
+      const systemStatusRef = doc(db, 'system_status', 'active_sessions')
+      const systemStatusDoc = await getDoc(systemStatusRef)
       
-      const allActiveSessions: UserSession[] = []
+      if (!systemStatusDoc.exists()) {
+        return []
+      }
+      
+      const systemData = systemStatusDoc.data()
+      const activeSessions: UserSession[] = []
       const now = new Date()
       
-      for (const userDoc of usersSnapshot.docs) {
-        try {
-          const sessionsRef = collection(db, `users/${userDoc.id}/sessions`)
-          const activeSessionsQuery = query(
-            sessionsRef,
-            where('isActive', '==', true)
-          )
-          
-          const sessionsSnapshot = await getDocs(activeSessionsQuery)
-          
-          for (const sessionDoc of sessionsSnapshot.docs) {
-            const session = sessionDoc.data() as UserSession
+      // Check each active session listed in system status
+      if (systemData.activeSessions && Array.isArray(systemData.activeSessions)) {
+        for (const sessionInfo of systemData.activeSessions) {
+          try {
+            // Verify session is still active in user's collection
+            const sessionRef = doc(db, `users/${sessionInfo.userUid}/sessions`, sessionInfo.sessionId)
+            const sessionDoc = await getDoc(sessionRef)
             
-            // Only consider sessions active within last 10 minutes for blocking new logins
-            const lastActivity = session.lastActivity.toDate ? 
-              session.lastActivity.toDate() : 
-              new Date(session.lastActivity)
-            
-            const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60)
-            
-            if (minutesSinceActivity <= 10) { // Active within last 10 minutes
-              allActiveSessions.push({ ...session, sessionId: sessionDoc.id })
+            if (sessionDoc.exists()) {
+              const session = sessionDoc.data() as UserSession
+              
+              // Only consider sessions active within last 10 minutes
+              const lastActivity = session.lastActivity.toDate ? 
+                session.lastActivity.toDate() : 
+                new Date(session.lastActivity)
+              
+              const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60)
+              
+              if (session.isActive && minutesSinceActivity <= 10) {
+                activeSessions.push({ ...session, sessionId: sessionDoc.id })
+              }
             }
+          } catch (sessionError) {
+            console.warn(`⚠️ Error checking session ${sessionInfo.sessionId}:`, sessionError)
           }
-        } catch (error) {
-          console.warn(`⚠️ Error checking sessions for user ${userDoc.id}:`, error)
         }
       }
       
-      return allActiveSessions
+      return activeSessions
     } catch (error) {
       console.error('❌ Error getting global active sessions:', error)
       return []
@@ -563,6 +568,44 @@ class SessionSecurityService {
   }
 
   /**
+   * Update system status document with active sessions
+   */
+  private async updateSystemStatusDoc(action: 'add' | 'remove', userUid: string, sessionId: string): Promise<void> {
+    try {
+      const systemStatusRef = doc(db, 'system_status', 'active_sessions')
+      const systemStatusDoc = await getDoc(systemStatusRef)
+      
+      let activeSessions: Array<{userUid: string, sessionId: string, lastUpdated: Timestamp}> = []
+      
+      if (systemStatusDoc.exists()) {
+        activeSessions = systemStatusDoc.data().activeSessions || []
+      }
+      
+      if (action === 'add') {
+        // Remove any existing sessions for this user first
+        activeSessions = activeSessions.filter(s => s.userUid !== userUid)
+        // Add new session
+        activeSessions.push({
+          userUid,
+          sessionId,
+          lastUpdated: serverTimestamp() as Timestamp
+        })
+      } else if (action === 'remove') {
+        // Remove session
+        activeSessions = activeSessions.filter(s => !(s.userUid === userUid && s.sessionId === sessionId))
+      }
+      
+      await setDoc(systemStatusRef, {
+        activeSessions,
+        lastUpdated: serverTimestamp()
+      })
+      
+    } catch (error) {
+      console.error('❌ Error updating system status:', error)
+    }
+  }
+
+  /**
    * Create user session document in Firestore
    */
   private async createUserSessionDoc(session: UserSession): Promise<void> {
@@ -573,6 +616,10 @@ class SessionSecurityService {
         createdAt: serverTimestamp(),
         lastActivity: serverTimestamp()
       })
+      
+      // Update system status
+      await this.updateSystemStatusDoc('add', session.userUid, session.sessionId)
+      
       console.log('✅ User session created:', session.sessionId)
     } catch (error) {
       console.error('❌ Error creating user session:', error)
@@ -653,6 +700,10 @@ class SessionSecurityService {
         isActive: false,
         deactivatedAt: serverTimestamp()
       })
+      
+      // Update system status
+      await this.updateSystemStatusDoc('remove', currentUser.uid, sessionId)
+      
       console.log('✅ Session deactivated:', sessionId)
     } catch (error) {
       console.error('❌ Error deactivating session:', error)
