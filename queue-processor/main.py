@@ -196,6 +196,99 @@ def process_task():
         )
         return jsonify(error_response[0]), error_response[1]
 
+@app.route('/process-file', methods=['POST'])
+def process_file():
+    """
+    Process file endpoint for frontend compatibility
+    Redirects to the existing Cloud Tasks processing workflow
+    """
+    try:
+        # Extract file information from request
+        data = request.get_json()
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+            
+        # Delegate to existing process_task logic
+        return process_task()
+        
+    except Exception as e:
+        logger.error(f"❌ Error processing file: {str(e)}")
+        return jsonify({
+            'error': 'Failed to process file',
+            'details': str(e)
+        }), 500
+
+@app.route('/get-results/<user_email>', methods=['GET'])
+def get_results(user_email):
+    """
+    Get processing results for a specific user
+    """
+    try:
+        # Get processing stats and filter by user if needed
+        stats = processing_service.get_processing_stats()
+        
+        # For now, return all results - in a real implementation,
+        # you'd filter by user_email from Firestore
+        return jsonify({
+            'user_email': user_email,
+            'results': [],  # Would fetch from Firestore based on user
+            'stats': stats,
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting results for {user_email}: {str(e)}")
+        return jsonify({
+            'error': 'Failed to get results',
+            'details': str(e)
+        }), 500
+
+@app.route('/job-status/<job_id>', methods=['GET'])
+def job_status(job_id):
+    """
+    Get status of a specific job
+    """
+    try:
+        # Get current processing stats
+        stats = processing_service.get_processing_stats()
+        
+        # Check if job is currently active
+        job_active = job_id in [str(job.get('job_id', '')) for job in stats.get('active_jobs', [])]
+        
+        return jsonify({
+            'job_id': job_id,
+            'status': 'processing' if job_active else 'completed',
+            'timestamp': datetime.utcnow().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error getting job status for {job_id}: {str(e)}")
+        return jsonify({
+            'error': 'Failed to get job status',
+            'details': str(e)
+        }), 500
+
+@app.route('/queue-status', methods=['GET'])
+def queue_status():
+    """
+    Get queue status - alias for stats endpoint for frontend compatibility
+    """
+    try:
+        stats = processing_service.get_processing_stats()
+        
+        return jsonify({
+            'mode': 'cloud_tasks_managed',
+            'processing_stats': stats,
+            'timestamp': datetime.utcnow().isoformat(),
+            'project_id': PROJECT_ID
+        }), 200
+    except Exception as e:
+        logger.error(f"❌ Error getting queue status: {str(e)}")
+        return jsonify({
+            'error': 'Failed to get queue status',
+            'details': str(e)
+        }), 500
+
 @app.route('/stats', methods=['GET'])
 def get_stats():
     """

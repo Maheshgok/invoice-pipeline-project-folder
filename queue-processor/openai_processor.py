@@ -101,7 +101,7 @@ class OpenAIProcessor:
                 logger.info(f"Parsed bucket_name: {bucket_name}, blob_path: {blob_path}")
             else:
                 # Fallback to hardcoded bucket (this should not happen with proper setup)
-                bucket_name = 'watch-mail-trial-invoice-raw-files'  # Use correct bucket name
+                bucket_name = 'watch-mail-trial-invoice-processing'  # Use correct bucket name
                 blob_path = bucket_path
                 logger.warning(f"No '/' found in bucket_path, using fallback bucket: {bucket_name}")
             

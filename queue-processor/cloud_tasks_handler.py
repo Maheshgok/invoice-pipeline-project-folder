@@ -68,14 +68,27 @@ class CloudTasksHandler:
         expected_user_folder = data.get('expected_user_folder')
         user_context = data.get('user_context', {})
         
-        # CRITICAL: Validate bucket path matches expected user folder
+        # CRITICAL: Validate bucket path matches expected user folder (after normalization)
         if expected_user_folder and bucket_path:
             if f"users/{expected_user_folder}/raw/" not in bucket_path:
                 raise ValueError(f"Security violation: Bucket path '{bucket_path}' does not match expected user folder 'users/{expected_user_folder}/raw/'")
         
         # Additional validation: Ensure bucket path follows user-isolated structure
-        if bucket_path and not bucket_path.startswith("users/"):
-            raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must start with 'users/'")
+        # Handle paths that may include bucket name prefix
+        if bucket_path:
+            # Extract just the path part if it includes bucket name
+            if "/" in bucket_path and not bucket_path.startswith("users/"):
+                # Check if this is a full bucket path format: bucket-name/users/...
+                path_parts = bucket_path.split("/", 1)
+                if len(path_parts) > 1 and path_parts[1].startswith("users/"):
+                    # Update bucket_path to just the path without bucket name
+                    bucket_path = path_parts[1]
+                    data['bucket_path'] = bucket_path  # Update the data dict too
+                    self.logger.info(f"🔧 Normalized bucket path from full path to: {bucket_path}")
+                elif not bucket_path.startswith("users/"):
+                    raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must start with 'users/' or be in format 'bucket-name/users/...'")
+            elif not bucket_path.startswith("users/"):
+                raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must start with 'users/'")
         
         # Cross-validate user context from payload vs task context
         if user_context and user_context.get('uid') != user_uid:

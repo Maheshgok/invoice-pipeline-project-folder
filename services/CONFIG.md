@@ -48,7 +48,7 @@ PORT=3003
 SERVICE_NAME=core-invoice-service
 
 # Google Cloud Storage
-GCS_BUCKET_NAME=invoice-processing-bucket
+GCS_BUCKET_NAME=watch-mail-trial-invoice-processing
 
 # OpenAI
 OPENAI_API_KEY=sk-...

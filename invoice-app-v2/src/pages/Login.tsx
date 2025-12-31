@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../contexts/AuthContext'
-import { FileText, LogIn, Mail, Lock, Eye, EyeOff } from 'lucide-react'
+import { FileText, LogIn, Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 const Login: React.FC = () => {
@@ -15,12 +15,43 @@ const Login: React.FC = () => {
     confirmPassword: ''
   })
   const [formLoading, setFormLoading] = useState(false)
+  const [systemInUse, setSystemInUse] = useState(false)
+  const [checkingSystemUsage, setCheckingSystemUsage] = useState(false)
 
   // Redirect if already authenticated
   if (user && !loading) {
     const from = (location.state as any)?.from?.pathname || '/dashboard'
     return <Navigate to={from} replace />
   }
+
+  // Check system usage periodically
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout
+
+    const checkSystemUsage = async () => {
+      try {
+        setCheckingSystemUsage(true)
+        const { sessionSecurityService } = await import('../services/sessionSecurityService')
+        const { inUse } = await sessionSecurityService.isSystemCurrentlyInUse()
+        setSystemInUse(inUse)
+      } catch (error) {
+        console.error('Error checking system usage:', error)
+        setSystemInUse(false)
+      } finally {
+        setCheckingSystemUsage(false)
+      }
+    }
+
+    // Check immediately
+    checkSystemUsage()
+
+    // Check every 30 seconds
+    intervalId = setInterval(checkSystemUsage, 30000)
+
+    return () => {
+      if (intervalId) clearInterval(intervalId)
+    }
+  }, [])
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
@@ -108,11 +139,28 @@ const Login: React.FC = () => {
           </p>
         </div>
 
+        {/* System Status */}
+        {systemInUse && (
+          <div className="bg-amber-50 border border-amber-200 rounded-md p-4">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-amber-600 mr-2" />
+              <div>
+                <h3 className="text-sm font-medium text-amber-800">
+                  System Currently In Use
+                </h3>
+                <p className="text-sm text-amber-700 mt-1">
+                  Another user is currently active in the system. Please wait for them to finish before logging in.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Google Sign In */}
         <div className="mt-8 space-y-4">
           <button
             onClick={handleGoogleSignIn}
-            disabled={formLoading || loading}
+            disabled={formLoading || loading || systemInUse}
             className="group relative w-full flex justify-center py-3 px-4 border border-gray-300 text-sm font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
@@ -224,13 +272,13 @@ const Login: React.FC = () => {
           <div>
             <button
               type="submit"
-              disabled={formLoading || loading}
+              disabled={formLoading || loading || systemInUse}
               className="group relative w-full flex justify-center py-3 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
               <span className="absolute left-0 inset-y-0 flex items-center pl-3">
                 <LogIn className="h-5 w-5 text-primary-light group-hover:text-primary" />
               </span>
-              {formLoading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In')}
+              {systemInUse ? 'System In Use' : (formLoading ? 'Processing...' : (isSignUp ? 'Create Account' : 'Sign In'))}
             </button>
           </div>
 

@@ -88,7 +88,13 @@ export function AuthProvider({ children }: AuthProviderProps) {
             const { sessionSecurityService } = await import('../services/sessionSecurityService')
             const currentSession = sessionSecurityService.getCurrentSession()
             if (!currentSession.sessionId) {
-              await sessionSecurityService.startSession(user.uid)
+              const sessionStarted = await sessionSecurityService.startSession(user.uid)
+              if (!sessionStarted) {
+                console.log('🚫 Session blocked - system in use by another user')
+                // Force logout since session couldn't be started
+                await authService.signOut()
+                return
+              }
               console.log('🔒 Session security initialized')
             }
           } catch (sessionError) {

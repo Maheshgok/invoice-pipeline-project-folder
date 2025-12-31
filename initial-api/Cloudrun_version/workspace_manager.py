@@ -24,7 +24,7 @@ project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
 storage_client = storage.Client(project=project_id)
 firestore_client = firestore.Client(project=project_id)
 
-BUCKET_NAME = os.environ.get('BUCKET_NAME', 'invoice-processing-bucket')
+BUCKET_NAME = os.environ.get('BUCKET_NAME', 'watch-mail-trial-invoice-processing')
 
 def verify_auth_token(auth_header):
     """Verify Firebase ID token and return user context"""

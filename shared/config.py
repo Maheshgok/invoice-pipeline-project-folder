@@ -40,7 +40,7 @@ class ProjectConfig:
                     }
                 },
                 'storage': {
-                    'raw_bucket': os.getenv('BUCKET_NAME', 'ocr-invoice-raw-files-bucket'),
+                    'raw_bucket': os.getenv('BUCKET_NAME', 'watch-mail-trial-invoice-processing'),
                     'processed_bucket': 'ocr-invoice-processed-files-bucket'
                 },
                 'pubsub': {

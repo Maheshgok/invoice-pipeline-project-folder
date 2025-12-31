@@ -110,7 +110,23 @@ class SessionSecurityService {
    */
   async startSession(userUid: string): Promise<boolean> {
     try {
-      // Check for existing sessions
+      // FIRST: Check if any other user is currently active in the system
+      const globalActiveSessions = await this.getAnyActiveGlobalSessions()
+      const otherUserActiveSessions = globalActiveSessions.filter(session => session.userUid !== userUid)
+      
+      if (otherUserActiveSessions.length > 0) {
+        const activeUser = otherUserActiveSessions[0]
+        console.log('🚫 Blocking login - Another user is currently active:', activeUser.userUid)
+        
+        toast.error('System is currently in use by another user. Please try again later.', {
+          duration: 5000,
+          position: 'top-center'
+        })
+        
+        return false
+      }
+      
+      // Check for existing sessions of the same user
       const existingSessions = await this.getActiveUserSessions(userUid)
       
       // Terminate other sessions
@@ -149,6 +165,27 @@ class SessionSecurityService {
     } catch (error) {
       console.error('❌ Error starting session:', error)
       return false
+    }
+  }
+
+  /**
+   * Check if system is currently in use by any user (public method)
+   */
+  async isSystemCurrentlyInUse(): Promise<{ inUse: boolean; activeUserUid?: string }> {
+    try {
+      const globalActiveSessions = await this.getAnyActiveGlobalSessions()
+      
+      if (globalActiveSessions.length > 0) {
+        return {
+          inUse: true,
+          activeUserUid: globalActiveSessions[0].userUid
+        }
+      }
+      
+      return { inUse: false }
+    } catch (error) {
+      console.error('❌ Error checking system usage:', error)
+      return { inUse: false }
     }
   }
 
@@ -445,6 +482,54 @@ class SessionSecurityService {
 
   // Direct Firestore operations for session management
   
+  /**
+   * Check for any active sessions across all users (system-wide)
+   */
+  private async getAnyActiveGlobalSessions(): Promise<UserSession[]> {
+    try {
+      // Query all user collections for active sessions
+      const usersRef = collection(db, 'users')
+      const usersSnapshot = await getDocs(usersRef)
+      
+      const allActiveSessions: UserSession[] = []
+      const now = new Date()
+      
+      for (const userDoc of usersSnapshot.docs) {
+        try {
+          const sessionsRef = collection(db, `users/${userDoc.id}/sessions`)
+          const activeSessionsQuery = query(
+            sessionsRef,
+            where('isActive', '==', true)
+          )
+          
+          const sessionsSnapshot = await getDocs(activeSessionsQuery)
+          
+          for (const sessionDoc of sessionsSnapshot.docs) {
+            const session = sessionDoc.data() as UserSession
+            
+            // Only consider sessions active within last 10 minutes for blocking new logins
+            const lastActivity = session.lastActivity.toDate ? 
+              session.lastActivity.toDate() : 
+              new Date(session.lastActivity)
+            
+            const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60)
+            
+            if (minutesSinceActivity <= 10) { // Active within last 10 minutes
+              allActiveSessions.push({ ...session, sessionId: sessionDoc.id })
+            }
+          }
+        } catch (error) {
+          console.warn(`⚠️ Error checking sessions for user ${userDoc.id}:`, error)
+        }
+      }
+      
+      return allActiveSessions
+    } catch (error) {
+      console.error('❌ Error getting global active sessions:', error)
+      return []
+    }
+  }
+
   /**
    * Get user's active sessions from Firestore
    */
