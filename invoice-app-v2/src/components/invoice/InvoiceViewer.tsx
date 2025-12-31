@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { InvoiceData } from '../../types'
-import { ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'
+import { ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'\nimport { sessionSecurityService } from '../../services/sessionSecurityService'
 
 interface InvoiceViewerProps {
   file: File | null
@@ -30,6 +30,9 @@ const InvoiceViewer = ({ file, invoiceData: _invoiceData, className = '' }: Invo
 
   const handleDownload = () => {
     if (file) {
+      // Update session activity for download
+      sessionSecurityService.updateActivity()
+      
       const url = URL.createObjectURL(file)
       const a = document.createElement('a')
       a.href = url

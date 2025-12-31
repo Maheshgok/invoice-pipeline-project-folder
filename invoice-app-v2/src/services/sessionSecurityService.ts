@@ -300,7 +300,7 @@ class SessionSecurityService {
           this.handleInvalidSession()
         }
       }
-    }, 120000) // Check every 2 minutes (reduced frequency)
+    }, 300000) // Check every 5 minutes (reduced frequency)
   }
 
   /**
@@ -425,6 +425,26 @@ class SessionSecurityService {
         }
         this.activityInterval = null
       }, 10000) // Update at most every 10 seconds
+    }
+  }
+
+  /**
+   * Public method to update activity (for external services like uploads)
+   */
+  public updateActivity(): void {
+    if (this.currentSessionId) {
+      console.log('🔄 Updating session activity for:', this.currentSessionId.substring(0, 20) + '...')
+      this.updateSessionActivityDoc(this.currentSessionId)
+    }
+  }
+
+  /**
+   * Public method to update activity (for external services like uploads)
+   */
+  public updateActivity(): void {
+    if (this.currentSessionId) {
+      console.log('🔄 Updating session activity for:', this.currentSessionId.substring(0, 20) + '...')
+      this.updateSessionActivityDoc(this.currentSessionId)
     }
   }
 
@@ -656,11 +676,49 @@ class SessionSecurityService {
         session.lastActivity.toDate() : 
         new Date(session.lastActivity)
         
-      const hoursSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60)
+      const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60)
       
-      if (!session.isActive || hoursSinceActivity > 24) {
+      // Extended activity window: 20 minutes for active operations, 24 hours max
+      const isRecentlyActive = minutesSinceActivity <= 20
+      const isWithinMaxWindow = minutesSinceActivity <= (24 * 60)
+      
+      console.log('🔍 Session validation:', {
+        sessionId: sessionId.substring(0, 20) + '...',
+        minutesSinceActivity: Math.round(minutesSinceActivity),
+        isActive: session.isActive,
+        isRecentlyActive,
+        isWithinMaxWindow
+      })
+      
+      if (!session.isActive || !isWithinMaxWindow) {
+        console.log('❌ Session invalid - deactivating')
         await this.deactivateSessionDoc(sessionId)
         return false
+      }
+      
+      // If session is getting stale but still within max window, update activity
+      if (minutesSinceActivity > 10) {
+        console.log('🔄 Refreshing stale session activity')
+        await this.updateSessionActivityDoc(sessionId)
+      }
+      
+      return true
+        minutesSinceActivity: Math.round(minutesSinceActivity),
+        isActive: session.isActive,
+        isRecentlyActive,
+        isWithinMaxWindow
+      })
+      
+      if (!session.isActive || !isWithinMaxWindow) {
+        console.log('❌ Session invalid - deactivating')
+        await this.deactivateSessionDoc(sessionId)
+        return false
+      }
+      
+      // If session is getting stale but still within max window, update activity
+      if (minutesSinceActivity > 10) {
+        console.log('🔄 Refreshing stale session activity')
+        await this.updateSessionActivityDoc(sessionId)
       }
       
       return true

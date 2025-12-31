@@ -11,6 +11,7 @@ import { archiveService } from '../services/archive'
 import { getApiUrl } from '../config/api'
 import { BatchManager, type BatchFile, type BatchState } from '../services/batch-manager'
 import { FirestoreSyncManager, type JournalEntry } from '../services/firestore-sync-manager'
+import { sessionSecurityService } from '../services/sessionSecurityService'
 
 export const useMultiUploadSimplified = () => {
   // Core state
@@ -175,6 +176,9 @@ export const useMultiUploadSimplified = () => {
 
       console.log('🎯 Upload successful:', { jobId, fileName: file.name })
 
+      // Update session activity for successful upload
+      sessionSecurityService.updateActivity()
+
       // Update file with job ID and set to processing
       batchManager.current.updateFile(fileId, {
         jobId,
@@ -244,6 +248,9 @@ export const useMultiUploadSimplified = () => {
   // Update journal entry
   const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
     if (syncManager.current) {
+      // Update session activity for table edit
+      sessionSecurityService.updateActivity()
+      
       syncManager.current.updateJournalEntry(entryId, field, value)
       toast.success('Journal entry updated')
     }
@@ -272,6 +279,9 @@ export const useMultiUploadSimplified = () => {
         // Continue with download even if archive fails, but warn user
         toast.error('Archive before download failed, but proceeding with download')
       }
+
+      // Update session activity for CSV download
+      sessionSecurityService.updateActivity()
 
       // Create CSV content
       const headers = [
@@ -322,8 +332,9 @@ export const useMultiUploadSimplified = () => {
   // Mark all as displayed
   // Archive completed results
   const archiveCompletedResults = useCallback(async () => {
-    try {
-      const result = await archiveService.archiveCompletedResultsHybrid()
+    try {      // Update session activity for archive operation
+      sessionSecurityService.updateActivity()
+            const result = await archiveService.archiveCompletedResultsHybrid()
       
       if (result.archived_count > 0) {
         toast.success(`📦 Archived ${result.archived_count} completed results`)

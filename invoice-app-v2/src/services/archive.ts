@@ -9,6 +9,7 @@ import { userService } from './userService'
 import { getApiUrl } from '../config/api'
 import { secureDatastoreService } from './secureDatastoreService'
 import { where } from 'firebase/firestore'
+import { sessionSecurityService } from './sessionSecurityService'
 
 export interface ArchiveResponse {
   message: string
