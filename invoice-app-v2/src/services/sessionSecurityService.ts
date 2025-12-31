@@ -522,14 +522,16 @@ class SessionSecurityService {
               const session = sessionDoc.data() as UserSession
               
               // Only consider sessions active within last 10 minutes
-              const lastActivity = session.lastActivity.toDate ? 
-                session.lastActivity.toDate() : 
-                new Date(session.lastActivity)
-              
-              const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60)
-              
-              if (session.isActive && minutesSinceActivity <= 10) {
-                activeSessions.push({ ...session, sessionId: sessionDoc.id })
+              if (session.lastActivity) {
+                const lastActivity = session.lastActivity.toDate ? 
+                  session.lastActivity.toDate() : 
+                  new Date(session.lastActivity)
+                  
+                const minutesSinceActivity = (now.getTime() - lastActivity.getTime()) / (1000 * 60)
+                
+                if (session.isActive && minutesSinceActivity <= 10) {
+                  activeSessions.push({ ...session, sessionId: sessionDoc.id })
+                }
               }
             }
           } catch (sessionError) {
@@ -552,25 +554,23 @@ class SessionSecurityService {
     try {
       const sessionsRef = collection(db, `users/${userUid}/sessions`)
       
-      // Try with compound query first, fallback to simple query if index missing
-      try {
-        const activeSessionsQuery = query(
-          sessionsRef,
-          where('isActive', '==', true),
-          orderBy('lastActivity', 'desc')
-        )
-        const snapshot = await getDocs(activeSessionsQuery)
-        return snapshot.docs.map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
-      } catch (indexError) {
-        console.warn('⚠️ Firestore index missing, using simple query:', indexError)
-        // Fallback to simple query without ordering
-        const simpleQuery = query(
-          sessionsRef,
-          where('isActive', '==', true)
-        )
-        const snapshot = await getDocs(simpleQuery)
-        return snapshot.docs.map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
-      }
+      // Use simple query to avoid index requirements
+      const simpleQuery = query(
+        sessionsRef,
+        where('isActive', '==', true)
+      )
+      const snapshot = await getDocs(simpleQuery)
+      
+      // Sort in memory instead of using orderBy to avoid index
+      const sessions = snapshot.docs
+        .map(doc => ({ ...doc.data(), sessionId: doc.id } as UserSession))
+        .sort((a, b) => {
+          const aTime = a.lastActivity?.toDate ? a.lastActivity.toDate() : new Date(a.lastActivity)
+          const bTime = b.lastActivity?.toDate ? b.lastActivity.toDate() : new Date(b.lastActivity)
+          return bTime.getTime() - aTime.getTime() // Most recent first
+        })
+        
+      return sessions
     } catch (error) {
       console.error('❌ Error getting active sessions:', error)
       return []
@@ -585,7 +585,7 @@ class SessionSecurityService {
       const systemStatusRef = doc(db, 'system_status', 'active_sessions')
       const systemStatusDoc = await getDoc(systemStatusRef)
       
-      let activeSessions: Array<{userUid: string, sessionId: string, lastUpdated: Timestamp}> = []
+      let activeSessions: Array<{userUid: string, sessionId: string, lastUpdated: string}> = []
       
       if (systemStatusDoc.exists()) {
         activeSessions = systemStatusDoc.data().activeSessions || []
@@ -594,11 +594,11 @@ class SessionSecurityService {
       if (action === 'add') {
         // Remove any existing sessions for this user first
         activeSessions = activeSessions.filter(s => s.userUid !== userUid)
-        // Add new session
+        // Add new session with string timestamp
         activeSessions.push({
           userUid,
           sessionId,
-          lastUpdated: serverTimestamp() as Timestamp
+          lastUpdated: new Date().toISOString()
         })
       } else if (action === 'remove') {
         // Remove session
@@ -607,7 +607,8 @@ class SessionSecurityService {
       
       await setDoc(systemStatusRef, {
         activeSessions,
-        lastUpdated: serverTimestamp()
+        lastUpdated: serverTimestamp(),
+        totalActiveSessions: activeSessions.length
       })
       
     } catch (error) {
