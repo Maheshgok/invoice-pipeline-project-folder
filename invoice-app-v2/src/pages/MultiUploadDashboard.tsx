@@ -15,9 +15,10 @@ import { collectionPathResolver } from '../services/collectionPathResolver'
 import { centralizedServiceManager } from '../services/centralizedServiceManager'
 import AdminDashboard from '../components/admin/AdminDashboard'
 import OrganizationSetup from '../components/organization/OrganizationSetup'
-import OrganizationManagement from '../components/organization/OrganizationManagement'\nimport { sessionSecurityService } from '../services/sessionSecurityService'
+import OrganizationManagement from '../components/organization/OrganizationManagement'
+import { sessionSecurityService } from '../services/sessionSecurityService'
 
-import { sessionSecurityService } from '../services/sessionSecurityService'\n\nconst MultiUploadDashboard: React.FC = () => {
+const MultiUploadDashboard: React.FC = () => {
   const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize, markHasResults } = useAuth()
   
   // State declarations first
@@ -1358,3 +1359,4 @@ import { sessionSecurityService } from '../services/sessionSecurityService'\n\nc
 }
 
 export default MultiUploadDashboard
+

@@ -439,16 +439,6 @@ class SessionSecurityService {
   }
 
   /**
-   * Public method to update activity (for external services like uploads)
-   */
-  public updateActivity(): void {
-    if (this.currentSessionId) {
-      console.log('🔄 Updating session activity for:', this.currentSessionId.substring(0, 20) + '...')
-      this.updateSessionActivityDoc(this.currentSessionId)
-    }
-  }
-
-  /**
    * Setup beforeunload handler for cleanup
    */
   private setupBeforeUnloadHandler(): void {
@@ -684,25 +674,6 @@ class SessionSecurityService {
       
       console.log('🔍 Session validation:', {
         sessionId: sessionId.substring(0, 20) + '...',
-        minutesSinceActivity: Math.round(minutesSinceActivity),
-        isActive: session.isActive,
-        isRecentlyActive,
-        isWithinMaxWindow
-      })
-      
-      if (!session.isActive || !isWithinMaxWindow) {
-        console.log('❌ Session invalid - deactivating')
-        await this.deactivateSessionDoc(sessionId)
-        return false
-      }
-      
-      // If session is getting stale but still within max window, update activity
-      if (minutesSinceActivity > 10) {
-        console.log('🔄 Refreshing stale session activity')
-        await this.updateSessionActivityDoc(sessionId)
-      }
-      
-      return true
         minutesSinceActivity: Math.round(minutesSinceActivity),
         isActive: session.isActive,
         isRecentlyActive,
