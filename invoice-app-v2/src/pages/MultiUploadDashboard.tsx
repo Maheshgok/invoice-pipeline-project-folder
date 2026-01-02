@@ -16,6 +16,7 @@ import { centralizedServiceManager } from '../services/centralizedServiceManager
 import AdminDashboard from '../components/admin/AdminDashboard'
 import OrganizationSetup from '../components/organization/OrganizationSetup'
 import OrganizationManagement from '../components/organization/OrganizationManagement'
+import { organizationService, OrganizationProfile } from '../services/organizationProfiles'
 import { sessionSecurityService } from '../services/sessionSecurityService'
 
 const MultiUploadDashboard: React.FC = () => {
@@ -39,7 +40,30 @@ const MultiUploadDashboard: React.FC = () => {
   const [smartListenerResults, setSmartListenerResults] = useState<ProcessingResult[]>([])
   const [listenerInitialized, setListenerInitialized] = useState(false)
   
-  // Check permissions
+  // Organization selection state
+  const [selectedOrganization, setSelectedOrganization] = useState<OrganizationProfile | null>(null)
+  const [organizations, setOrganizations] = useState<OrganizationProfile[]>([])
+  const [showOrgSelection, setShowOrgSelection] = useState(false)
+  
+  // Load organizations and set default on mount
+  useEffect(() => {
+    const loadOrganizations = async () => {
+      try {
+        const orgs = await organizationService.getOrganizations()
+        setOrganizations(orgs)
+        
+        // Set default organization if one exists
+        const defaultOrg = orgs.find(org => org.is_default) || orgs[0]
+        if (defaultOrg) {
+          setSelectedOrganization(defaultOrg)
+        }
+      } catch (error) {
+        console.error('Error loading organizations:', error)
+      }
+    }
+    
+    loadOrganizations()
+  }, [])
   const canUpload = hasPermission('canUpload')
   const canEdit = hasPermission('canEdit')
   const canDownload = hasPermission('canDownload')
@@ -716,6 +740,77 @@ const MultiUploadDashboard: React.FC = () => {
             <span className="text-sm text-gray-500">
               {uploadedFiles.length}/{MAX_QUEUE_SIZE} files
             </span>
+          </div>
+          
+          {/* Organization Selection */}
+          <div className="mb-6 p-4 border rounded-lg bg-gray-50">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-700">Processing Organization</h3>
+              {organizations.length > 1 && (
+                <button
+                  onClick={() => setShowOrgSelection(!showOrgSelection)}
+                  className="text-sm text-blue-600 hover:text-blue-800"
+                >
+                  Change
+                </button>
+              )}
+            </div>
+            
+            {selectedOrganization ? (
+              <div className="bg-white p-3 rounded border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="font-medium text-gray-900">{selectedOrganization.name}</p>
+                    <p className="text-sm text-gray-600">{selectedOrganization.industry}</p>
+                    <p className="text-xs text-gray-500">GSTIN: {selectedOrganization.gstin}</p>
+                  </div>
+                  <Building2 className="h-8 w-8 text-gray-400" />
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white p-3 rounded border">
+                <p className="text-sm text-gray-600">
+                  No organization selected. 
+                  <button
+                    onClick={() => setActiveTab('organization')}
+                    className="ml-1 text-blue-600 hover:text-blue-800"
+                  >
+                    Create one here
+                  </button>
+                </p>
+              </div>
+            )}
+            
+            {/* Organization Selection Modal */}
+            {showOrgSelection && (
+              <div className="absolute z-10 mt-2 w-full max-w-md bg-white border rounded-lg shadow-lg">
+                <div className="p-4">
+                  <h4 className="font-medium mb-3">Select Organization</h4>
+                  <div className="space-y-2 max-h-64 overflow-y-auto">
+                    {organizations.map(org => (
+                      <div
+                        key={org.id}
+                        onClick={() => {
+                          setSelectedOrganization(org)
+                          setShowOrgSelection(false)
+                        }}
+                        className="p-3 border rounded cursor-pointer hover:bg-gray-50 flex justify-between items-center"
+                      >
+                        <div>
+                          <p className="font-medium">{org.name}</p>
+                          <p className="text-sm text-gray-600">{org.industry}</p>
+                        </div>
+                        {org.is_default && (
+                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                            Default
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Drag & Drop Zone */}

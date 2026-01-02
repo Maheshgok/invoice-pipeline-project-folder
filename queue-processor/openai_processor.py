@@ -21,6 +21,7 @@ import io
 
 # Import prompts from external files
 from prompts import get_invoice_prompt, get_system_prompt, prompt_config
+from multi_phase_processor import multi_phase_processor
 
 logger = logging.getLogger(__name__)
 

@@ -11,6 +11,7 @@ import { archiveService } from '../services/archive'
 import { getApiUrl } from '../config/api'
 import { BatchManager, type BatchFile, type BatchState } from '../services/batch-manager'
 import { FirestoreSyncManager, type JournalEntry } from '../services/firestore-sync-manager'
+import { changeTrackingService } from '../services/changeTracking'
 import { sessionSecurityService } from '../services/sessionSecurityService'
 
 export const useMultiUploadSimplified = () => {
@@ -245,16 +246,58 @@ export const useMultiUploadSimplified = () => {
     }
   }, [])
 
-  // Update journal entry
-  const updateJournalEntry = useCallback((entryId: string, field: string, value: any) => {
-    if (syncManager.current) {
+  // Update journal entry with change tracking
+  const updateJournalEntry = useCallback(async (entryId: string, field: string, value: any) => {
+    if (!syncManager.current) return
+
+    try {
       // Update session activity for table edit
       sessionSecurityService.updateActivity()
       
+      // Find the current entry to get original value
+      const currentEntry = journalEntries.find(entry => entry.id === entryId)
+      if (!currentEntry) {
+        console.error('Entry not found for change tracking:', entryId)
+        return
+      }
+
+      const originalValue = (currentEntry as any)[field]
+      
+      // Only track if value actually changed
+      if (originalValue !== value) {
+        console.log('📝 Tracking journal entry change:', {
+          entryId,
+          field,
+          originalValue,
+          newValue: value
+        })
+
+        // Track the change
+        await changeTrackingService.trackChange(
+          currentEntry.invoiceId,
+          `journal_entries.${entryId}.${field}`,
+          field,
+          originalValue,
+          value,
+          'edit',
+          {
+            rowId: entryId,
+            columnName: field,
+            tableType: 'journal_entries'
+          }
+        )
+
+        toast.success(`${field} updated and change tracked`)
+      }
+      
+      // Update the entry in sync manager
       syncManager.current.updateJournalEntry(entryId, field, value)
-      toast.success('Journal entry updated')
+      
+    } catch (error) {
+      console.error('Error updating journal entry with change tracking:', error)
+      toast.error('Failed to update entry')
     }
-  }, [])
+  }, [journalEntries])
 
   // Download CSV
   const downloadCSV = useCallback(async () => {

@@ -100,6 +100,26 @@ export interface InvoiceProcessingResult {
     double_entry_bookkeeping?: any
     extracted_data?: any
   }
+  // User modification tracking
+  user_modifications?: {
+    total_changes: number
+    last_modified: string
+    last_modified_by: string
+    changes: Array<{
+      field_path: string
+      field_name: string
+      original_value: any
+      new_value: any
+      change_timestamp: string
+      user_email: string
+      change_type: 'edit' | 'add' | 'delete'
+      table_context?: {
+        row_id: string
+        column_name: string
+        table_type: 'journal_entries' | 'items' | 'extracted_data'
+      }
+    }>
+  }
   error?: string
   jobId?: string
   gcsPath?: string

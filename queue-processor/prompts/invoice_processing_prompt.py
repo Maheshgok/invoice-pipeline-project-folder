@@ -82,9 +82,16 @@ RETURN EXACTLY this JSON SHAPE:
     {
       "account_name": "",
       "account_type": "",
+      "account_code": "",
       "debit_amount": 0,
       "credit_amount": 0,
-      "narration": ""
+      "narration": "",
+      "hsn_code": "",
+      "item_description": "",
+      "quantity": 0,
+      "unit_price": 0,
+      "vendor_name": "",
+      "reference_number": ""
     }
   ],  "bank_details": {
     "account_number": "",
@@ -231,10 +238,46 @@ CRITICAL REQUIREMENTS:
 5. Total debits must equal total credits
 6. Use appropriate account_type: "Asset", "Expense", "Liability"
 
-EXAMPLE for ₹3000 modem with no GST:
+ENRICHED JOURNAL ENTRY REQUIREMENTS:
+7. ALWAYS populate all journal entry fields:
+   - "account_code": Use HSN code from items when available, or create appropriate account code
+   - "hsn_code": Copy from matching item's hsn_code field
+   - "item_description": Copy from matching item's description field
+   - "quantity": Copy from matching item's quantity field  
+   - "unit_price": Copy from matching item's unit_price field
+   - "vendor_name": Use vendor_details.name consistently across all entries
+   - "reference_number": Use invoice_details.invoice_number
+
+EXAMPLE for ₹3000 modem with HSN 8517:
 [
-  {"account_name": "Office Equipment", "account_type": "Asset", "debit_amount": 3000, "credit_amount": 0, "narration": "Modem Purchase"},
-  {"account_name": "Accounts Payable", "account_type": "Liability", "debit_amount": 0, "credit_amount": 3000, "narration": "Purchase from KATYAYANI COMMUNICATION"}
+  {
+    "account_name": "Office Equipment", 
+    "account_type": "Asset", 
+    "account_code": "8517",
+    "debit_amount": 3000, 
+    "credit_amount": 0, 
+    "narration": "Modem Purchase",
+    "hsn_code": "8517",
+    "item_description": "Modem Purchase",
+    "quantity": 1,
+    "unit_price": 3000,
+    "vendor_name": "KATYAYANI COMMUNICATION GROUP",
+    "reference_number": "204"
+  },
+  {
+    "account_name": "Accounts Payable", 
+    "account_type": "Liability", 
+    "account_code": "2000",
+    "debit_amount": 0, 
+    "credit_amount": 3000, 
+    "narration": "Purchase from KATYAYANI COMMUNICATION",
+    "hsn_code": "8517",
+    "item_description": "Modem Purchase", 
+    "quantity": 1,
+    "unit_price": 3000,
+    "vendor_name": "KATYAYANI COMMUNICATION GROUP",
+    "reference_number": "204"
+  }
 ]
 
 DATA ENRICHMENT EXAMPLES:
@@ -280,7 +323,9 @@ GENERAL
 OUTPUT FORMAT
 - Return ONLY the JSON object.
 - ALWAYS include the "journal_entries" array with proper debit/credit entries.
+- CRITICAL: ALL journal entry objects MUST include all 12 fields: account_name, account_type, account_code, debit_amount, credit_amount, narration, hsn_code, item_description, quantity, unit_price, vendor_name, reference_number
 - Enrich HSN codes and expense categories based on item descriptions.
+- Copy vendor_name and reference_number consistently across ALL journal entries.
 - No explanations, no comments, no trailing commas.
 - Phase 1: Extract conservatively, Phase 2: Enrich data and create accounting entries."""
 

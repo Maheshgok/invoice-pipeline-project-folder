@@ -72,7 +72,7 @@ try {
 if (-not $QUEUE_EXISTS) {
     Write-Host "⚠️ Warning: Cloud Tasks queue 'invoice-processing-queue' does not exist." -ForegroundColor Red
     Write-Host "   Please deploy the initial-api first to create the queue." -ForegroundColor Yellow
-    Write-Host "   Run: cd ..\initial-api\Cloudrun_version && .\deploy-cloud-tasks.ps1" -ForegroundColor Yellow
+    Write-Host "   Run: cd ..\initial-api\Cloudrun_version ; .\deploy-cloud-tasks.ps1" -ForegroundColor Yellow
 } else {
     Write-Host "✅ Cloud Tasks queue verified: invoice-processing-queue" -ForegroundColor Green
 }
