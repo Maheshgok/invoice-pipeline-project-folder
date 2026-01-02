@@ -970,11 +970,15 @@ class RealtimeFirestoreService {
                 entryIndex: entryIndex++,
                 date: invoiceDate,
                 accountName: 'Expense - ' + (item.description || 'General'),
-                accountCode: '',
+                accountCode: item.hsn_code || '',
                 accountType: 'Expense',
                 debitAmount: parseFloat(item.taxable_value.toString()) || 0,
                 creditAmount: 0,
                 narration: item.detailed_narration || item.description || 'Purchase expense',
+                hsnCode: item.hsn_code || '',
+                itemDescription: item.description || '',
+                quantity: item.quantity || 0,
+                unitPrice: item.unit_price || 0,
                 isBalanced: false,
                 userId: result.userEmail,
                 createdAt: result.createdAt
@@ -1141,13 +1145,19 @@ class RealtimeFirestoreService {
             }
             
             journalEntries.forEach((entry: any, entryIndex: number) => {
-              const invoiceNumber = result.extractedData?.extracted_data?.invoice_number || 
+              const invoiceNumber = result.extractedData?.extracted_data?.invoice_details?.invoice_number || 
+                                   result.extractedData?.extracted_data?.invoice_number || 
+                                   result.extractedData?.invoice_details?.invoice_number || 
                                    result.extractedData?.invoice_number || 
                                    'N/A'
-              const vendorName = result.extractedData?.extracted_data?.vendor_name || 
+              const vendorName = result.extractedData?.extracted_data?.vendor_details?.name || 
+                                 result.extractedData?.extracted_data?.vendor_name || 
+                                 result.extractedData?.vendor_details?.name ||
                                  result.extractedData?.vendor_name || 
                                  'Unknown'
-              const invoiceDate = result.extractedData?.extracted_data?.invoice_date || 
+              const invoiceDate = result.extractedData?.extracted_data?.invoice_details?.invoice_date || 
+                                  result.extractedData?.extracted_data?.invoice_date || 
+                                  result.extractedData?.invoice_details?.invoice_date ||
                                   result.extractedData?.invoice_date || 
                                   entry.date || 
                                   journalSet.date || 

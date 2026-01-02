@@ -175,6 +175,10 @@ const RealtimeTestPage: React.FC = () => {
                   <th className="px-4 py-2 border text-right text-xs font-semibold text-gray-600 uppercase">Debit</th>
                   <th className="px-4 py-2 border text-right text-xs font-semibold text-gray-600 uppercase">Credit</th>
                   <th className="px-4 py-2 border text-left text-xs font-semibold text-gray-600 uppercase">Vendor</th>
+                  <th className="px-4 py-2 border text-left text-xs font-semibold text-gray-600 uppercase">HSN Code</th>
+                  <th className="px-4 py-2 border text-left text-xs font-semibold text-gray-600 uppercase">Item Details</th>
+                  <th className="px-4 py-2 border text-right text-xs font-semibold text-gray-600 uppercase">Qty</th>
+                  <th className="px-4 py-2 border text-right text-xs font-semibold text-gray-600 uppercase">Unit Price</th>
                 </tr>
               </thead>
               <tbody>
@@ -189,7 +193,15 @@ const RealtimeTestPage: React.FC = () => {
                     <td className="px-4 py-2 border text-sm text-right">
                       {entry.creditAmount > 0 ? entry.creditAmount.toFixed(2) : ''}
                     </td>
-                    <td className="px-4 py-2 border text-sm">{entry.vendor}</td>
+                    <td className="px-4 py-2 border text-sm">{entry.vendor || ''}</td>
+                    <td className="px-4 py-2 border text-sm">{entry.hsnCode || ''}</td>
+                    <td className="px-4 py-2 border text-sm">{entry.itemDescription || ''}</td>
+                    <td className="px-4 py-2 border text-sm text-right">
+                      {entry.quantity ? entry.quantity.toString() : ''}
+                    </td>
+                    <td className="px-4 py-2 border text-sm text-right">
+                      {entry.unitPrice ? entry.unitPrice.toFixed(2) : ''}
+                    </td>
                   </tr>
                 ))}
               </tbody>

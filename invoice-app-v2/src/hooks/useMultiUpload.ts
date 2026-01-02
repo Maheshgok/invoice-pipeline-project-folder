@@ -29,6 +29,10 @@ interface JournalEntry {
   taxableAmount?: number
   gstAmount?: number
   isBalanced?: boolean
+  hsnCode?: string
+  itemDescription?: string
+  quantity?: number
+  unitPrice?: number
 }
 
 export const useMultiUpload = () => {
@@ -307,6 +311,7 @@ export const useMultiUpload = () => {
     const headers = [
       'Date', 'Account Name', 'Account Code', 'Description', 
       'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 
+      'HSN Code', 'Item Description', 'Quantity', 'Unit Price',
       'Total Amount', 'Taxable Amount', 'GST Amount', 'Balanced'
     ]
 
@@ -321,6 +326,10 @@ export const useMultiUpload = () => {
         entry.creditAmount,
         `"${entry.reference.replace(/"/g, '""')}"`,
         `"${(entry.vendor || '').replace(/"/g, '""')}"`,
+        `"${(entry.hsnCode || '').replace(/"/g, '""')}"`,
+        `"${(entry.itemDescription || '').replace(/"/g, '""')}"`,
+        entry.quantity || '',
+        entry.unitPrice || '',
         entry.totalAmount || 0,
         entry.taxableAmount || 0,
         entry.gstAmount || 0,

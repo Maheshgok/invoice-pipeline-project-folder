@@ -893,6 +893,10 @@ const MultiUploadDashboard: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Credit ₹</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reference</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendor</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">HSN Code</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Details</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price ₹</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">GST ₹</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balanced</th>
                   </tr>
@@ -1168,6 +1172,27 @@ const MultiUploadDashboard: React.FC = () => {
                           </div>
                         )}
                       </td>
+                      
+                      {/* HSN Code */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {entry.hsnCode || '-'}
+                      </td>
+                      
+                      {/* Item Description */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                        {entry.itemDescription || '-'}
+                      </td>
+                      
+                      {/* Quantity */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                        {entry.quantity || '-'}
+                      </td>
+                      
+                      {/* Unit Price */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                        {entry.unitPrice ? `₹${entry.unitPrice.toFixed(2)}` : '-'}
+                      </td>
+                      
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         {editingCell === `${entry.id}-gstAmount` ? (
                           <div className="flex items-center space-x-2">

@@ -21,6 +21,10 @@ export interface JournalEntry {
   taxableAmount?: number
   gstAmount?: number
   isBalanced?: boolean
+  hsnCode?: string
+  itemDescription?: string
+  quantity?: number
+  unitPrice?: number
 }
 
 export class FirestoreSyncManager {

@@ -31,6 +31,10 @@ interface JournalEntry {
   taxableAmount?: number
   gstAmount?: number
   isBalanced?: boolean
+  hsnCode?: string
+  itemDescription?: string
+  quantity?: number
+  unitPrice?: number
 }
 
 export const useRealtimeUpload = () => {
@@ -433,7 +437,7 @@ export const useRealtimeUpload = () => {
       await archiveCompletedResults()
       
       // Create CSV content
-      const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor']
+      const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 'HSN Code', 'Item Description', 'Quantity', 'Unit Price']
       const csvContent = [
         headers.join(','),
         ...journalEntries.map(entry => [
@@ -444,7 +448,11 @@ export const useRealtimeUpload = () => {
           entry.debitAmount,
           entry.creditAmount,
           `"${entry.reference}"`,
-          `"${entry.vendor || ''}"`
+          `"${entry.vendor || ''}"`,
+          `"${entry.hsnCode || ''}"`,
+          `"${entry.itemDescription || ''}"`,
+          entry.quantity || '',
+          entry.unitPrice || ''
         ].join(','))
       ].join('\n')
 
