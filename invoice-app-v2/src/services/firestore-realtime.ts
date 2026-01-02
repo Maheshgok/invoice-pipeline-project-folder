@@ -1078,9 +1078,26 @@ class RealtimeFirestoreService {
         // Check both possible legacy data structures
         let journalData = null
         
-        // Structure 0: extractedData.journal_entries (new simplified structure)
-        if (result.extractedData?.journal_entries && Array.isArray(result.extractedData.journal_entries)) {
+        // Structure 0: extractedData.extracted_data.journal_entries (new simplified structure)
+        if (result.extractedData?.extracted_data?.journal_entries && Array.isArray(result.extractedData.extracted_data.journal_entries)) {
           // Convert simplified journal_entries to expected format
+          journalData = {
+            journal_entry_set: [{
+              entry_number: 1,
+              date: result.extractedData.extracted_data.invoice_details?.invoice_date || '',
+              entries: result.extractedData.extracted_data.journal_entries,
+              total_debit: result.extractedData.extracted_data.journal_entries.reduce((sum: number, entry: any) => sum + (entry.debit_amount || 0), 0),
+              total_credit: result.extractedData.extracted_data.journal_entries.reduce((sum: number, entry: any) => sum + (entry.credit_amount || 0), 0),
+              is_balanced: true,
+              entry_description: 'Purchase Invoice Journal Entry'
+            }]
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📊 Found new simplified journal_entries structure')
+          }
+        }
+        // Structure 1: extractedData.journal_entries (direct structure - fallback)
+        else if (result.extractedData?.journal_entries && Array.isArray(result.extractedData.journal_entries)) {
           journalData = {
             journal_entry_set: [{
               entry_number: 1,
@@ -1093,17 +1110,17 @@ class RealtimeFirestoreService {
             }]
           }
           if (process.env.NODE_ENV === 'development') {
-            console.log('📊 Found new simplified journal_entries structure')
+            console.log('📊 Found direct journal_entries structure')
           }
         }
-        // Structure 1: extractedData.double_entry_bookkeeping (original structure)
+        // Structure 2: extractedData.double_entry_bookkeeping (original structure)
         else if (result.extractedData?.double_entry_bookkeeping) {
           journalData = result.extractedData.double_entry_bookkeeping
           if (process.env.NODE_ENV === 'development') {
             console.log('📊 Found legacy journal data in extractedData.double_entry_bookkeeping')
           }
         }
-        // Structure 2: extractedData.extracted_data.double_entry_bookkeeping (legacy structure)
+        // Structure 3: extractedData.extracted_data.double_entry_bookkeeping (legacy structure)
         else if (result.extractedData?.extracted_data?.double_entry_bookkeeping) {
           journalData = result.extractedData.extracted_data.double_entry_bookkeeping
           if (process.env.NODE_ENV === 'development') {
