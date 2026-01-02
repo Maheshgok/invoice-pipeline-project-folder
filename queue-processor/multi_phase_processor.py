@@ -94,6 +94,8 @@ class MultiPhaseInvoiceProcessor:
     def _phase1_extract_data(self, image_data: bytes) -> Dict[str, Any]:
         """Phase 1: Extract raw data from invoice image"""
         try:
+            logger.info(f"🔍 PHASE 1/3: Starting data extraction from invoice image")
+            logger.info(f"🔧 Using GPT-4o with OCR capabilities for raw data extraction")
             # Encode image for OpenAI
             import base64
             base64_image = base64.b64encode(image_data).decode('utf-8')
@@ -118,6 +120,7 @@ class MultiPhaseInvoiceProcessor:
             
             result = response.choices[0].message.content.strip()
             logger.info(f"📊 Phase 1 raw response length: {len(result)} characters")
+            logger.info(f"✅ PHASE 1/3: Data extraction completed successfully")
             
             return json.loads(result)
             
@@ -131,6 +134,10 @@ class MultiPhaseInvoiceProcessor:
     def _phase2_enrich_data(self, phase1_data: Dict[str, Any], client_organization_context: Optional[str] = None) -> Dict[str, Any]:
         """Phase 2: Enrich extracted data with GST taxonomy and client organization context"""
         try:
+            logger.info(f"🔧 PHASE 2/3: Starting data enrichment with GST taxonomy integration")
+            logger.info(f"📋 Client organization context: {'Available' if client_organization_context else 'Not available'}")
+            logger.info(f"🔧 PHASE 2/3: Starting data enrichment with GST taxonomy integration")
+            logger.info(f"📋 Client organization context: {'Available' if client_organization_context else 'Not available'}")
             # Build enriched prompt with GST taxonomy and client organization context
             prompt_parts = [PHASE2_DATA_ENRICHMENT_PROMPT]
             
@@ -193,6 +200,7 @@ Consider their common HSN codes, expense categories, and capitalization threshol
             
             result = response.choices[0].message.content.strip()
             logger.info(f"🔧 Phase 2 enrichment response length: {len(result)} characters")
+            logger.info(f"✅ PHASE 2/3: Data enrichment completed successfully")
             
             return json.loads(result)
             
@@ -260,6 +268,8 @@ Consider their common HSN codes, expense categories, and capitalization threshol
     def _phase3_convert_to_json(self, phase2_data: Dict[str, Any]) -> Dict[str, Any]:
         """Phase 3: Convert to strict JSON schema for frontend"""
         try:
+            logger.info(f"📋 PHASE 3/3: Starting JSON schema conversion for frontend compliance")
+            logger.info(f"🔍 Enforcing strict field naming and schema validation")
             prompt = f"{PHASE3_JSON_CONVERSION_PROMPT}\n\nINPUT DATA:\n{json.dumps(phase2_data, indent=2)}"
             
             response = self.client.chat.completions.create(
@@ -271,6 +281,7 @@ Consider their common HSN codes, expense categories, and capitalization threshol
             
             result = response.choices[0].message.content.strip()
             logger.info(f"📋 Phase 3 conversion response length: {len(result)} characters")
+            logger.info(f"✅ PHASE 3/3: JSON schema conversion completed successfully")
             
             return json.loads(result)
             

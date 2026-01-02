@@ -249,7 +249,9 @@ class OpenAIProcessor:
                 
                 # Use multi-phase processing for better accuracy
                 if client_organization_context or client_organization_id:
-                    logger.info(f"🚀 Using multi-phase processing with client organization context")
+                    logger.info(f"🚀 PROCESSING APPROACH: Multi-Phase (3 OpenAI API calls)")
+                    logger.info(f"📋 CLIENT ORG CONTEXT: Available - Using enhanced GST taxonomy processing")
+                    logger.info(f"🔧 Phases: 1️⃣ Data extraction → 2️⃣ GST enrichment → 3️⃣ JSON conversion")
                     from multi_phase_processor import MultiPhaseInvoiceProcessor
                     multi_phase = MultiPhaseInvoiceProcessor()
                     
@@ -261,14 +263,16 @@ class OpenAIProcessor:
                         client_organization_id=client_organization_id
                     )
                     
-                    logger.info(f"✅ Multi-phase processing completed successfully")
+                    logger.info(f"✅ MULTI-PHASE PROCESSING: Completed all 3 phases successfully")
                     return {
                         "success": True,
                         "data": result,
                         "error": None
                     }
                 else:
-                    logger.info(f"📋 Using legacy single-phase processing (no organization context)")
+                    logger.info(f"📋 PROCESSING APPROACH: Legacy Single-Phase (1 OpenAI API call)")
+                    logger.info(f"⚠️ CLIENT ORG CONTEXT: Not available - Using basic processing without GST taxonomy")
+                    logger.info(f"🔧 Phases: 1️⃣ Direct image-to-JSON conversion only")
                 
                 # Legacy single-phase processing (fallback)
                 if system_prompt and system_prompt.strip():
