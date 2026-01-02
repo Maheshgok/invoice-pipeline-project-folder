@@ -106,7 +106,17 @@ RETURN EXACTLY this JSON SHAPE:
       "quantity": 0,
       "unit_price": 0,
       "vendor_name": "",
-      "reference_number": ""
+      "reference_number": "",
+      "invoice_date": "",
+      "gst_amount": 0,
+      "cgst_amount": 0,
+      "sgst_amount": 0,
+      "igst_amount": 0,
+      "taxable_amount": 0,
+      "line_total": 0,
+      "is_gst_applicable": false,
+      "place_of_supply": "",
+      "entry_balanced": true
     }
   ],  "bank_details": {
     "account_number": "",
@@ -249,6 +259,26 @@ CRITICAL REQUIREMENTS:
    - Debit: Expense accounts (Office Expenses, Equipment, etc.) for taxable amounts
    - Debit: GST Input accounts (CGST Input, SGST Input, IGST Input) for tax amounts  
    - Credit: Accounts Payable or Cash/Bank accounts for total amount
+4. COMPLETE DATA VALIDATION - Every journal entry MUST have:
+   - Non-empty account_name with descriptive details
+   - Valid account_type (Asset, Liability, Expense)
+   - Appropriate account_code (never leave blank)
+   - Either debit_amount > 0 OR credit_amount > 0 (never both)
+   - Meaningful narration describing the transaction
+   - Consistent vendor_name across all entries
+   - Consistent reference_number (invoice number) across all entries
+   - Consistent invoice_date across all entries
+   - Proper GST breakdown when applicable
+5. MATHEMATICAL ACCURACY:
+   - Total debit_amount = Total credit_amount (must balance)
+   - taxable_amount + gst_amount = line_total for expense entries
+   - Sum of all cgst_amount + sgst_amount + igst_amount = total GST on invoice
+6. DATA COMPLETENESS CHECK:
+   - If quantity > 0, then unit_price must be populated
+   - If HSN code exists in items, copy to ALL related journal entries
+   - If vendor GSTIN exists, incorporate into account codes where appropriate
+   - Never leave reference fields blank if source data is available  
+   - Credit: Accounts Payable or Cash/Bank accounts for total amount
 
 HSN CODE CLASSIFICATION REFERENCE:
 When determining HSN codes for items, use this GST-based classification:
@@ -281,44 +311,137 @@ Use this reference to assign appropriate HSN codes and expense categories based 
 6. Use appropriate account_type: "Asset", "Expense", "Liability"
 
 ENRICHED JOURNAL ENTRY REQUIREMENTS:
-7. ALWAYS populate all journal entry fields:
-   - "account_code": Use HSN code from items when available, or create appropriate account code
-   - "hsn_code": Copy from matching item's hsn_code field
-   - "item_description": Copy from matching item's description field
-   - "quantity": Copy from matching item's quantity field  
-   - "unit_price": Copy from matching item's unit_price field
-   - "vendor_name": Use vendor_details.name consistently across all entries
-   - "reference_number": Use invoice_details.invoice_number
+7. ALWAYS populate ALL journal entry fields with complete data:
+   - "account_code": Use HSN code from items when available, or create appropriate account code (e.g., 2000 for Payables, 8517 for Equipment)
+   - "hsn_code": Copy from matching item's hsn_code field, use "" if not applicable
+   - "item_description": Copy from matching item's description field, be descriptive
+   - "quantity": Copy from matching item's quantity field, default to 0 if not line-item specific
+   - "unit_price": Copy from matching item's unit_price field, default to 0 if not line-item specific
+   - "vendor_name": Use vendor_details.name consistently across ALL entries
+   - "reference_number": Use invoice_details.invoice_number consistently across ALL entries
+   - "invoice_date": Use invoice_details.invoice_date consistently across ALL entries
+   - "gst_amount": Total GST amount for this line (cgst + sgst + igst)
+   - "cgst_amount": CGST amount for this line item
+   - "sgst_amount": SGST amount for this line item  
+   - "igst_amount": IGST amount for this line item
+   - "taxable_amount": Base taxable amount before GST
+   - "line_total": Final amount including all taxes
+   - "is_gst_applicable": true/false based on whether GST applies to this entry
+   - "place_of_supply": State/UT code where applicable
+   - "entry_balanced": Always set to true after ensuring debit total = credit total
 
-EXAMPLE for ₹3000 modem with HSN 8517:
+8. COMPLETE GST BREAKDOWN - Create separate entries for each GST component:
+   - If CGST + SGST: Create separate debit entries for each
+   - If IGST: Create single debit entry for IGST
+   - Always use appropriate GST account codes: CGST (1801), SGST (1802), IGST (1803)
+
+9. COMPREHENSIVE ACCOUNT CODING SYSTEM:
+   - Assets/Equipment: Use HSN code of the item (8517, 84713000, etc.)
+   - CGST Input Credit: 1801
+   - SGST Input Credit: 1802  
+   - IGST Input Credit: 1803
+   - Accounts Payable: 2000 + last 3 digits of vendor GSTIN (if available)
+   - Office Expenses: 6001
+   - Equipment Purchase: 1200 + HSN prefix
+   - Professional Services: 6200
+
+EXAMPLE for ₹3000 modem with HSN 8517 (with GST ₹540):
 [
   {
-    "account_name": "Office Equipment", 
+    "account_name": "Office Equipment - Modem", 
     "account_type": "Asset", 
     "account_code": "8517",
-    "debit_amount": 3000, 
+    "debit_amount": 2460, 
     "credit_amount": 0, 
-    "narration": "Modem Purchase",
+    "narration": "Modem Purchase - Plan 1277",
     "hsn_code": "8517",
     "item_description": "Modem Purchase",
     "quantity": 1,
-    "unit_price": 3000,
+    "unit_price": 2460,
     "vendor_name": "KATYAYANI COMMUNICATION GROUP",
-    "reference_number": "204"
+    "reference_number": "204",
+    "invoice_date": "20-10-2020",
+    "gst_amount": 540,
+    "cgst_amount": 270,
+    "sgst_amount": 270,
+    "igst_amount": 0,
+    "taxable_amount": 2460,
+    "line_total": 3000,
+    "is_gst_applicable": true,
+    "place_of_supply": "",
+    "entry_balanced": true
   },
   {
-    "account_name": "Accounts Payable", 
+    "account_name": "CGST Input Credit", 
+    "account_type": "Asset", 
+    "account_code": "1801",
+    "debit_amount": 270, 
+    "credit_amount": 0, 
+    "narration": "CGST on Modem Purchase",
+    "hsn_code": "8517",
+    "item_description": "Modem Purchase", 
+    "quantity": 1,
+    "unit_price": 2460,
+    "vendor_name": "KATYAYANI COMMUNICATION GROUP",
+    "reference_number": "204",
+    "invoice_date": "20-10-2020",
+    "gst_amount": 270,
+    "cgst_amount": 270,
+    "sgst_amount": 0,
+    "igst_amount": 0,
+    "taxable_amount": 2460,
+    "line_total": 270,
+    "is_gst_applicable": true,
+    "place_of_supply": "",
+    "entry_balanced": true
+  },
+  {
+    "account_name": "SGST Input Credit", 
+    "account_type": "Asset", 
+    "account_code": "1802",
+    "debit_amount": 270, 
+    "credit_amount": 0, 
+    "narration": "SGST on Modem Purchase",
+    "hsn_code": "8517",
+    "item_description": "Modem Purchase", 
+    "quantity": 1,
+    "unit_price": 2460,
+    "vendor_name": "KATYAYANI COMMUNICATION GROUP",
+    "reference_number": "204",
+    "invoice_date": "20-10-2020",
+    "gst_amount": 270,
+    "cgst_amount": 0,
+    "sgst_amount": 270,
+    "igst_amount": 0,
+    "taxable_amount": 2460,
+    "line_total": 270,
+    "is_gst_applicable": true,
+    "place_of_supply": "",
+    "entry_balanced": true
+  },
+  {
+    "account_name": "Accounts Payable - KATYAYANI COMMUNICATION GROUP", 
     "account_type": "Liability", 
     "account_code": "2000",
     "debit_amount": 0, 
     "credit_amount": 3000, 
-    "narration": "Purchase from KATYAYANI COMMUNICATION",
+    "narration": "Purchase from KATYAYANI COMMUNICATION GROUP - Invoice 204",
     "hsn_code": "8517",
     "item_description": "Modem Purchase", 
     "quantity": 1,
-    "unit_price": 3000,
+    "unit_price": 2460,
     "vendor_name": "KATYAYANI COMMUNICATION GROUP",
-    "reference_number": "204"
+    "reference_number": "204",
+    "invoice_date": "20-10-2020",
+    "gst_amount": 0,
+    "cgst_amount": 0,
+    "sgst_amount": 0,
+    "igst_amount": 0,
+    "taxable_amount": 2460,
+    "line_total": 3000,
+    "is_gst_applicable": false,
+    "place_of_supply": "",
+    "entry_balanced": true
   }
 ]
 
