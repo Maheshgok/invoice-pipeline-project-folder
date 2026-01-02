@@ -3,9 +3,9 @@ import {
   clientOrganizationService,
   userOrganizationService,
   ClientOrganization,
-  UserOrganization,
-  BUSINESS_TYPES
+  UserOrganization
 } from '../../services/clientOrganizations'
+import { BUSINESS_TYPES } from '../../services/organizationProfiles'
 import { toast } from 'react-hot-toast'
 
 interface ClientOrganizationManagerProps {
@@ -180,11 +180,14 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select Business Type</option>
-                  {BUSINESS_TYPES.map((type) => (
-                    <option key={type.value} value={type.value}>
-                      {type.label} - {type.description}
-                    </option>
-                  ))}
+                  {BUSINESS_TYPES.map((type) => {
+                    const hsnPrefix = type.common_hsn_codes[0]?.substring(0, 2) || type.chapter_number.toString().padStart(2, '0')
+                    return (
+                      <option key={type.value} value={type.value}>
+                        HSN {hsnPrefix}xx - {type.label} | {type.description}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
               

@@ -347,9 +347,14 @@ const OrganizationManagement: React.FC<OrganizationManagementProps> = ({
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Select Business Type</option>
-                  {BUSINESS_TYPES.map(bt => (
-                    <option key={bt.value} value={bt.value}>{bt.label}</option>
-                  ))}
+                  {BUSINESS_TYPES.map(bt => {
+                    const hsnPrefix = bt.common_hsn_codes[0]?.substring(0, 2) || bt.chapter_number.toString().padStart(2, '0')
+                    return (
+                      <option key={bt.value} value={bt.value}>
+                        HSN {hsnPrefix}xx - {bt.label} | {bt.gst_section.split(':')[1]?.trim() || 'Services'}
+                      </option>
+                    )
+                  })}
                 </select>
               </div>
 

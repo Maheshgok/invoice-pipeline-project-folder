@@ -11,6 +11,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
+import { BUSINESS_TYPES } from './organizationProfiles'
 
 // User's own organization (SSO/outsourcing company/holding company)
 export interface UserOrganization {
@@ -49,99 +50,6 @@ export interface ClientOrganization {
   // For processing context
   processing_notes?: string
 }
-
-export interface BusinessType {
-  value: string
-  label: string
-  description: string
-  common_hsn_codes: string[]
-  expense_categories: string[]
-  capitalization_threshold: number
-}
-
-// Predefined business types with templates
-export const BUSINESS_TYPES: BusinessType[] = [
-  {
-    value: 'software_it',
-    label: 'Software/IT Services',
-    description: 'Software development, IT consulting, web services',
-    common_hsn_codes: ['998313', '998314', '998315'],
-    expense_categories: ['Software Licenses', 'Hardware', 'Office Equipment', 'Professional Services', 'Employee Benefits'],
-    capitalization_threshold: 100000
-  },
-  {
-    value: 'manufacturing',
-    label: 'Manufacturing',
-    description: 'Production and manufacturing of goods',
-    common_hsn_codes: ['84713000', '85176290', '39269099'],
-    expense_categories: ['Raw Materials', 'Machinery', 'Labor', 'Factory Overhead', 'Quality Control'],
-    capitalization_threshold: 200000
-  },
-  {
-    value: 'trading',
-    label: 'Trading/Wholesale',
-    description: 'Buy and sell goods, wholesale distribution',
-    common_hsn_codes: ['48239090', '84713000', '39269099'],
-    expense_categories: ['Inventory Purchase', 'Transportation', 'Storage', 'Sales Commission', 'Marketing'],
-    capitalization_threshold: 75000
-  },
-  {
-    value: 'retail',
-    label: 'Retail',
-    description: 'Direct sales to consumers',
-    common_hsn_codes: ['48239090', '84713000', '94036000'],
-    expense_categories: ['Inventory', 'Store Rent', 'Sales Staff', 'Point of Sale Equipment', 'Customer Service'],
-    capitalization_threshold: 50000
-  },
-  {
-    value: 'consulting',
-    label: 'Consulting/Professional Services',
-    description: 'Business consulting, advisory services',
-    common_hsn_codes: ['998399', '84713000', '48239090'],
-    expense_categories: ['Professional Development', 'Travel', 'Office Equipment', 'Research Materials', 'Client Entertainment'],
-    capitalization_threshold: 25000
-  },
-  {
-    value: 'healthcare',
-    label: 'Healthcare',
-    description: 'Medical services, healthcare facilities',
-    common_hsn_codes: ['90189090', '84713000', '30049099'],
-    expense_categories: ['Medical Equipment', 'Pharmaceutical Supplies', 'Professional Services', 'Facility Maintenance', 'Staff Training'],
-    capitalization_threshold: 150000
-  },
-  {
-    value: 'construction',
-    label: 'Construction/Real Estate',
-    description: 'Construction, property development',
-    common_hsn_codes: ['25232900', '76109090', '84295900'],
-    expense_categories: ['Construction Materials', 'Equipment Rental', 'Labor Contracts', 'Permits and Licenses', 'Safety Equipment'],
-    capitalization_threshold: 500000
-  },
-  {
-    value: 'hospitality',
-    label: 'Hospitality/Food & Beverage',
-    description: 'Hotels, restaurants, catering',
-    common_hsn_codes: ['19059090', '84713000', '94036000'],
-    expense_categories: ['Food & Beverage Supplies', 'Kitchen Equipment', 'Housekeeping Supplies', 'Marketing', 'Staff Training'],
-    capitalization_threshold: 100000
-  },
-  {
-    value: 'education',
-    label: 'Education',
-    description: 'Schools, training institutes, educational services',
-    common_hsn_codes: ['49019990', '84713000', '94036000'],
-    expense_categories: ['Educational Materials', 'Office Equipment', 'Utilities', 'Professional Development'],
-    capitalization_threshold: 50000
-  },
-  {
-    value: 'other',
-    label: 'Other',
-    description: 'General business type',
-    common_hsn_codes: ['48239090', '84713000'],
-    expense_categories: ['Office Expenses', 'Equipment', 'Professional Services', 'Utilities'],
-    capitalization_threshold: 50000
-  }
-]
 
 // User Organization Service - for user's own company
 class UserOrganizationService {

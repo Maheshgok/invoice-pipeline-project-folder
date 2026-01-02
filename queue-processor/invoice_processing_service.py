@@ -1,7 +1,7 @@
 """
 Invoice Processing Service
 Core business logic for processing invoices
-Handles the complete processing workflow
+Handles the complete processing workflow with GST taxonomy integration
 """
 import logging
 from datetime import datetime
@@ -10,6 +10,7 @@ from typing import Dict, Any, Tuple
 from openai_processor import OpenAIProcessor
 from result_manager import ResultManager
 from processing_tracker import ProcessingTracker
+from gst_taxonomy_helper import GSTTaxonomyHelper
 
 logger = logging.getLogger(__name__)
 

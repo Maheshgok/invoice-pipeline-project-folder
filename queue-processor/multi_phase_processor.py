@@ -1,6 +1,6 @@
 """
-Multi-Phase OpenAI Invoice Processor
-Processes invoices in three distinct phases for maximum accuracy
+Multi-Phase OpenAI Invoice Processor with GST Taxonomy Integration
+Processes invoices in three distinct phases for maximum accuracy with official GST classification
 """
 
 import json
@@ -13,6 +13,7 @@ import os
 from prompts.phase1_data_extraction import PHASE1_DATA_EXTRACTION_PROMPT
 from prompts.phase2_data_enrichment import PHASE2_DATA_ENRICHMENT_PROMPT  
 from prompts.phase3_json_conversion import PHASE3_JSON_CONVERSION_PROMPT
+from gst_taxonomy_helper import GSTTaxonomyHelper
 
 logger = logging.getLogger(__name__)
 
@@ -128,21 +129,59 @@ class MultiPhaseInvoiceProcessor:
             raise
     
     def _phase2_enrich_data(self, phase1_data: Dict[str, Any], client_organization_context: Optional[str] = None) -> Dict[str, Any]:
-        """Phase 2: Enrich extracted data with business logic and client organization context"""
+        """Phase 2: Enrich extracted data with GST taxonomy and client organization context"""
         try:
-            # Build enriched prompt with client organization context
+            # Build enriched prompt with GST taxonomy and client organization context
             prompt_parts = [PHASE2_DATA_ENRICHMENT_PROMPT]
+            
+            # Add GST taxonomy guidance
+            gst_taxonomy_section = """
+GST TAXONOMY GUIDANCE FOR HSN CODE CLASSIFICATION:
+Use India's official GST commodity classification system for accurate HSN code assignment:
+
+MAJOR GST SECTIONS:
+• Section I (Ch. 1-5): Animals & Animal Products → HSN prefix 01-05
+• Section II (Ch. 6-14): Vegetables & Plant Products → HSN prefix 06-14
+• Section IV (Ch. 16-24): Prepared Food & Beverages → HSN prefix 16-24
+• Section V (Ch. 25-27): Minerals & Fuels → HSN prefix 25-27
+• Section VI (Ch. 28-38): Chemicals & Pharmaceuticals → HSN prefix 28-38
+• Section VII (Ch. 39-40): Plastics & Rubber → HSN prefix 39-40
+• Section XI (Ch. 50-63): Textiles & Garments → HSN prefix 50-63
+• Section XV (Ch. 72-83): Base Metals & Articles → HSN prefix 72-83
+• Section XVI (Ch. 84-85): Machinery & Electrical Equipment → HSN prefix 84-85
+• Section XVII (Ch. 86-89): Vehicles & Transport → HSN prefix 86-89
+• Section XVIII (Ch. 90-92): Precision Instruments → HSN prefix 90-92
+• Section XX (Ch. 94-96): Furniture & Miscellaneous → HSN prefix 94-96
+• Chapter 99: Services → HSN prefix 99
+
+COMMON HSN EXAMPLES:
+• IT Services: 998313, Software: 998313, Hardware: 84713000
+• Office Supplies: 48239090, Stationery: 96081000
+• Food Items: 21069030, Beverages: 22011000
+• Professional Services: 998721, Consulting: 998313
+• Construction Materials: 25232900 (Cement), 72142000 (Steel)
+• Medical Equipment: 90189099, Pharmaceuticals: 30041000
+• Automotive: 87032300 (Vehicles), 87089900 (Parts)
+
+Assign HSN codes based on the most specific commodity classification that matches the item description.
+"""
+            
+            prompt_parts.append(gst_taxonomy_section)
             
             if client_organization_context:
                 org_context_section = f"""
 CLIENT ORGANIZATION CONTEXT FOR THIS INVOICE PROCESSING:
 {client_organization_context}
 
-Use this client organization context to make intelligent categorization decisions specific to their business type and industry.
+Use this client organization context to make intelligent categorization decisions specific to their business type and industry. 
+Consider their common HSN codes, expense categories, and capitalization thresholds when processing line items.
 """
                 prompt_parts.append(org_context_section)
             
-            prompt_parts.append(f"\nINPUT DATA:\n{json.dumps(phase1_data, indent=2)}")
+            # Use GST taxonomy helper to enhance line items
+            enhanced_data = self._enhance_with_gst_taxonomy(phase1_data, client_organization_context)
+            
+            prompt_parts.append(f"\nINPUT DATA (Pre-enhanced with GST taxonomy):\n{json.dumps(enhanced_data, indent=2)}")
             prompt = '\n'.join(prompt_parts)
             
             response = self.client.chat.completions.create(
@@ -163,6 +202,60 @@ Use this client organization context to make intelligent categorization decision
         except Exception as e:
             logger.error(f"❌ Phase 2 enrichment error: {str(e)}")
             raise
+    
+    def _enhance_with_gst_taxonomy(self, phase1_data: Dict[str, Any], client_organization_context: Optional[str] = None) -> Dict[str, Any]:
+        """Pre-enhance data using GST taxonomy helper before AI enrichment"""
+        enhanced_data = phase1_data.copy()
+        
+        try:
+            # Extract business type from client organization context if available
+            business_type = None
+            if client_organization_context and 'business_type' in client_organization_context:
+                # Try to extract business_type from context string
+                import re
+                match = re.search(r'"business_type":\s*"([^"]+)"', client_organization_context)
+                if match:
+                    business_type = match.group(1)
+            
+            # Enhance line items with GST taxonomy
+            line_items = enhanced_data.get('line_items', [])
+            for item in line_items:
+                item_description = item.get('item_description', '') or item.get('description', '')
+                
+                if item_description:
+                    # Get suggested HSN code using GST taxonomy
+                    suggested_hsn = GSTTaxonomyHelper.get_hsn_code(item_description, business_type)
+                    
+                    # Only suggest if no HSN code exists or if existing seems generic
+                    current_hsn = item.get('hsn_code', '')
+                    if not current_hsn or current_hsn in ['', '0', 'N/A', '48239090']:
+                        item['suggested_hsn_code'] = suggested_hsn
+                        
+                        # Add GST section info for context
+                        section_info = GSTTaxonomyHelper.get_gst_section_info(suggested_hsn)
+                        item['gst_section'] = section_info.get('section', 'Unknown')
+                        item['gst_chapter'] = section_info.get('chapter', 0)
+                    
+                    # Get suggested expense category
+                    current_hsn_for_category = current_hsn or suggested_hsn
+                    suggested_category = GSTTaxonomyHelper.get_expense_category(current_hsn_for_category, business_type)
+                    item['suggested_expense_category'] = suggested_category
+            
+            # Add taxonomy enhancement metadata
+            enhanced_data['gst_taxonomy_enhancement'] = {
+                'enhanced': True,
+                'business_type_used': business_type,
+                'items_enhanced': len([item for item in line_items if 'suggested_hsn_code' in item]),
+                'enhancement_timestamp': '2026-01-02'  # Current date
+            }
+            
+            logger.info(f"🔍 GST taxonomy enhancement: {enhanced_data['gst_taxonomy_enhancement']['items_enhanced']} items enhanced")
+            
+        except Exception as e:
+            logger.warning(f"⚠️ GST taxonomy enhancement failed: {str(e)}")
+            # Return original data if enhancement fails
+            
+        return enhanced_data
     
     def _phase3_convert_to_json(self, phase2_data: Dict[str, Any]) -> Dict[str, Any]:
         """Phase 3: Convert to strict JSON schema for frontend"""

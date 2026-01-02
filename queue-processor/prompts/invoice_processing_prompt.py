@@ -11,9 +11,24 @@ PHASE 1: CONSERVATIVE DATA EXTRACTION
 - Don't guess or infer missing information
 
 PHASE 2: DATA ENRICHMENT & ACCOUNTING
-- Enrich data based on common business knowledge:
-  - Add appropriate HSN codes based on item descriptions (e.g., "Modem" = telecom equipment HSN)  
-  - Categorize expenses appropriately (Office Supplies, Equipment, Services, etc.)
+- Enrich data based on GST taxonomy and business knowledge:
+  - Add appropriate HSN codes based on item descriptions using India's GST commodity classification
+  - Reference the GST Harmonized System of Nomenclature (HSN) structure:
+    * Section I (Ch. 1-5): Animals & Animal Products
+    * Section II (Ch. 6-14): Vegetables & Plant Products  
+    * Section IV (Ch. 16-24): Prepared Food & Beverages
+    * Section V (Ch. 25-27): Minerals & Fuels
+    * Section VI (Ch. 28-38): Chemicals & Pharmaceuticals
+    * Section VII (Ch. 39-40): Plastics & Rubber
+    * Section XI (Ch. 50-63): Textiles & Garments
+    * Section XV (Ch. 72-83): Base Metals & Articles
+    * Section XVI (Ch. 84-85): Machinery & Electrical Equipment
+    * Section XVII (Ch. 86-89): Vehicles & Transport
+    * Section XVIII (Ch. 90-92): Precision Instruments
+    * Section XX (Ch. 94-96): Furniture & Miscellaneous
+    * Chapter 99: Services
+  - Categorize expenses based on business type and GST classification
+  - Examples: IT Services (998313), Telecom Equipment (85176290), Office Supplies (48239090)
 - Create journal entries using standard double-entry principles
 - Apply Indian accounting standards for purchase transactions
 
@@ -233,6 +248,33 @@ CRITICAL REQUIREMENTS:
 3. For journal entries, create proper debit/credit pairs:
    - Debit: Expense accounts (Office Expenses, Equipment, etc.) for taxable amounts
    - Debit: GST Input accounts (CGST Input, SGST Input, IGST Input) for tax amounts  
+   - Credit: Accounts Payable or Cash/Bank accounts for total amount
+
+HSN CODE CLASSIFICATION REFERENCE:
+When determining HSN codes for items, use this GST-based classification:
+
+COMMON HSN CODES BY CATEGORY:
+• IT & Technology: 998313 (Software), 85176290 (Telecom), 84713000 (Computers)
+• Office Supplies: 48239090 (Paper goods), 39269099 (Plastic items), 84713000 (Office equipment)
+• Food & Beverages: 21069030 (Food preparations), 22011000 (Water), 07129000 (Vegetables)
+• Pharmaceuticals: 30021000 (Vaccines), 30041000 (Medicaments), 90189099 (Medical devices)
+• Textiles: 61091000 (Garments), 52084200 (Cotton fabrics), 54076100 (Synthetic fabrics)
+• Metals: 73021000 (Iron/Steel products), 82041100 (Tools), 76169900 (Aluminum articles)
+• Chemicals: 29011000 (Organic chemicals), 38220090 (Chemical preparations), 28092000 (Inorganic chemicals)
+• Construction: 25232900 (Cement), 44209000 (Wood products), 68109900 (Concrete products)
+• Automotive: 87032300 (Motor cars), 87089900 (Auto parts), 40169300 (Rubber products)
+• Services: 998721 (Legal services), 998313 (IT services), 997212 (Real estate services)
+
+EXPENSE CATEGORIZATION BY BUSINESS TYPE:
+• Manufacturing: Raw Materials, Manufacturing Overhead, Plant & Equipment, Factory Utilities
+• IT Services: Technology Infrastructure, Software Licenses, Professional Services, Internet & Communications
+• Retail/Trading: Inventory, Store Operations, Marketing & Advertising, Point of Sale Systems
+• Food Service: Food & Beverages, Kitchen Equipment, Restaurant Supplies, Staff Wages
+• Professional Services: Professional Development, Office Expenses, Client Entertainment, Reference Materials
+• Healthcare: Medical Equipment, Consumables & Supplies, Professional Services, Facility Management
+• Construction: Construction Materials, Equipment Rental, Labor Costs, Legal & Documentation
+
+Use this reference to assign appropriate HSN codes and expense categories based on item descriptions and business context.  
    - Credit: Accounts Payable or vendor name for total invoice amount
 4. Each entry must have EITHER debit_amount > 0 OR credit_amount > 0 (never both)
 5. Total debits must equal total credits
