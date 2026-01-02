@@ -344,7 +344,7 @@ export const useMultiUploadSimplified = (options: UseMultiUploadOptions = {}) =>
       const headers = [
         'Date', 'Account Name', 'Account Code', 'Description',
         'Debit Amount', 'Credit Amount', 'Reference', 'Vendor',
-        'HSN Code', 'Item Description', 'Quantity', 'Unit Price'
+        'HSN Code', 'Item Description', 'Quantity', 'Unit Price', 'Balanced'
       ]
 
       const csvContent = [
@@ -361,7 +361,8 @@ export const useMultiUploadSimplified = (options: UseMultiUploadOptions = {}) =>
           `"${entry.hsnCode || ''}"`,
           `"${entry.itemDescription || ''}"`,
           entry.quantity || '',
-          entry.unitPrice || ''
+          entry.unitPrice || '',
+          entry.isBalanced ? 'Balanced' : 'Unbalanced'
         ].join(','))
       ].join('\n')
 

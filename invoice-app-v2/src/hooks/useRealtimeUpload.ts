@@ -437,7 +437,7 @@ export const useRealtimeUpload = () => {
       await archiveCompletedResults()
       
       // Create CSV content
-      const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 'HSN Code', 'Item Description', 'Quantity', 'Unit Price']
+      const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 'HSN Code', 'Item Description', 'Quantity', 'Unit Price', 'Balanced']
       const csvContent = [
         headers.join(','),
         ...journalEntries.map(entry => [
@@ -452,7 +452,8 @@ export const useRealtimeUpload = () => {
           `"${entry.hsnCode || ''}"`,
           `"${entry.itemDescription || ''}"`,
           entry.quantity || '',
-          entry.unitPrice || ''
+          entry.unitPrice || '',
+          entry.isBalanced ? 'Balanced' : 'Unbalanced'
         ].join(','))
       ].join('\n')
 
