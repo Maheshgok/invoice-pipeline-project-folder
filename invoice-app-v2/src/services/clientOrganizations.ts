@@ -130,6 +130,10 @@ class ClientOrganizationService {
       const user = authService.getCurrentUser()
       if (!user?.uid) throw new Error('User not authenticated')
 
+      console.log('🔍 Creating client organization for user:', user.uid)
+      console.log('🔍 Collection path:', this.getClientOrganizationPath())
+      console.log('🔍 Client data:', { ...clientData, user_uid: user.uid })
+
       const clientRef = collection(db, this.getClientOrganizationPath())
       
       const newClient: Omit<ClientOrganization, 'id'> = {
@@ -140,12 +144,19 @@ class ClientOrganizationService {
         is_active: true
       }
 
+      console.log('🔍 Final client data being saved:', newClient)
+
       const docRef = await addDoc(clientRef, newClient)
       console.log('🏢 Client organization created:', docRef.id)
       return docRef.id
       
     } catch (error) {
       console.error('❌ Error creating client organization:', error)
+      console.error('❌ Error details:', {
+        code: (error as any).code,
+        message: (error as any).message,
+        details: (error as any).details
+      })
       throw error
     }
   }

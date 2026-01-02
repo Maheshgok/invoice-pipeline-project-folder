@@ -39,9 +39,12 @@ service cloud.firestore {
     
     // Client organizations stored under each user: allow user to manage their clients
     match /users/{userId}/client_organizations/{clientId} {
-      allow read: if request.auth != null && request.auth.uid == userId;
-      allow create: if request.auth != null && request.auth.uid == userId;
-      allow update, delete: if request.auth != null && request.auth.uid == userId;
+      allow read, write, create, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow authenticated users to query the client_organizations collection
+    match /users/{userId}/client_organizations/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
     }
     
     // User session management - users can only manage their own sessions
