@@ -138,6 +138,9 @@ class CloudTasksManager:
                 "user_uid": user_context['uid'],
                 "organization_id": user_context.get('organization_id'),
                 "organization_role": user_context.get('organization_role'),
+                "client_organization_context": user_context.get('client_organization_context'),
+                "client_organization_id": user_context.get('client_organization_id'),
+                "client_organization_name": user_context.get('client_organization_name'),
                 "timestamp": datetime.utcnow().isoformat(),
                 "source": "cloud_tasks_manager",
                 "expected_user_folder": user_context['uid'][:8],  # For path validation

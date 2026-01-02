@@ -203,6 +203,20 @@ def upload_file():
         logger.error("Empty filename provided")
         return jsonify({"error": "No file selected"}), 400
     
+    # Extract client organization context from form data
+    client_organization_context = request.form.get('organization_context')
+    client_organization_id = request.form.get('client_organization_id')
+    client_organization_name = request.form.get('client_organization_name')
+    
+    if client_organization_context:
+        logger.info(f"🏢 Client organization context provided: {client_organization_name} (ID: {client_organization_id})")
+        # Add client org context to user_context for downstream processing
+        user_context['client_organization_context'] = client_organization_context
+        user_context['client_organization_id'] = client_organization_id
+        user_context['client_organization_name'] = client_organization_name
+    else:
+        logger.info("📋 No client organization context provided - using legacy processing")
+    
     try:
         # Ensure user bucket exists
         user_bucket_name = ensure_user_bucket_exists(user_context['uid'])
