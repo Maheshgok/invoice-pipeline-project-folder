@@ -1078,8 +1078,26 @@ class RealtimeFirestoreService {
         // Check both possible legacy data structures
         let journalData = null
         
+        // Structure 0: extractedData.journal_entries (new simplified structure)
+        if (result.extractedData?.journal_entries && Array.isArray(result.extractedData.journal_entries)) {
+          // Convert simplified journal_entries to expected format
+          journalData = {
+            journal_entry_set: [{
+              entry_number: 1,
+              date: result.extractedData.invoice_details?.invoice_date || '',
+              entries: result.extractedData.journal_entries,
+              total_debit: result.extractedData.journal_entries.reduce((sum: number, entry: any) => sum + (entry.debit_amount || 0), 0),
+              total_credit: result.extractedData.journal_entries.reduce((sum: number, entry: any) => sum + (entry.credit_amount || 0), 0),
+              is_balanced: true,
+              entry_description: 'Purchase Invoice Journal Entry'
+            }]
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📊 Found new simplified journal_entries structure')
+          }
+        }
         // Structure 1: extractedData.double_entry_bookkeeping (original structure)
-        if (result.extractedData?.double_entry_bookkeeping) {
+        else if (result.extractedData?.double_entry_bookkeeping) {
           journalData = result.extractedData.double_entry_bookkeeping
           if (process.env.NODE_ENV === 'development') {
             console.log('📊 Found legacy journal data in extractedData.double_entry_bookkeeping')

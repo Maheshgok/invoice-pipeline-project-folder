@@ -23,7 +23,7 @@ class CloudTasksManager:
         # GCP Configuration
         self.project_id = os.environ.get('PROJECT_ID', 'watch-mail-trial')
         self.location = os.environ.get('CLOUD_TASKS_LOCATION', 'asia-south1')
-        self.queue_name = os.environ.get('CLOUD_TASKS_QUEUE', 'invoice-processing-queue')
+        self.base_queue_name = os.environ.get('CLOUD_TASKS_BASE_QUEUE', 'invoice-processing')
         
         # Service URLs
         self.queue_processor_url = os.environ.get(
@@ -34,57 +34,74 @@ class CloudTasksManager:
         # Initialize Cloud Tasks client
         self.client = CloudTasksClient()
         
-        # Queue path
-        self.queue_path = self.client.queue_path(
-            project=self.project_id,
-            location=self.location,
-            queue=self.queue_name
-        )
-        
-        logger.info(f"Cloud Tasks Manager initialized")
-        logger.info(f"Queue: {self.queue_path}")
+        logger.info(f"Cloud Tasks Manager initialized for project: {self.project_id}")
+        logger.info(f"Base queue name: {self.base_queue_name}")
         logger.info(f"Processor URL: {self.queue_processor_url}")
         
-        # Ensure queue exists
-        self._ensure_queue_exists()
-    
-    def _ensure_queue_exists(self):
-        """Create the queue if it doesn't exist"""
+    def get_user_queue_name(self, user_uid: str) -> str:
+        """Generate user-specific queue name"""
+        user_id_short = user_uid[:8] if len(user_uid) >= 8 else user_uid
+        return f"{self.base_queue_name}-{user_id_short}"
+        
+    def get_queue_path(self, user_uid: str) -> str:
+        """Get queue path for specific user"""
+        queue_name = self.get_user_queue_name(user_uid)
+        return self.client.queue_path(
+            project=self.project_id,
+            location=self.location,
+            queue=queue_name
+        )
+        
+    def ensure_user_queue_exists(self, user_uid: str) -> str:
+        """Create user queue if it doesn't exist"""
+        queue_name = self.get_user_queue_name(user_uid)
+        queue_path = self.get_queue_path(user_uid)
+        
         try:
-            # Try to get the queue first
-            self.client.get_queue(name=self.queue_path)
-            logger.info(f"Queue {self.queue_name} already exists")
+            # Check if queue exists
+            self.client.get_queue(name=queue_path)
+            logger.info(f"📋 Using existing user queue: {queue_name}")
         except Exception as e:
-            if "not found" in str(e).lower():
-                try:
-                    # Create the queue
-                    parent = self.client.location_path(self.project_id, self.location)
-                    
-                    queue_config = {
-                        "name": self.queue_path,
-                        "rate_limits": {
-                            "max_dispatches_per_second": 10,  # 10 dispatches per second
-                        },
-                        "retry_config": {
-                            "max_attempts": 3,  # Maximum retry attempts
-                            "max_retry_duration": {"seconds": 1800},  # 30 minutes max
-                            "min_backoff": {"seconds": 60},  # 1 minute min backoff
-                            "max_backoff": {"seconds": 3600},  # 1 hour max backoff
-                            "max_doublings": 3  # Exponential backoff doublings
-                        }
-                    }
-                    
-                    queue = self.client.create_queue(
-                        parent=parent,
-                        queue=queue_config
-                    )
-                    logger.info(f"Created queue: {queue.name}")
-                except Exception as create_error:
-                    logger.error(f"Failed to create queue: {create_error}")
-                    raise
-            else:
-                logger.error(f"Error checking queue: {e}")
-                raise
+            # Queue doesn't exist, create it
+            logger.info(f"Creating user queue: {queue_name}")
+            parent = self.client.common_location_path(self.project_id, self.location)
+            
+            queue_config = {
+                "name": queue_path,
+                "rate_limits": {
+                    "max_dispatches_per_second": 5.0,  # Per-user rate limiting
+                    "max_burst_size": 3,
+                    "max_concurrent_dispatches": 2
+                },
+                "retry_config": {
+                    "max_attempts": 3,
+                    "max_retry_duration": {"seconds": 1800},  # 30 minutes
+                    "min_backoff": {"seconds": 60},
+                    "max_backoff": {"seconds": 3600},
+                    "max_doublings": 16
+                }
+            }
+            
+            try:
+                created_queue = self.client.create_queue(
+                    parent=parent,
+                    queue=queue_config
+                )
+                logger.info(f"✅ User queue created: {queue_name}")
+            except Exception as create_error:
+                logger.error(f"❌ Failed to create user queue {queue_name}: {create_error}")
+                logger.error(f"   User UID: {user_uid}")
+                logger.error(f"   Queue name format: {queue_name}")
+                # NO FALLBACK - user isolation is critical
+                raise Exception(f"User queue creation failed for {queue_name}: {create_error}")
+                
+        return queue_path
+    
+    def get_user_queue_name(self, user_uid: str) -> str:
+        """Generate user-specific queue name"""
+        # Convert to lowercase and use hyphens (Cloud Tasks requirement)
+        user_id_short = user_uid[:8].lower() if len(user_uid) >= 8 else user_uid.lower()
+        return f"{self.base_queue_name}-{user_id_short}"
     
     def create_processing_task(
         self,
@@ -108,6 +125,10 @@ class CloudTasksManager:
             task_name: Full Cloud Tasks task name
         """
         try:
+            # Ensure user queue exists
+            user_uid = user_context['uid']
+            user_queue_path = self.ensure_user_queue_exists(user_uid)
+            
             # Prepare task payload with full user context and validation
             task_payload = {
                 "job_id": job_id,
@@ -119,7 +140,8 @@ class CloudTasksManager:
                 "organization_role": user_context.get('organization_role'),
                 "timestamp": datetime.utcnow().isoformat(),
                 "source": "cloud_tasks_manager",
-                "expected_user_folder": user_context['uid'][:8]  # For path validation
+                "expected_user_folder": user_context['uid'][:8],  # For path validation
+                "queue_type": "user_isolated"  # Indicate this is a user-isolated queue
             }
             
             # Create HTTP request for the task
@@ -145,21 +167,22 @@ class CloudTasksManager:
             
             # Create the task
             task = {
-                "name": f"{self.queue_path}/tasks/{job_id}-{int(datetime.utcnow().timestamp())}",
+                "name": f"{user_queue_path}/tasks/{job_id}-{int(datetime.utcnow().timestamp())}",
                 **task_request
             }
             
-            # Submit to Cloud Tasks
+            # Submit to user-specific Cloud Tasks queue
             response = self.client.create_task(
-                parent=self.queue_path,
+                parent=user_queue_path,
                 task=task
             )
             
             task_name = response.name
+            queue_name = self.get_user_queue_name(user_uid)
             
-            logger.info(f"✅ Created Cloud Task for job {job_id}")
+            logger.info(f"✅ Created Cloud Task for job {job_id} in user queue: {queue_name}")
             logger.info(f"Task name: {task_name}")
-            logger.info(f"Payload: {task_payload}")
+            logger.info(f"User UID: {user_uid}")
             
             # Store task tracking in Firestore for monitoring
             self._track_task_creation(job_id, task_name, bucket_path, user_context)

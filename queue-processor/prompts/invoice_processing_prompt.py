@@ -3,15 +3,24 @@ OpenAI Invoice Processing Prompts
 Centralized prompts for easy fine-tuning and maintenance
 """
 
-INVOICE_PROCESSING_PROMPT = """You are an accountant for an INDIAN business recording PURCHASE / VENDOR invoices in the BUYER'S books.
+INVOICE_PROCESSING_PROMPT = """You are an expert accountant for an INDIAN business. This is a TWO-PHASE task:
 
-PRIMARY
-Return a FULLY VERBOSE GST-structured JSON, but ONLY using information that is actually visible in the invoice. Do NOT guess. Do NOT infer vendor or tax details from logic. If something does not appear, leave it blank or 0.
+PHASE 1: CONSERVATIVE DATA EXTRACTION
+- Extract only what is clearly visible on the invoice
+- For unclear fields, use 0 (numbers) or "" (strings) 
+- Don't guess or infer missing information
 
-ASSUMPTIONS
-- This document is always a PURCHASE invoice.
-- The business reading it is the CUSTOMER.
-- All GST found is INPUT tax credit.
+PHASE 2: DATA ENRICHMENT & ACCOUNTING
+- Enrich data based on common business knowledge:
+  - Add appropriate HSN codes based on item descriptions (e.g., "Modem" = telecom equipment HSN)  
+  - Categorize expenses appropriately (Office Supplies, Equipment, Services, etc.)
+- Create journal entries using standard double-entry principles
+- Apply Indian accounting standards for purchase transactions
+
+CRITICAL: The "journal_entries" section is MANDATORY - always populate it with proper debit/credit entries.
+
+This is a PURCHASE invoice - record it in the BUYER'S accounting books.
+All GST = INPUT tax credit (asset accounts).
 
 RETURN EXACTLY this JSON SHAPE:
 
@@ -69,8 +78,15 @@ RETURN EXACTLY this JSON SHAPE:
     "total_gst": 0,
     "round_off": 0,
     "grand_total": 0
-  },
-  "bank_details": {
+  },  "journal_entries": [
+    {
+      "account_name": "",
+      "account_type": "",
+      "debit_amount": 0,
+      "credit_amount": 0,
+      "narration": ""
+    }
+  ],  "bank_details": {
     "account_number": "",
     "ifsc": "",
     "bank_name": "",
@@ -204,7 +220,27 @@ Read the invoice image and return a SINGLE JSON object with EXACTLY this shape
     []
   ]
 }
+CRITICAL REQUIREMENTS:
+1. The "journal_entries" section is MANDATORY - never omit it
+2. Even if invoice data is incomplete, ALWAYS create journal entries 
+3. For journal entries, create proper debit/credit pairs:
+   - Debit: Expense accounts (Office Expenses, Equipment, etc.) for taxable amounts
+   - Debit: GST Input accounts (CGST Input, SGST Input, IGST Input) for tax amounts  
+   - Credit: Accounts Payable or vendor name for total invoice amount
+4. Each entry must have EITHER debit_amount > 0 OR credit_amount > 0 (never both)
+5. Total debits must equal total credits
+6. Use appropriate account_type: "Asset", "Expense", "Liability"
 
+EXAMPLE for ₹3000 modem with no GST:
+[
+  {"account_name": "Office Equipment", "account_type": "Asset", "debit_amount": 3000, "credit_amount": 0, "narration": "Modem Purchase"},
+  {"account_name": "Accounts Payable", "account_type": "Liability", "debit_amount": 0, "credit_amount": 3000, "narration": "Purchase from KATYAYANI COMMUNICATION"}
+]
+
+DATA ENRICHMENT EXAMPLES:
+- "Modem" description → HSN: 85176290 (telecom equipment)
+- "Stationery" description → HSN: 48239090 (office supplies)
+- "Software" description → HSN: 998313 (computer software)
 FIELD RULES
 - Dates: "DD-MM-YYYY" where possible.
 - Numeric fields: numbers only (no commas, no currency symbols).
@@ -243,7 +279,10 @@ GENERAL
 
 OUTPUT FORMAT
 - Return ONLY the JSON object.
-- No explanations, no comments, no trailing commas."""
+- ALWAYS include the "journal_entries" array with proper debit/credit entries.
+- Enrich HSN codes and expense categories based on item descriptions.
+- No explanations, no comments, no trailing commas.
+- Phase 1: Extract conservatively, Phase 2: Enrich data and create accounting entries."""
 
 
 # Alternative prompts for different scenarios or A/B testing

@@ -13,6 +13,7 @@ from firebase_admin import credentials
 # Import modular services
 from cloud_tasks_handler import CloudTasksHandler
 from invoice_processing_service import InvoiceProcessingService
+from test_connection import test_openai_connection
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -107,6 +108,93 @@ def health_check():
             "timestamp": datetime.now().isoformat(),
             "service": "cloud-tasks-queue-processor",
             "error": str(e)
+        }), 500
+
+@app.route('/test-openai', methods=['GET'])
+def test_openai_endpoint():
+    """
+    Test endpoint to debug OpenAI connectivity from Cloud Run
+    """
+    try:
+        logger.info("🧪 Testing OpenAI connection from endpoint...")
+        success = test_openai_connection()
+        
+        return jsonify({
+            "status": "success" if success else "failed",
+            "message": "OpenAI connection test completed",
+            "test_passed": success,
+            "timestamp": datetime.now().isoformat()
+        }), 200 if success else 500
+        
+    except Exception as e:
+        logger.error(f"Test endpoint failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": f"Test endpoint failed: {str(e)}",
+            "test_passed": False,
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/debug-openai', methods=['GET'])
+def debug_openai_endpoint():
+    """
+    Run the simple debug script to test OpenAI connectivity
+    """
+    try:
+        logger.info("🧪 Running debug script...")
+        import subprocess
+        
+        # Run the debug script and capture output
+        result = subprocess.run([
+            'python', 'debug_openai.py'
+        ], capture_output=True, text=True, timeout=60, cwd='.')
+        
+        return jsonify({
+            "status": "completed",
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "success": result.returncode == 0,
+            "timestamp": datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Debug script failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": f"Debug script failed: {str(e)}",
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/test-processor', methods=['GET'])
+def test_processor_endpoint():
+    """
+    Test the actual OpenAI processor initialization and client
+    """
+    try:
+        logger.info("🧪 Testing actual processor...")
+        import subprocess
+        
+        # Run the processor test script
+        result = subprocess.run([
+            'python', 'test_processor.py'
+        ], capture_output=True, text=True, timeout=60, cwd='.')
+        
+        return jsonify({
+            "status": "completed",
+            "exit_code": result.returncode,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "success": result.returncode == 0,
+            "timestamp": datetime.now().isoformat()
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Processor test failed: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "message": f"Processor test failed: {str(e)}",
+            "timestamp": datetime.now().isoformat()
         }), 500
 
 @app.route('/process-task', methods=['POST'])

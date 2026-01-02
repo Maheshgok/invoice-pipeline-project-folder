@@ -73,7 +73,7 @@ class BackgroundProcessor:
         
         try:
             # Step 1: Process with OpenAI
-            result = self.openai_processor.process_image(job.bucket_path)
+            result = self.openai_processor.process_image(job.bucket_path, getattr(job, 'user_uid', None))
             
             if result["success"]:
                 # Step 2: Store successful result using enhanced GST structure

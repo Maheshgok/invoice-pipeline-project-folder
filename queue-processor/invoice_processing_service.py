@@ -62,7 +62,7 @@ class InvoiceProcessingService:
             # Step 1: Process with OpenAI
             self.logger.info(f"🔄 Starting OpenAI processing for job {job_id}")
             
-            processing_result = self.openai_processor.process_image(bucket_path)
+            processing_result = self.openai_processor.process_image(bucket_path, user_uid)
             
             if processing_result.get('success', False):
                 # Step 2: Handle successful processing

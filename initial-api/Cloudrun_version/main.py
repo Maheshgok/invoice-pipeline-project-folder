@@ -1,35 +1,71 @@
 """
-Initial API Service - Upload Only (Clean Version)
+Initial API Service - File Upload and Authentication Handler
 Handles file uploads to Google Cloud Storage and user authentication
-Based on stable GitHub repository version
 
-Status: Upload-only service without processing dependencies
+Docker Image: asia-south1-docker.pkg.dev/watch-mail-trial/cloud-run-source-deploy/initial-api@sha256:5d41d5dc1d60134a1e61b940cd7f5d1fecf6716ce17013a1703792b5744c5474
+Last Updated: 2025-11-13 09:34 UTC  
+Status: Stable - Flask 2.3.0, Google Cloud Storage integration
 """
 import os
 import json
 import logging
-import hashlib
-import secrets
 from datetime import datetime, timedelta
 from google.cloud import storage, firestore
-from flask import Flask, jsonify, request
-from flask_cors import CORS
+from flask import Flask, Request, jsonify, request
 import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
+
+# Import Cloud Tasks Manager
+from cloud_tasks_manager import CloudTasksManager
+from workspace_manager import initialize_workspace_endpoint, get_workspace_status
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Environment variables
-BUCKET_NAME = os.environ.get('BUCKET_NAME', 'watch-mail-trial-invoice-processing')
-if not BUCKET_NAME:
-    logger.error("BUCKET_NAME environment variable is required")
+BASE_BUCKET_NAME = os.environ.get('BASE_BUCKET_NAME', 'watch_mail_trial_invoice')
+project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
 
 # Initialize clients with explicit project ID
-project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
 storage_client = storage.Client(project=project_id)
 firestore_client = firestore.Client(project=project_id)
+
+def get_user_bucket_name(user_uid):
+    """Generate user-specific bucket name"""
+    # Use first 8 characters of UID for bucket naming (GCS bucket name limitations)
+    # Convert to lowercase as GCS bucket names must be lowercase
+    user_id_short = user_uid[:8].lower() if len(user_uid) >= 8 else user_uid.lower()
+    return f"{BASE_BUCKET_NAME}_{user_id_short}"
+
+def ensure_user_bucket_exists(user_uid):
+    """Create user bucket if it doesn't exist"""
+    bucket_name = get_user_bucket_name(user_uid)
+    
+    logger.info(f"🔍 Ensuring user bucket exists: {bucket_name}")
+    
+    try:
+        bucket = storage_client.bucket(bucket_name)
+        
+        # Check if bucket exists
+        if not bucket.exists():
+            logger.info(f"📦 Creating user bucket: {bucket_name}")
+            bucket = storage_client.create_bucket(bucket_name, location='asia-south1')
+            logger.info(f"✅ User bucket created successfully: {bucket_name}")
+        else:
+            logger.info(f"📦 Using existing user bucket: {bucket_name}")
+        
+        return bucket_name
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to create/access user bucket {bucket_name}: {e}")
+        logger.error(f"   User UID: {user_uid}")
+        logger.error(f"   Bucket name format: {bucket_name}")
+        # NO FALLBACK - user isolation is critical
+        raise Exception(f"User bucket creation failed for {bucket_name}: {e}")
+
+# Initialize Cloud Tasks Manager
+cloud_tasks_manager = CloudTasksManager()
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:
@@ -46,6 +82,7 @@ print(f"Firebase Admin SDK initialized for project: {project_id}")
 app = Flask(__name__)
 
 # Configure CORS properly for authenticated requests
+from flask_cors import CORS
 CORS(app, 
      resources={
          r"/*": {
@@ -62,25 +99,22 @@ CORS(app,
 def handle_preflight():
     if request.method == "OPTIONS":
         response = jsonify({})
-        origin = request.headers.get('Origin')
-        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
-        if origin in allowed_origins:
-            response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Origin'] = request.headers.get('Origin', 'https://invoiceparse.netlify.app')
+        response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, OPTIONS'
         response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-Requested-With, Accept, Origin'
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
         response.headers['Access-Control-Max-Age'] = '3600'
         return response
 
 # Ensure CORS headers on all responses
 @app.after_request
 def after_request(response):
-    origin = request.headers.get('Origin')
-    allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
-    if origin in allowed_origins:
+    origin = request.headers.get('Origin', 'https://invoiceparse.netlify.app')
+    if origin in ["https://invoiceparse.netlify.app", "http://localhost:3000", "http://localhost:3001"]:
         response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-Requested-With, Accept, Origin'
-    response.headers['Access-Control-Expose-Headers'] = 'Content-Type'
     return response
 
 def verify_auth_token(auth_header):
@@ -91,29 +125,30 @@ def verify_auth_token(auth_header):
     id_token_str = auth_header.split(' ')[1]
     
     try:
+        # Verify Firebase ID token
         decoded_token = firebase_auth.verify_id_token(id_token_str)
         user_email = decoded_token.get('email')
         user_uid = decoded_token.get('uid')
         
         if not user_email or not user_uid:
-            raise ValueError("Invalid token: missing required claims")
+            raise ValueError("Invalid token: missing email or UID")
+            
+        # Extract organization information from custom claims if available
+        custom_claims = decoded_token.get('custom_claims', {}) or {}
+        organization_id = custom_claims.get('organizationId')
+        organization_role = custom_claims.get('organizationRole')
         
-        logger.info(f"🔐 Token verified for user: {user_email}")
-        
-        return {
-            'uid': user_uid,
+        user_context = {
             'email': user_email,
-            'name': decoded_token.get('name', ''),
-            'picture': decoded_token.get('picture', ''),
-            'email_verified': decoded_token.get('email_verified', False),
-            'firebase': decoded_token.get('firebase', {}),
-            'provider_id': decoded_token.get('firebase', {}).get('sign_in_provider', 'unknown'),
-            'auth_time': decoded_token.get('auth_time', 0),
-            'iat': decoded_token.get('iat', 0),
-            'exp': decoded_token.get('exp', 0)
+            'uid': user_uid,
+            'organization_id': organization_id,
+            'organization_role': organization_role
         }
+        
+        logger.info(f"✅ Authenticated user: {user_email} (UID: {user_uid[:8]}...) Org: {organization_id or 'None'}")
+        return user_context
     except Exception as e:
-        logger.error(f"Token verification failed: {e}")
+        logger.error(f"Firebase token verification failed: {e}")
         raise ValueError(f"Token verification failed: {e}")
 
 @app.route('/upload_invoice', methods=['POST', 'OPTIONS'])
@@ -140,7 +175,6 @@ def upload_file():
         auth_header = request.headers.get('Authorization')
         user_context = verify_auth_token(auth_header)
         user_email = user_context['email']  # For backward compatibility in logs
-        
         logger.info(f"Upload request authenticated for user: {user_email} (UID: {user_context['uid'][:8]}...)")
         
         # CRITICAL: Validate workspace exists before allowing upload
@@ -160,11 +194,6 @@ def upload_file():
         logger.error(f"Authentication failed: {e}")
         return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401
     
-    # Validate environment variables
-    if not BUCKET_NAME:
-        logger.error("BUCKET_NAME environment variable not set")
-        return jsonify({"error": "Server configuration error: BUCKET_NAME not set"}), 500
-    
     if 'file' not in request.files:
         logger.error("No file provided in request")
         return jsonify({"error": "No file provided"}), 400
@@ -175,22 +204,26 @@ def upload_file():
         return jsonify({"error": "No file selected"}), 400
     
     try:
+        # Ensure user bucket exists
+        user_bucket_name = ensure_user_bucket_exists(user_context['uid'])
+        
         # Generate production-ready job ID with customer tracking
+        import hashlib
+        import secrets
         
-        # Generate unique path with timestamp and user isolation
+        # Generate unique path with timestamp (no user folder needed since bucket is user-isolated)
         timestamp = datetime.utcnow().strftime('%Y/%m/%d/%H-%M-%S')
-        user_folder = user_context['uid'][:8]  # First 8 chars of UID for privacy
-        filename = f"users/{user_folder}/raw/{timestamp}_{file.filename}"
+        filename = f"raw/{timestamp}_{file.filename}"
         
-        logger.info(f"Processing upload for file: {filename}")
+        logger.info(f"Processing upload for file: {filename} in bucket: {user_bucket_name}")
         
-        # Get bucket and create a blob
-        bucket = storage_client.bucket(BUCKET_NAME)
+        # Get user bucket and create a blob
+        bucket = storage_client.bucket(user_bucket_name)
         blob = bucket.blob(filename)
         
         # Upload the file
         blob.upload_from_file(file)
-        logger.info(f"Successfully uploaded file to {filename}")
+        logger.info(f"Successfully uploaded file to {user_bucket_name}/{filename}")
         
         # Generate production-ready job ID: {CUST_NUM}-{ASSET_REF}-{TOKEN}
         # 1. Customer number (3-char alphanumeric from email hash)
@@ -210,44 +243,215 @@ def upload_file():
         logger.info(f"🆔 GENERATED JOB ID: {job_id} for user: {user_email}")
         logger.info(f"🧩 Job ID components: cust={cust_num}, asset={asset_ref}, token={token}")
         
+        # Create Cloud Task for processing instead of direct queue processor call
+        try:
+            auth_header = request.headers.get('Authorization')
+            if not auth_header:
+                logger.error("No authorization header for Cloud Tasks creation")
+                return jsonify({"error": "Authentication required for task creation"}), 401
+            
+            # Extract token from header for Cloud Tasks authentication
+            auth_token = auth_header.split(' ')[1] if auth_header.startswith('Bearer ') else auth_header
+            
+            # Create Cloud Task for invoice processing
+            task_name = cloud_tasks_manager.create_processing_task(
+                job_id=job_id,
+                bucket_path=f"{user_bucket_name}/{filename}",
+                user_context=user_context,
+                auth_token=auth_token,
+                delay_seconds=5  # Small delay to ensure file is fully uploaded
+            )
+            
+            logger.info(f"✅ Created Cloud Task: {task_name}")
+            logger.info(f"📋 File uploaded and queued for processing via Cloud Tasks")
+            
+        except Exception as task_error:
+            logger.error(f"Failed to create Cloud Task: {task_error}")
+            # Don't fail the upload, just log the error
+            # The job_id is still returned so users can potentially retry
+            logger.warning(f"Upload succeeded but task creation failed for job_id: {job_id}")
+        
         # Return successful upload response
-        logger.info(f"File uploaded successfully. Job ID: {job_id}, Bucket path: {BUCKET_NAME}/{filename}")
+        logger.info(f"File uploaded successfully. Job ID: {job_id}, Bucket path: {user_bucket_name}/{filename}")
         
         return jsonify({
             "status": "success",
             "job_id": job_id,  # Frontend expects this field
             "filename": filename,
-            "bucket": BUCKET_NAME,
-            "gcsPath": f"gs://{BUCKET_NAME}/{filename}",
-            "bucket_path": f"{BUCKET_NAME}/{filename}",  # Add this for queue processor
-            "upload_complete": True,  # Indicate upload completed
-            "processing_mode": "manual"  # Indicate manual processing mode
+            "bucket": user_bucket_name,
+            "gcsPath": f"gs://{user_bucket_name}/{filename}",
+            "bucket_path": f"{user_bucket_name}/{filename}",  # Add this for queue processor
+            "task_queued": True,  # Indicate task was queued
+            "processing_mode": "cloud_tasks_user_isolated"  # Indicate we're using user-isolated buckets
         }), 200
         
     except Exception as e:
         logger.error(f"Error uploading file: {str(e)}", exc_info=True)
         return jsonify({"error": f"Failed to upload file: {str(e)}"}), 500
-
-@app.route('/health', methods=['GET', 'OPTIONS'])
-def health_check():
-    """Health check endpoint - standard Cloud Run health check"""
-    if request.method == 'OPTIONS':
-        response = jsonify({})
-        origin = request.headers.get('Origin')
-        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
-        if origin in allowed_origins:
-            response.headers['Access-Control-Allow-Origin'] = origin
-        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
-        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
-        return response
     
-    return jsonify({
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "initial-api",
-        "mode": "upload_only",
-        "bucket": BUCKET_NAME
-    }), 200
+    try:
+        # Validate environment variables
+        if not BUCKET_NAME:
+            logger.error("BUCKET_NAME environment variable not set")
+            return jsonify({"error": "Server configuration error: BUCKET_NAME not set"}), 500
+        
+        # Parse JSON body
+        try:
+            if not request.is_json:
+                logger.error("Request is not JSON")
+                return jsonify({"error": "Request must be JSON"}), 400
+            
+            request_data = request.get_json()
+            logger.info(f"Request data: {request_data}")
+            
+        except Exception as e:
+            logger.error(f"Failed to parse JSON: {str(e)}")
+            return jsonify({"error": "Invalid JSON in request body"}), 400
+        
+        # Validate required fields
+        if not request_data:
+            logger.error("Empty request body")
+            return jsonify({"error": "Request body is required"}), 400
+        
+        file_name = request_data.get('fileName')
+        content_type = request_data.get('contentType')
+        
+        if not file_name:
+            logger.error("fileName is missing from request")
+            return jsonify({"error": "fileName is required"}), 400
+        
+        if not content_type:
+            logger.error("contentType is missing from request")
+            return jsonify({"error": "contentType is required"}), 400
+        
+        # Validate content type
+        allowed_types = [
+            'image/jpeg', 'image/jpg', 'image/png', 'image/gif',
+            'image/webp', 'application/pdf'
+        ]
+        
+        if content_type not in allowed_types:
+            logger.warning(f"Invalid content type: {content_type}")
+            return jsonify({
+                "error": f"Invalid content type: {content_type}",
+                "allowed_types": allowed_types
+            }), 400
+        
+        logger.info(f"Generating signed URL for fileName: {file_name}, contentType: {content_type}")
+        
+        # Generate unique blob name with timestamp prefix
+        timestamp = datetime.utcnow().strftime('%Y/%m/%d/%H-%M-%S')
+        blob_name = f"raw/{timestamp}_{file_name}"
+        
+        logger.info(f"Blob name: {blob_name}")
+        
+        # Get bucket and blob
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(blob_name)
+        
+        # Generate signed URL (valid for 15 minutes)
+        expiration = datetime.utcnow() + timedelta(minutes=15)
+        
+        logger.info(f"Attempting to generate signed URL with params:")
+        logger.info(f"- Bucket: {BUCKET_NAME}")
+        logger.info(f"- Blob name: {blob_name}")
+        logger.info(f"- Content type: {content_type}")
+        logger.info(f"- Expiration: {expiration.isoformat()}")
+        
+        try:
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=expiration,
+                method="PUT",
+                content_type=content_type,
+                service_account_email="cloudrun-invoice-uploader@watch-mail-trial.iam.gserviceaccount.com"
+            )
+            logger.info(f"Signed URL created successfully for blob: {blob_name}")
+            logger.info(f"URL expires at: {expiration.isoformat()}")
+        except Exception as e:
+            logger.error(f"Failed to generate signed URL: {str(e)}", exc_info=True)
+            raise
+        
+        # Generate unique request ID for tracking
+        request_id = f"{timestamp}_{file_name.split('.')[0]}"
+        
+        # Prepare response
+        response_data = {
+            "signedUrl": signed_url,
+            "fileName": file_name,
+            "bucket": BUCKET_NAME,
+            "requestId": request_id,
+            "gcsPath": f"gs://{BUCKET_NAME}/{blob_name}"
+        }
+        
+        logger.info(f"Returning response with requestId: {request_id}")
+        
+        return jsonify(response_data), 200
+    
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Internal server error: {str(e)}"}), 500
+
+@app.route('/poll-result/<request_id>', methods=['GET'])
+def poll_result(request_id):
+    """
+    Poll for processing results from Firestore.
+    
+    Returns:
+    - status: "pending", "completed", "error"
+    - data: extracted invoice data (if completed)
+    - error: error details (if failed)
+    """
+    logger.info(f"Polling request for ID: {request_id}")
+    
+    try:
+        # Query Firestore for the processing result
+        doc_ref = firestore_client.collection("processing_results").document(request_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            logger.info(f"No processing result found for request_id: {request_id}")
+            return jsonify({
+                "status": "pending",
+                "message": "Processing not started or request not found"
+            }), 200
+        
+        doc_data = doc.to_dict()
+        status = doc_data.get('status', 'pending')
+        
+        logger.info(f"Found processing result with status: {status}")
+        
+        if status == 'completed':
+            return jsonify({
+                "status": "completed",
+                "data": {
+                    "extractedData": doc_data.get('extracted_data', {}),
+                    "objectPath": doc_data.get('object_path', ''),
+                    "processedAt": doc_data.get('processed_at', '').isoformat() if doc_data.get('processed_at') else None
+                }
+            }), 200
+            
+        elif status == 'error':
+            error_info = doc_data.get('error', {})
+            return jsonify({
+                "status": "error",
+                "error": {
+                    "type": error_info.get('type', 'unknown'),
+                    "message": error_info.get('message', 'Unknown error'),
+                    "timestamp": error_info.get('timestamp', '').isoformat() if error_info.get('timestamp') else None
+                }
+            }), 200
+            
+        else:
+            # Status is pending or other
+            return jsonify({
+                "status": "pending",
+                "message": "Processing in progress"
+            }), 200
+    
+    except Exception as e:
+        logger.error(f"Error polling result for {request_id}: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Failed to upload file: {str(e)}"}), 500
 
 @app.route('/', methods=['GET'])
 def api_info():
@@ -255,12 +459,144 @@ def api_info():
     return jsonify({
         "service": "initial-api",
         "version": "2.0.0",
-        "mode": "upload_only",
         "endpoints": [
             "/health",
-            "/upload_invoice"
+            "/upload"
         ]
     }), 200
+
+@app.route('/trigger-processing/<request_id>', methods=['POST'])
+def trigger_processing(request_id):
+    """
+    Trigger invoice processing by publishing to Pub/Sub.
+    
+    Expected JSON body:
+    {
+        "gcsPath": "gs://bucket/path/to/file.pdf"
+    }
+    """
+    logger.info(f"Processing trigger request for ID: {request_id}")
+    
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+        
+        request_data = request.get_json()
+        gcs_path = request_data.get('gcsPath')
+        
+        if not gcs_path:
+            return jsonify({"error": "gcsPath is required"}), 400
+        
+        # Import and trigger Pub/Sub (you may need to install google-cloud-pubsub)
+        from google.cloud import pubsub_v1
+        
+        publisher = pubsub_v1.PublisherClient()
+        topic_path = publisher.topic_path('watch-mail-trial', 'step-1-initiate')
+        
+        # Create message for invoice processor
+        message_data = {
+            "gcs_uri": gcs_path,
+            "backend_request_id": request_id
+        }
+        
+        # Publish message
+        message_json = json.dumps(message_data)
+        future = publisher.publish(topic_path, message_json.encode('utf-8'))
+        
+        logger.info(f"Published processing message: {message_json}")
+        
+        return jsonify({
+            "status": "triggered",
+            "requestId": request_id,
+            "message": "Processing started"
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Error triggering processing for {request_id}: {str(e)}", exc_info=True)
+        return jsonify({"error": f"Failed to trigger processing: {str(e)}"}), 500
+
+@app.route('/cloud-tasks/status/<job_id>', methods=['GET'])
+def get_cloud_task_status(job_id):
+    """
+    Get Cloud Task status for a specific job
+    """
+    logger.info(f"Cloud Task status request for job ID: {job_id}")
+    
+    try:
+        # Verify authentication
+        auth_header = request.headers.get('Authorization')
+        user_context = verify_auth_token(auth_header)
+        user_email = user_context['email']  # Extract email for status checking
+        
+        # Get task information from Firestore tracking
+        doc_ref = firestore_client.collection("cloud_tasks").document(job_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            logger.info(f"No Cloud Task tracking found for job_id: {job_id}")
+            return jsonify({
+                "status": "not_found",
+                "message": "Task not found or not queued via Cloud Tasks"
+            }), 404
+        
+        doc_data = doc.to_dict()
+        
+        # Verify user access
+        if doc_data.get('user_email') != user_email:
+            logger.warning(f"Unauthorized access to task {job_id} by user {user_email}")
+            return jsonify({"error": "Unauthorized access"}), 403
+        
+        task_name = doc_data.get('task_name')
+        if task_name:
+            # Get actual Cloud Task status
+            task_status = cloud_tasks_manager.get_task_status(task_name)
+            
+            return jsonify({
+                "status": "success",
+                "job_id": job_id,
+                "task_name": task_name,
+                "cloud_task_status": task_status,
+                "tracking_data": doc_data
+            }), 200
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Task tracking data incomplete"
+            }), 500
+            
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        logger.error(f"Error getting Cloud Task status for {job_id}: {str(e)}")
+        return jsonify({"error": f"Failed to get task status: {str(e)}"}), 500
+
+@app.route('/cloud-tasks/queue-stats', methods=['GET'])
+def get_queue_stats():
+    """
+    Get Cloud Tasks queue statistics
+    """
+    try:
+        # Verify authentication
+        auth_header = request.headers.get('Authorization')
+        user_context = verify_auth_token(auth_header)
+        user_email = user_context['email']  # Extract email for stats logging
+        
+        # Get queue statistics
+        stats = cloud_tasks_manager.get_queue_stats()
+        
+        logger.info(f"Queue stats requested by user: {user_email}")
+        
+        return jsonify({
+            "status": "success",
+            "queue_stats": stats,
+            "timestamp": datetime.utcnow().isoformat()
+        }), 200
+        
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 401
+    except Exception as e:
+        logger.error(f"Error getting queue stats: {str(e)}")
+        return jsonify({"error": f"Failed to get queue stats: {str(e)}"}), 500
 
 @app.route('/signed-url', methods=['GET', 'OPTIONS'])
 def generate_signed_url():
@@ -284,55 +620,92 @@ def generate_signed_url():
         auth_header = request.headers.get('Authorization')
         user_context = verify_auth_token(auth_header)
         user_email = user_context['email']  # Extract email for path validation
-        logger.info(f"Signed URL request authenticated for user: {user_email}")
+        logger.info(f"Signed URL request authenticated for user: {user_email} (UID: {user_context['uid'][:8]}...)")
+    except ValueError as e:
+        logger.error(f"Authentication failed: {e}")
+        return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401
+    
+    # Get the GCS path from query parameters
+    gcs_path = request.args.get('path')
+    if not gcs_path:
+        return jsonify({"error": "Missing 'path' query parameter"}), 400
+    
+    try:
+        # Parse bucket and blob path
+        if '/' in gcs_path:
+            # Format: bucket_name/path/to/file
+            parts = gcs_path.split('/', 1)
+            bucket_name = parts[0]
+            blob_path = parts[1]
+        else:
+            # Fallback to default bucket
+            bucket_name = BUCKET_NAME or 'watch-mail-trial-invoice-raw-files'
+            blob_path = gcs_path
         
-        # Get path from query parameters
-        gcs_path = request.args.get('path', '')
-        if not gcs_path:
-            return jsonify({"error": "Missing 'path' query parameter"}), 400
+        logger.info(f"Generating signed URL for bucket: {bucket_name}, path: {blob_path}")
         
-        # Validate path belongs to user (security check)
-        user_folder = user_context['uid'][:8]
-        expected_prefix = f"users/{user_folder}/"
-        
-        if not gcs_path.startswith(expected_prefix):
-            logger.warning(f"Unauthorized path access attempted by {user_email}: {gcs_path}")
-            return jsonify({"error": "Unauthorized access to file"}), 403
-        
-        # Generate signed URL
-        bucket = storage_client.bucket(BUCKET_NAME)
-        blob = bucket.blob(gcs_path)
+        # Get the bucket and blob
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_path)
         
         # Check if blob exists
         if not blob.exists():
+            logger.error(f"File not found: {bucket_name}/{blob_path}")
             return jsonify({"error": "File not found"}), 404
         
         # Generate signed URL (valid for 1 hour)
-        expiration = datetime.utcnow() + timedelta(hours=1)
-        
         signed_url = blob.generate_signed_url(
             version="v4",
-            expiration=expiration,
-            method="GET",
-            service_account_email="cloudrun-invoice-uploader@watch-mail-trial.iam.gserviceaccount.com"
+            expiration=timedelta(hours=1),
+            method="GET"
         )
         
-        logger.info(f"Signed URL generated for {gcs_path} (expires: {expiration.isoformat()})")
+        logger.info(f"Successfully generated signed URL for {bucket_name}/{blob_path}")
         
         return jsonify({
-            "signedUrl": signed_url,
-            "expires": expiration.isoformat(),
-            "path": gcs_path
+            "signed_url": signed_url,
+            "expires_in": 3600,  # 1 hour in seconds
+            "file_path": f"{bucket_name}/{blob_path}"
         }), 200
         
-    except ValueError as e:
-        return jsonify({"error": str(e)}), 401
     except Exception as e:
-        logger.error(f"Error generating signed URL: {str(e)}", exc_info=True)
+        logger.error(f"Error generating signed URL: {str(e)}")
         return jsonify({"error": f"Failed to generate signed URL: {str(e)}"}), 500
+
+@app.route('/health', methods=['GET', 'OPTIONS'])
+def health_check():
+    """Health check endpoint - standard Cloud Run health check"""
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        origin = request.headers.get('Origin')
+        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        return response
+    
+    return jsonify({
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "service": "initial-api",
+        "cloud_tasks_enabled": True,
+        "queue_system": "user_isolated_queues",
+        "base_queue_name": cloud_tasks_manager.base_queue_name
+    }), 200
+
+@app.route('/initialize-workspace', methods=['POST'])
+def initialize_workspace():
+    """Initialize user's isolated workspace structure"""
+    return initialize_workspace_endpoint(request, jsonify)
+
+@app.route('/workspace-status', methods=['GET']) 
+def workspace_status():
+    """Get user's workspace status"""
+    return get_workspace_status(request, jsonify)
 
 if __name__ == "__main__":
     # Set default environment variables for local testing
-    os.environ.setdefault('BUCKET_NAME', 'watch-mail-trial-invoice-processing')
+    os.environ.setdefault('BUCKET_NAME', 'watch-mail-trial-invoice-raw-files')
     
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)), debug=False)

@@ -44,7 +44,7 @@ class OpenAIProcessor:
                     secret_path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
                     
                     response = client.access_secret_version(request={"name": secret_path})
-                    self.api_key = response.payload.data.decode("UTF-8")
+                    self.api_key = response.payload.data.decode("UTF-8").strip()  # Strip whitespace!
                     logger.info("OpenAI API key loaded from Secret Manager")
                 except Exception as e:
                     logger.error(f"Failed to load API key from Secret Manager: {e}")
@@ -56,12 +56,13 @@ class OpenAIProcessor:
         try:
             self.client = OpenAI(
                 api_key=self.api_key,
-                timeout=prompt_config.get('timeout', 120.0),
-                max_retries=prompt_config.get('max_retries', 3)
+                base_url="https://api.openai.com/v1",  # Explicit base URL
+                timeout=prompt_config.get('timeout', 300.0),  # Increased from 120 to 300 seconds
+                max_retries=prompt_config.get('max_retries', 5)  # Increased from 3 to 5 retries
             )
-            logger.info("OpenAI client initialized successfully with external configuration")
+            logger.info("OpenAI client initialized successfully with explicit base URL")
         except Exception as e:
-            logger.error(f"Failed to initialize OpenAI client: {e}")
+            logger.exception("Failed to initialize OpenAI client with full stacktrace:")
             raise
         
         # Initialize storage client with explicit project ID
@@ -79,10 +80,71 @@ class OpenAIProcessor:
         logger.info(f"Using prompt version: {self.prompt_version}")
         logger.info(f"Using system prompt version: {self.system_prompt_version}")
         logger.info(f"Using model: {self.model} with max_tokens: {self.max_tokens}, temperature: {self.temperature}")
+        logger.info("OpenAI Processor initialized with external prompt configuration")
+        
+        # Test OpenAI connection during initialization
+        self._test_openai_connection()
+        
+    def _test_openai_connection(self):
+        """Test OpenAI API connectivity during initialization"""
+        try:
+            logger.info("🔍 Testing OpenAI API connection...")
+            # Simple API test - list models
+            models = self.client.models.list()
+            logger.info(f"✅ OpenAI API connection successful. Available models: {len(models.data)}")
+        except Exception as e:
+            logger.exception("❌ OpenAI API connection test failed during initialization (full stacktrace):")
+            logger.error(f"❌ Error type: {type(e).__name__}")
+            logger.error(f"❌ Error message: {str(e)}")
+            if hasattr(e, 'response'):
+                logger.error(f"❌ Response: {e.response}")
+            if hasattr(e, 'status_code'):
+                logger.error(f"❌ HTTP status: {e.status_code}")
+            logger.error(f"❌ This may cause processing failures later")
+            # Don't raise the error to avoid service startup failure
+        
+    def get_user_bucket_name(self, user_uid):
+        """Generate user-specific bucket name matching initial-api logic"""
+        # Convert to lowercase to match GCS bucket naming requirements
+        user_id_short = user_uid[:8].lower() if len(user_uid) >= 8 else user_uid.lower()
+        return f"watch_mail_trial_invoice_{user_id_short}"
+        
+    def parse_bucket_path(self, bucket_path, user_uid):
+        """Parse bucket path and return bucket name and blob path"""
+        logger.info(f"Received bucket_path: {bucket_path} for user: {user_uid}")
+        
+        # Check if this is a user-isolated bucket path (new format)
+        if "/" in bucket_path and bucket_path.count("/") > 1:
+            # Format: user-bucket-name/path/to/file
+            parts = bucket_path.split("/", 1)
+            potential_bucket = parts[0]
+            # Handle both old format (with hyphens) and new format (with underscores)
+            if potential_bucket.startswith("watch-mail-trial-invoice-") or potential_bucket.startswith("watch_mail_trial_invoice_"):
+                logger.info(f"Using user bucket format - bucket: {potential_bucket}, blob: {parts[1]}")
+                return potential_bucket, parts[1]
+        
+        # Check if this is a normalized path from old system
+        if bucket_path.startswith('users/'):
+            # Old normalized format - convert to user-isolated bucket
+            user_bucket = self.get_user_bucket_name(user_uid)
+            # Remove users/uid_short/raw/ prefix and use just the file path
+            path_parts = bucket_path.split('/')
+            if len(path_parts) >= 4 and path_parts[2] == 'raw':
+                blob_path = '/'.join(path_parts[3:])  # Everything after raw/
+                logger.info(f"Converting old format - bucket: {user_bucket}, blob: raw/{blob_path}")
+                return user_bucket, f"raw/{blob_path}"
+            else:
+                logger.info(f"Using old format as-is - bucket: {user_bucket}, blob: {bucket_path}")
+                return user_bucket, bucket_path
+        
+        # Fallback: assume it's already a proper path for user bucket
+        user_bucket = self.get_user_bucket_name(user_uid)
+        logger.info(f"Using fallback - bucket: {user_bucket}, blob: {bucket_path}")
+        return user_bucket, bucket_path
         
         logger.info("OpenAI Processor initialized with external prompt configuration")
 
-    def process_image(self, bucket_path: str) -> Dict[str, Any]:
+    def process_image(self, bucket_path: str, user_uid: str) -> Dict[str, Any]:
         """
         Process a single image with OpenAI Vision API
         Returns: {"success": bool, "data": dict, "error": str}
@@ -93,17 +155,24 @@ class OpenAIProcessor:
         try:
             # Parse bucket and path from bucket_path
             logger.info(f"Received bucket_path: {bucket_path}")
-            if '/' in bucket_path:
-                # Format: bucket_name/path/to/file
+            
+            # Check if bucket_path starts with known bucket prefixes or is a normalized path
+            if bucket_path.startswith('users/'):
+                # This is a normalized path from cloud_tasks_handler - use hardcoded bucket
+                bucket_name = 'watch-mail-trial-invoice-processing'
+                blob_path = bucket_path
+                logger.info(f"Using normalized path - bucket: {bucket_name}, blob: {blob_path}")
+            elif '/' in bucket_path and not bucket_path.startswith('users/'):
+                # This might be a full path: bucket_name/users/...
                 parts = bucket_path.split('/', 1)
                 bucket_name = parts[0]
                 blob_path = parts[1]
-                logger.info(f"Parsed bucket_name: {bucket_name}, blob_path: {blob_path}")
+                logger.info(f"Parsed full path - bucket: {bucket_name}, blob: {blob_path}")
             else:
-                # Fallback to hardcoded bucket (this should not happen with proper setup)
-                bucket_name = 'watch-mail-trial-invoice-processing'  # Use correct bucket name
+                # Fallback to hardcoded bucket
+                bucket_name = 'watch-mail-trial-invoice-processing'
                 blob_path = bucket_path
-                logger.warning(f"No '/' found in bucket_path, using fallback bucket: {bucket_name}")
+                logger.warning(f"Using fallback bucket: {bucket_name}, blob: {blob_path}")
             
             logger.info(f"Processing file: bucket={bucket_name}, path={blob_path}")
             
@@ -205,8 +274,34 @@ class OpenAIProcessor:
                 )
                 logger.info(f"OpenAI API call successful, extracting response content")
             except Exception as api_error:
+                # Full exception logging for detailed debugging
+                logger.exception("❌ OpenAI API call failed with full stacktrace:")
+                
                 error_msg = f"OpenAI API connection failed: {str(api_error)}"
-                logger.error(error_msg)
+                
+                if hasattr(api_error, '__class__'):
+                    error_type = api_error.__class__.__name__
+                    logger.error(f"❌ OpenAI Error Type: {error_type}")
+                
+                # Check for specific OpenAI error types
+                if hasattr(api_error, 'code'):
+                    logger.error(f"❌ OpenAI Error Code: {api_error.code}")
+                    
+                if hasattr(api_error, 'response'):
+                    logger.error(f"❌ OpenAI Response: {api_error.response}")
+                
+                if hasattr(api_error, 'status_code'):
+                    logger.error(f"❌ HTTP Status Code: {api_error.status_code}")
+                    
+                if hasattr(api_error, 'body'):
+                    logger.error(f"❌ Response Body: {api_error.body}")
+                
+                # Log additional debugging info
+                logger.error(f"❌ Full error details: {repr(api_error)}")
+                logger.error(f"❌ Using model: {self.model}")
+                logger.error(f"❌ API key length: {len(self.api_key) if self.api_key else 0}")
+                logger.error(f"❌ Max tokens: {self.max_tokens}, Temperature: {self.temperature}")
+                
                 return {
                     "success": False,
                     "error": error_msg,
@@ -215,12 +310,25 @@ class OpenAIProcessor:
             
             # Extract and parse response
             content = response.choices[0].message.content
-            logger.info(f"OpenAI response content length: {len(content)} characters")
-            logger.info(f"RAW OpenAI response content: {content}")
+            logger.info(f"📊 OpenAI response content length: {len(content)} characters")
+            logger.info(f"📋 RAW OpenAI response content START:")
+            logger.info(f"{content}")
+            logger.info(f"📋 RAW OpenAI response content END")
             
             parsed_data = self._parse_openai_response(content)
-            logger.info(f"Parsed data type: {type(parsed_data)}")
-            logger.info(f"Parsed data: {parsed_data}")
+            logger.info(f"🔍 Parsed data type: {type(parsed_data)}")
+            logger.info(f"🔍 Parsed data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
+            logger.info(f"📋 Full parsed data: {parsed_data}")
+            
+            # Check specifically for journal entries
+            if isinstance(parsed_data, dict):
+                journal_entries = parsed_data.get('journal_entries', [])
+                logger.info(f"💰 Journal entries found: {len(journal_entries) if isinstance(journal_entries, list) else 'Not a list'}")
+                if journal_entries:
+                    logger.info(f"💰 First journal entry: {journal_entries[0] if journal_entries else 'None'}")
+                else:
+                    logger.warning(f"⚠️ NO JOURNAL ENTRIES FOUND in parsed data!")
+                    logger.warning(f"⚠️ Available keys: {list(parsed_data.keys())}")
             
             result_data = {
                 "extracted_data": parsed_data,
@@ -228,7 +336,11 @@ class OpenAIProcessor:
                 "model_used": "gpt-4o"
             }
             
-            logger.info(f"Final result data structure before return: {result_data}")
+            logger.info(f"📊 Final result data structure before return:")
+            logger.info(f"📊 - extracted_data type: {type(parsed_data)}")
+            logger.info(f"📊 - extracted_data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
+            logger.info(f"📊 - processing_time: {result_data['processing_time']}")
+            logger.info(f"📊 - model_used: {result_data['model_used']}")
             
             return {
                 "success": True,
@@ -246,25 +358,41 @@ class OpenAIProcessor:
 
     def _parse_openai_response(self, content: str) -> Dict[str, Any]:
         """Parse OpenAI response and extract JSON"""
+        logger.info(f"🔧 Starting to parse OpenAI response...")
+        logger.info(f"🔧 Original content length: {len(content)}")
+        
         try:
+            original_content = content
+            
             # Clean up the response to extract JSON
             if '```json' in content:
+                logger.info(f"🔧 Found ```json marker, extracting...")
                 content = content.split('```json')[1].split('```')[0]
+                logger.info(f"🔧 After json extraction: {content[:200]}...")
             elif '```' in content:
+                logger.info(f"🔧 Found ``` marker, extracting...")
                 content = content.split('```')[1]
+                logger.info(f"🔧 After generic extraction: {content[:200]}...")
             
             content = content.strip()
+            logger.info(f"🔧 Final content to parse (first 300 chars): {content[:300]}")
             
             # Try to parse as JSON
             parsed_data = json.loads(content)
+            logger.info(f"✅ JSON parsing successful")
+            logger.info(f"📊 Parsed data type: {type(parsed_data)}")
+            if isinstance(parsed_data, dict):
+                logger.info(f"📊 Top-level keys: {list(parsed_data.keys())}")
             return parsed_data
             
         except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse JSON response: {e}")
+            logger.error(f"❌ JSON parsing failed: {e}")
+            logger.error(f"❌ Content that failed to parse: {content}")
+            logger.error(f"❌ Original content: {original_content}")
             # Return structured error with raw content
             return {
                 "error": "Failed to parse JSON response",
-                "raw_response": content,
+                "raw_response": original_content,
                 "extracted_table": [],
                 "vendor_name": "Parse Error",
                 "invoice_number": "Unknown",

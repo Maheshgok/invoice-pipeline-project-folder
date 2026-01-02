@@ -68,27 +68,40 @@ class CloudTasksHandler:
         expected_user_folder = data.get('expected_user_folder')
         user_context = data.get('user_context', {})
         
-        # CRITICAL: Validate bucket path matches expected user folder (after normalization)
+        # CRITICAL: Validate bucket path matches user context (USER-ISOLATED BUCKETS)
         if expected_user_folder and bucket_path:
-            if f"users/{expected_user_folder}/raw/" not in bucket_path:
-                raise ValueError(f"Security violation: Bucket path '{bucket_path}' does not match expected user folder 'users/{expected_user_folder}/raw/'")
+            # NEW: Handle user-isolated bucket format
+            if "/" in bucket_path:
+                bucket_name_part, path_part = bucket_path.split("/", 1)
+                
+                # Check if this is a user-isolated bucket (format: user_bucket_name/raw/...)
+                expected_bucket_suffix = f"_{expected_user_folder.lower()}"
+                if bucket_name_part.endswith(expected_bucket_suffix):
+                    # This is a valid user-isolated bucket path
+                    self.logger.info(f"✅ Valid user-isolated bucket path: {bucket_path}")
+                else:
+                    # Check if it's old format (users/uid/raw/)
+                    if f"users/{expected_user_folder}/raw/" in bucket_path:
+                        self.logger.info(f"✅ Valid legacy bucket path: {bucket_path}")
+                    else:
+                        raise ValueError(f"Security violation: Bucket path '{bucket_path}' does not match expected user context '{expected_user_folder}'")
+            else:
+                raise ValueError(f"Invalid bucket path format: '{bucket_path}' - must include bucket/path structure")
         
-        # Additional validation: Ensure bucket path follows user-isolated structure
-        # Handle paths that may include bucket name prefix
+        # Additional validation: Normalize bucket path for processing
+        # Handle both user-isolated buckets and legacy shared bucket formats
         if bucket_path:
-            # Extract just the path part if it includes bucket name
+            # Check if this is already a user-isolated bucket format
             if "/" in bucket_path and not bucket_path.startswith("users/"):
-                # Check if this is a full bucket path format: bucket-name/users/...
-                path_parts = bucket_path.split("/", 1)
-                if len(path_parts) > 1 and path_parts[1].startswith("users/"):
-                    # Update bucket_path to just the path without bucket name
-                    bucket_path = path_parts[1]
-                    data['bucket_path'] = bucket_path  # Update the data dict too
-                    self.logger.info(f"🔧 Normalized bucket path from full path to: {bucket_path}")
-                elif not bucket_path.startswith("users/"):
-                    raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must start with 'users/' or be in format 'bucket-name/users/...'")
-            elif not bucket_path.startswith("users/"):
-                raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must start with 'users/'")
+                # This is user-isolated bucket format: bucket_name/raw/file
+                self.logger.info(f"🔧 Processing user-isolated bucket path: {bucket_path}")
+            elif bucket_path.startswith("users/"):
+                # This is legacy format - already normalized
+                self.logger.info(f"🔧 Processing legacy bucket path: {bucket_path}")
+            else:
+                # Invalid format
+                raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must be either 'users/...' or 'bucket_name/...'")
+        
         
         # Cross-validate user context from payload vs task context
         if user_context and user_context.get('uid') != user_uid:
