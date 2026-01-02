@@ -246,17 +246,17 @@ class ClientOrganizationService {
 
   async getAll(): Promise<ClientOrganization[]> {
     try {
+      // Avoid composite index requirement by fetching ordered collection
+      // and filtering `is_active` client-side (collections are per-user and expected to be small)
       const q = query(
         collection(db, this.getClientOrganizationPath()),
-        where('is_active', '==', true),
         orderBy('created_at', 'desc')
       )
       const querySnapshot = await getDocs(q)
-      
-      return querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      })) as ClientOrganization[]
+
+      return querySnapshot.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter((c: any) => c.is_active !== false) as ClientOrganization[]
     } catch (error) {
       console.error('❌ Error fetching client organizations:', error)
       throw error
