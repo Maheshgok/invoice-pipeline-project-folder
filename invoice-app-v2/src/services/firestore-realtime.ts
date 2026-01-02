@@ -976,6 +976,7 @@ class RealtimeFirestoreService {
         const invoiceDate = extractedData.invoice_details?.invoice_date || data.invoice_date || ''
         const taxSummary = extractedData.tax_summary || data.tax_summary
         const items = extractedData.items || data.items || []
+        const firstItem = items.length > 0 ? items[0] : null
 
         // Create journal entries based on the new structure
         let entryIndex = 0
