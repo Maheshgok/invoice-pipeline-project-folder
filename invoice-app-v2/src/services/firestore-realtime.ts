@@ -949,11 +949,13 @@ class RealtimeFirestoreService {
       // Create journal entries from the new GST-structured data
       if (result.extractedData) {
         const data = result.extractedData
-        const vendorName = data.vendor_details?.name || data.vendor_name || 'Unknown'
-        const invoiceNumber = data.invoice_details?.invoice_number || data.invoice_number || 'N/A'
-        const invoiceDate = data.invoice_details?.invoice_date || data.invoice_date || ''
-        const taxSummary = data.tax_summary
-        const items = data.items || []
+        // Handle nested extracted_data structure from OpenAI response
+        const extractedData = data.extracted_data || data
+        const vendorName = extractedData.vendor_details?.name || data.vendor_name || 'Unknown'
+        const invoiceNumber = extractedData.invoice_details?.invoice_number || data.invoice_number || 'N/A'
+        const invoiceDate = extractedData.invoice_details?.invoice_date || data.invoice_date || ''
+        const taxSummary = extractedData.tax_summary || data.tax_summary
+        const items = extractedData.items || data.items || []
 
         // Create journal entries based on the new structure
         let entryIndex = 0
@@ -1084,12 +1086,12 @@ class RealtimeFirestoreService {
         
         // Structure 0: extractedData.extracted_data.journal_entries (new simplified structure)
         if (result.extractedData?.extracted_data?.journal_entries && Array.isArray(result.extractedData.extracted_data.journal_entries)) {
-          // Convert simplified journal_entries to expected format
+          // Journal entries now come enriched with all data from OpenAI
           journalData = {
             journal_entry_set: [{
               entry_number: 1,
               date: result.extractedData.extracted_data.invoice_details?.invoice_date || '',
-              entries: result.extractedData.extracted_data.journal_entries,
+              entries: result.extractedData.extracted_data.journal_entries, // Use entries as-is from OpenAI
               total_debit: result.extractedData.extracted_data.journal_entries.reduce((sum: number, entry: any) => sum + (entry.debit_amount || 0), 0),
               total_credit: result.extractedData.extracted_data.journal_entries.reduce((sum: number, entry: any) => sum + (entry.credit_amount || 0), 0),
               is_balanced: true,
@@ -1106,7 +1108,7 @@ class RealtimeFirestoreService {
             journal_entry_set: [{
               entry_number: 1,
               date: result.extractedData.invoice_details?.invoice_date || '',
-              entries: result.extractedData.journal_entries,
+              entries: result.extractedData.journal_entries, // Use entries as-is from OpenAI
               total_debit: result.extractedData.journal_entries.reduce((sum: number, entry: any) => sum + (entry.debit_amount || 0), 0),
               total_credit: result.extractedData.journal_entries.reduce((sum: number, entry: any) => sum + (entry.credit_amount || 0), 0),
               is_balanced: true,
@@ -1167,15 +1169,19 @@ class RealtimeFirestoreService {
                 id: `${result.jobId}_${setIndex}_${entryIndex}`,
                 invoiceId: result.id,
                 invoiceNumber: invoiceNumber,
-                vendor: vendorName,
+                vendor: entry.vendor_name || vendorName, // Use OpenAI provided vendor_name first
                 entryIndex: entryIndex,
                 date: invoiceDate,
                 accountName: entry.account_name || '',
-                accountCode: entry.account_code || '',
+                accountCode: entry.account_code || entry.hsn_code || '', // Map OpenAI account_code or hsn_code
                 accountType: entry.account_type || '',
                 debitAmount: parseFloat(entry.debit_amount) || 0,
                 creditAmount: parseFloat(entry.credit_amount) || 0,
                 narration: entry.narration || journalSet.entry_description || '',
+                hsnCode: entry.hsn_code || '', // Map OpenAI hsn_code
+                itemDescription: entry.item_description || entry.account_name || '', // Map OpenAI item_description
+                quantity: parseFloat(entry.quantity) || 0, // Map OpenAI quantity
+                unitPrice: parseFloat(entry.unit_price) || 0, // Map OpenAI unit_price
                 isBalanced: false,
                 userId: result.userEmail,
                 createdAt: result.createdAt
