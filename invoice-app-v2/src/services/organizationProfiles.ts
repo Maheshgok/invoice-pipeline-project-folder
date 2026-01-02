@@ -13,24 +13,50 @@ import {
 import { db } from '../config/firebase'
 import { authService } from './auth'
 
-export interface OrganizationProfile {
+export interface UserOrganization {
   id?: string
   name: string
   gstin: string
+  business_type: string
+  industry: string
+  address: string
+  contact_person: string
+  phone: string
+  email: string
+  created_at: Timestamp
+  updated_at: Timestamp
+  user_uid: string
+}
+
+export interface ClientOrganization {
+  id?: string
+  client_name: string
+  client_gstin: string
   business_type: string
   industry: string
   business_description: string
   capitalization_threshold: number
   common_hsn_codes: string[]
   expense_categories: string[]
+  client_address: string
+  client_contact_person: string
+  client_phone: string
+  client_email: string
+  is_active: boolean
+  created_at: Timestamp
+  updated_at: Timestamp
+  user_uid: string
+}
+
+// Legacy interface for backward compatibility
+export interface OrganizationProfile extends ClientOrganization {
+  name: string
+  gstin: string
   address: string
   contact_person: string
   phone: string
   email: string
   is_default: boolean
-  created_at: Timestamp
-  updated_at: Timestamp
-  user_uid: string
 }
 
 export interface BusinessType {

@@ -46,22 +46,23 @@ class MultiPhaseInvoiceProcessor:
             logger.error(f"❌ Failed to initialize OpenAI client: {str(e)}")
             raise
     
-    def process_invoice_multi_phase(self, image_data: bytes, image_name: str, organization_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Process invoice through all three phases with organization context"""
+    def process_invoice_multi_phase(self, image_data: bytes, image_name: str, client_organization_context: Optional[str] = None, client_organization_id: Optional[str] = None) -> Dict[str, Any]:
+        """Process invoice through all three phases with client organization context"""
         try:
             logger.info(f"🚀 Starting multi-phase processing for: {image_name}")
-            if organization_profile:
-                logger.info(f"🏢 Using organization profile: {organization_profile.get('name', 'Unknown')}")
+            if client_organization_context:
+                logger.info(f"🏢 Using client organization context for processing")
+                logger.info(f"🏢 Client Organization ID: {client_organization_id}")
             
             # Phase 1: Data Extraction
             logger.info("📊 Phase 1: Extracting raw data from image...")
             phase1_result = self._phase1_extract_data(image_data)
             logger.info(f"✅ Phase 1 completed. Extracted {len(phase1_result.get('line_items', []))} items")
             
-            # Phase 2: Data Enrichment with Organization Context
-            logger.info("🔧 Phase 2: Enriching data with business logic...")
-            phase2_result = self._phase2_enrich_data(phase1_result, organization_profile)
-            logger.info("✅ Phase 2 completed. Data enriched with HSN codes and categories")
+            # Phase 2: Data Enrichment with Client Organization Context
+            logger.info("🔧 Phase 2: Enriching data with client business logic...")
+            phase2_result = self._phase2_enrich_data(phase1_result, client_organization_context)
+            logger.info("✅ Phase 2 completed. Data enriched with client-specific HSN codes and categories")
             
             # Phase 3: JSON Conversion
             logger.info("📋 Phase 3: Converting to structured JSON...")
@@ -77,7 +78,8 @@ class MultiPhaseInvoiceProcessor:
                     'phase2_enrichments': len(phase2_result.get('enrichment_notes', [])),
                     'phase3_journal_entries': len(phase3_result.get('journal_entries', [])),
                     'processing_approach': 'multi_phase_v1',
-                    'organization_used': organization_profile.get('name') if organization_profile else None
+                    'client_organization_id': client_organization_id,
+                    'client_organization_context_used': bool(client_organization_context)
                 }
             }
             
@@ -125,27 +127,20 @@ class MultiPhaseInvoiceProcessor:
             logger.error(f"❌ Phase 1 processing error: {str(e)}")
             raise
     
-    def _phase2_enrich_data(self, phase1_data: Dict[str, Any], organization_profile: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        """Phase 2: Enrich extracted data with business logic and organization context"""
+    def _phase2_enrich_data(self, phase1_data: Dict[str, Any], client_organization_context: Optional[str] = None) -> Dict[str, Any]:
+        """Phase 2: Enrich extracted data with business logic and client organization context"""
         try:
-            # Build enriched prompt with organization context
+            # Build enriched prompt with client organization context
             prompt_parts = [PHASE2_DATA_ENRICHMENT_PROMPT]
             
-            if organization_profile:
-                org_context = f"""
-ORGANIZATION PROFILE FOR THIS BATCH:
-Organization Name: {organization_profile.get('name', 'Unknown')}
-Business Type: {organization_profile.get('business_type', 'General')}
-Industry: {organization_profile.get('industry', 'General')}
-Business Description: {organization_profile.get('business_description', 'General business')}
-GSTIN: {organization_profile.get('gstin', 'Not provided')}
-Capitalization Threshold: ₹{organization_profile.get('capitalization_threshold', 50000)}
-Common HSN Codes: {', '.join(organization_profile.get('common_hsn_codes', []))}
-Expense Categories: {', '.join(organization_profile.get('expense_categories', []))}
+            if client_organization_context:
+                org_context_section = f"""
+CLIENT ORGANIZATION CONTEXT FOR THIS INVOICE PROCESSING:
+{client_organization_context}
 
-Use this organization profile to make intelligent categorization decisions.
+Use this client organization context to make intelligent categorization decisions specific to their business type and industry.
 """
-                prompt_parts.append(org_context)
+                prompt_parts.append(org_context_section)
             
             prompt_parts.append(f"\nINPUT DATA:\n{json.dumps(phase1_data, indent=2)}")
             prompt = '\n'.join(prompt_parts)

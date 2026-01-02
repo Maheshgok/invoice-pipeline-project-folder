@@ -40,6 +40,9 @@ class InvoiceProcessingService:
         user_email = user_context['email']
         user_uid = user_context['uid']
         organization_id = user_context.get('organization_id')
+        client_organization_context = user_context.get('client_organization_context')
+        client_organization_id = user_context.get('client_organization_id')
+        client_organization_name = user_context.get('client_organization_name')
         
         # 🔍 DEBUG: Comprehensive user context logging
         self.logger.info(f"🗺️ USER CONTEXT DEBUG for job {job_id}:")
@@ -47,22 +50,31 @@ class InvoiceProcessingService:
         self.logger.info(f"   Extracted email: '{user_email}'")
         self.logger.info(f"   Extracted UID: '{user_uid}'")
         self.logger.info(f"   Extracted org_id: '{organization_id}'")
+        self.logger.info(f"   Client org context: {bool(client_organization_context)}")
+        self.logger.info(f"   Client org ID: '{client_organization_id}'")
+        self.logger.info(f"   Client org name: '{client_organization_name}'")
         
         self.logger.info(f"🚀 Starting invoice processing")
         self.logger.info(f"📋 Job ID: {job_id}")
         self.logger.info(f"📁 File path: {bucket_path}")
         self.logger.info(f"👤 User: {user_email} (UID: {user_uid[:8]}...)")
         self.logger.info(f"🏢 Organization: {organization_id or 'None'}")
+        self.logger.info(f"🏢 Client: {client_organization_name or 'None'}")
         self.logger.info(f"🔍 Source: {source}")
         
         # Track processing start with full context
         self.tracker.track_start(job_id, bucket_path, user_email, source)
         
         try:
-            # Step 1: Process with OpenAI
+            # Step 1: Process with OpenAI (with client organization context)
             self.logger.info(f"🔄 Starting OpenAI processing for job {job_id}")
             
-            processing_result = self.openai_processor.process_image(bucket_path, user_uid)
+            processing_result = self.openai_processor.process_image(
+                bucket_path, 
+                user_uid,
+                client_organization_context=client_organization_context,
+                client_organization_id=client_organization_id
+            )
             
             if processing_result.get('success', False):
                 # Step 2: Handle successful processing

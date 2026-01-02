@@ -145,9 +145,9 @@ class OpenAIProcessor:
         
         logger.info("OpenAI Processor initialized with external prompt configuration")
 
-    def process_image(self, bucket_path: str, user_uid: str) -> Dict[str, Any]:
+    def process_image(self, bucket_path: str, user_uid: str, client_organization_context: str = None, client_organization_id: str = None) -> Dict[str, Any]:
         """
-        Process a single image with OpenAI Vision API
+        Process a single image with OpenAI Vision API and client organization context
         Returns: {"success": bool, "data": dict, "error": str}
         """
         bucket_name = None
@@ -247,7 +247,30 @@ class OpenAIProcessor:
                 # Prepare messages with system prompt if provided
                 messages = []
                 
-                # Add system message if system prompt is available
+                # Use multi-phase processing for better accuracy
+                if client_organization_context or client_organization_id:
+                    logger.info(f"🚀 Using multi-phase processing with client organization context")
+                    from multi_phase_processor import MultiPhaseInvoiceProcessor
+                    multi_phase = MultiPhaseInvoiceProcessor()
+                    
+                    # Process with multi-phase approach
+                    result = multi_phase.process_invoice_multi_phase(
+                        image_data=file_content,
+                        image_name=blob_path.split('/')[-1],
+                        client_organization_context=client_organization_context,
+                        client_organization_id=client_organization_id
+                    )
+                    
+                    logger.info(f"✅ Multi-phase processing completed successfully")
+                    return {
+                        "success": True,
+                        "data": result,
+                        "error": None
+                    }
+                else:
+                    logger.info(f"📋 Using legacy single-phase processing (no organization context)")
+                
+                # Legacy single-phase processing (fallback)
                 if system_prompt and system_prompt.strip():
                     messages.append({
                         "role": "system", 

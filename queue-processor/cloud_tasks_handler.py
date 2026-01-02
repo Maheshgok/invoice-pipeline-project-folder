@@ -68,6 +68,11 @@ class CloudTasksHandler:
         expected_user_folder = data.get('expected_user_folder')
         user_context = data.get('user_context', {})
         
+        # NEW: Extract client organization context fields
+        client_organization_context = data.get('organization_context')
+        client_organization_id = data.get('client_organization_id')
+        client_organization_name = data.get('client_organization_name')
+        
         # CRITICAL: Validate bucket path matches user context (USER-ISOLATED BUCKETS)
         if expected_user_folder and bucket_path:
             # NEW: Handle user-isolated bucket format
@@ -121,6 +126,9 @@ class CloudTasksHandler:
         self.logger.info(f"   user_uid: '{user_uid}'")
         self.logger.info(f"   organization_id: '{organization_id}'")
         self.logger.info(f"   organization_role: '{organization_role}'")
+        self.logger.info(f"   client_organization_context: {bool(client_organization_context)}")
+        self.logger.info(f"   client_organization_id: '{client_organization_id}'")
+        self.logger.info(f"   client_organization_name: '{client_organization_name}'")
         
         return {
             'job_id': job_id,
@@ -131,7 +139,10 @@ class CloudTasksHandler:
                 'email': user_email or 'no email',
                 'uid': user_uid or 'no uid',
                 'organization_id': organization_id,
-                'organization_role': organization_role
+                'organization_role': organization_role,
+                'client_organization_context': client_organization_context,
+                'client_organization_id': client_organization_id,
+                'client_organization_name': client_organization_name
             }
         }
     

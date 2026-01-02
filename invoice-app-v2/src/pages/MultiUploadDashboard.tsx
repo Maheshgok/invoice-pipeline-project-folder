@@ -15,8 +15,8 @@ import { collectionPathResolver } from '../services/collectionPathResolver'
 import { centralizedServiceManager } from '../services/centralizedServiceManager'
 import AdminDashboard from '../components/admin/AdminDashboard'
 import OrganizationSetup from '../components/organization/OrganizationSetup'
-import OrganizationManagement from '../components/organization/OrganizationManagement'
-import { organizationService, OrganizationProfile } from '../services/organizationProfiles'
+import ClientOrganizationManager from '../components/admin/ClientOrganizationManager'
+import { clientOrganizationService, userOrganizationService, ClientOrganization, UserOrganization } from '../services/clientOrganizations'
 import { sessionSecurityService } from '../services/sessionSecurityService'
 
 const MultiUploadDashboard: React.FC = () => {
@@ -40,29 +40,31 @@ const MultiUploadDashboard: React.FC = () => {
   const [smartListenerResults, setSmartListenerResults] = useState<ProcessingResult[]>([])
   const [listenerInitialized, setListenerInitialized] = useState(false)
   
-  // Organization selection state
-  const [selectedOrganization, setSelectedOrganization] = useState<OrganizationProfile | null>(null)
-  const [organizations, setOrganizations] = useState<OrganizationProfile[]>([])
-  const [showOrgSelection, setShowOrgSelection] = useState(false)
+  // Client organization selection state
+  const [selectedClientOrganization, setSelectedClientOrganization] = useState<ClientOrganization | null>(null)
+  const [clientOrganizations, setClientOrganizations] = useState<ClientOrganization[]>([])
+  const [showClientOrgSelection, setShowClientOrgSelection] = useState(false)
   
-  // Load organizations and set default on mount
+  // Load client organizations and set default on mount
   useEffect(() => {
-    const loadOrganizations = async () => {
+    const loadClientOrganizations = async () => {
       try {
-        const orgs = await organizationService.getOrganizations()
-        setOrganizations(orgs)
+        const clientOrgs = await clientOrganizationService.getAll()
+        setClientOrganizations(clientOrgs)
         
-        // Set default organization if one exists
-        const defaultOrg = orgs.find(org => org.is_default) || orgs[0]
-        if (defaultOrg) {
-          setSelectedOrganization(defaultOrg)
+        // Set default client organization if one exists
+        const defaultClientOrg = clientOrgs[0]
+        if (defaultClientOrg) {
+          setSelectedClientOrganization(defaultClientOrg)
+          toast.success(`Selected client: ${defaultClientOrg.client_name}`)
         }
       } catch (error) {
-        console.error('Error loading organizations:', error)
+        console.error('Error loading client organizations:', error)
+        toast.error('Failed to load client organizations')
       }
     }
     
-    loadOrganizations()
+    loadClientOrganizations()
   }, [])
   const canUpload = hasPermission('canUpload')
   const canEdit = hasPermission('canEdit')
@@ -84,7 +86,9 @@ const MultiUploadDashboard: React.FC = () => {
     isBatchReadyForDownload,
     getBatchStats,
     syncManager
-  } = useMultiUploadSimplified()
+  } = useMultiUploadSimplified({
+    selectedClientOrganization
+  })
 
   // Monitor component state for debugging (reduced logging)
   useEffect(() => {
@@ -696,11 +700,17 @@ const MultiUploadDashboard: React.FC = () => {
       {/* Tab Content */}
       {activeTab === 'organization' && (
         <div>
-          {!userProfile?.organizationId ? (
-            <OrganizationSetup />
-          ) : (
-            <OrganizationManagement />
-          )}
+          <ClientOrganizationManager 
+            onClientSelect={(clientId) => {
+              const client = clientOrganizations.find(c => c.id === clientId)
+              if (client) {
+                setSelectedClientOrganization(client)
+                toast.success(`Selected client: ${client.client_name}`)
+              }
+            }}
+            selectedClientId={selectedClientOrganization?.id}
+            showUserOrg={true}
+          />
         </div>
       )}
       
@@ -742,67 +752,74 @@ const MultiUploadDashboard: React.FC = () => {
             </span>
           </div>
           
-          {/* Organization Selection */}
+          {/* Client Organization Selection */}
           <div className="mb-6 p-4 border rounded-lg bg-gray-50">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-medium text-gray-700">Processing Organization</h3>
-              {organizations.length > 1 && (
+              <h3 className="text-sm font-medium text-gray-700">Invoice Processing Client</h3>
+              {clientOrganizations.length > 1 && (
                 <button
-                  onClick={() => setShowOrgSelection(!showOrgSelection)}
+                  onClick={() => setShowClientOrgSelection(!showClientOrgSelection)}
                   className="text-sm text-blue-600 hover:text-blue-800"
                 >
-                  Change
+                  Change Client
                 </button>
               )}
             </div>
             
-            {selectedOrganization ? (
+            {selectedClientOrganization ? (
               <div className="bg-white p-3 rounded border">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="font-medium text-gray-900">{selectedOrganization.name}</p>
-                    <p className="text-sm text-gray-600">{selectedOrganization.industry}</p>
-                    <p className="text-xs text-gray-500">GSTIN: {selectedOrganization.gstin}</p>
+                    <p className="font-medium text-gray-900">{selectedClientOrganization.client_name}</p>
+                    <p className="text-sm text-gray-600">{selectedClientOrganization.industry}</p>
+                    {selectedClientOrganization.client_gstin && (
+                      <p className="text-xs text-gray-500">GSTIN: {selectedClientOrganization.client_gstin}</p>
+                    )}
+                    <p className="text-xs text-green-600">
+                      Capitalization: ₹{selectedClientOrganization.capitalization_threshold.toLocaleString()}
+                    </p>
                   </div>
-                  <Building2 className="h-8 w-8 text-gray-400" />
+                  <Building2 className="h-8 w-8 text-blue-400" />
                 </div>
               </div>
             ) : (
               <div className="bg-white p-3 rounded border">
                 <p className="text-sm text-gray-600">
-                  No organization selected. 
+                  No client organization selected. 
                   <button
                     onClick={() => setActiveTab('organization')}
                     className="ml-1 text-blue-600 hover:text-blue-800"
                   >
-                    Create one here
+                    Create client organizations here
                   </button>
                 </p>
               </div>
             )}
             
-            {/* Organization Selection Modal */}
-            {showOrgSelection && (
+            {/* Client Organization Selection Modal */}
+            {showClientOrgSelection && (
               <div className="absolute z-10 mt-2 w-full max-w-md bg-white border rounded-lg shadow-lg">
                 <div className="p-4">
-                  <h4 className="font-medium mb-3">Select Organization</h4>
+                  <h4 className="font-medium mb-3">Select Client Organization</h4>
                   <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {organizations.map(org => (
+                    {clientOrganizations.map(client => (
                       <div
-                        key={org.id}
+                        key={client.id}
                         onClick={() => {
-                          setSelectedOrganization(org)
-                          setShowOrgSelection(false)
+                          setSelectedClientOrganization(client)
+                          setShowClientOrgSelection(false)
+                          toast.success(`Selected client: ${client.client_name}`)
                         }}
                         className="p-3 border rounded cursor-pointer hover:bg-gray-50 flex justify-between items-center"
                       >
                         <div>
-                          <p className="font-medium">{org.name}</p>
-                          <p className="text-sm text-gray-600">{org.industry}</p>
+                          <p className="font-medium">{client.client_name}</p>
+                          <p className="text-sm text-gray-600">{client.industry}</p>
+                          <p className="text-xs text-gray-500">Cap: ₹{client.capitalization_threshold.toLocaleString()}</p>
                         </div>
-                        {org.is_default && (
-                          <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                            Default
+                        {client.id === selectedClientOrganization?.id && (
+                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
+                            Selected
                           </span>
                         )}
                       </div>

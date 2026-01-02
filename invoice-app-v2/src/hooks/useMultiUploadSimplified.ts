@@ -1,20 +1,25 @@
 /**
- * Simplified Multi-Upload Hook with User Access Control
+ * Simplified Multi-Upload Hook with User Access Control and Client Organization Support
  * Uses modular services for better separation of concerns
- * Includes permission checks and usage limits
+ * Includes permission checks, usage limits, and client organization context
  */
 import { useState, useCallback, useEffect, useRef } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
 import { userService } from '../services/userService'
 import { archiveService } from '../services/archive'
+import { clientOrganizationService, ClientOrganization } from '../services/clientOrganizations'
 import { getApiUrl } from '../config/api'
 import { BatchManager, type BatchFile, type BatchState } from '../services/batch-manager'
 import { FirestoreSyncManager, type JournalEntry } from '../services/firestore-sync-manager'
 import { changeTrackingService } from '../services/changeTracking'
 import { sessionSecurityService } from '../services/sessionSecurityService'
 
-export const useMultiUploadSimplified = () => {
+export interface UseMultiUploadOptions {
+  selectedClientOrganization?: ClientOrganization | null
+}
+
+export const useMultiUploadSimplified = (options: UseMultiUploadOptions = {}) => {
   // Core state
   const [batchState, setBatchState] = useState<BatchState>({
     files: [],
@@ -126,9 +131,18 @@ export const useMultiUploadSimplified = () => {
         throw new Error(`Service unavailable: ${healthCheck.status}`)
       }
 
-      // Upload file
+      // Upload file with client organization context
       const formData = new FormData()
       formData.append('file', file)
+      
+      // Add client organization context if available
+      if (options.selectedClientOrganization) {
+        const organizationContext = await clientOrganizationService.getProcessingContext(options.selectedClientOrganization.id!)
+        formData.append('organization_context', organizationContext)
+        formData.append('client_organization_id', options.selectedClientOrganization.id!)
+        formData.append('client_organization_name', options.selectedClientOrganization.client_name)
+        console.log('🏢 Including client organization context for:', options.selectedClientOrganization.client_name)
+      }
 
       const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',
