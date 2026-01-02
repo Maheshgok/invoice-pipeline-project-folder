@@ -1086,6 +1086,11 @@ class RealtimeFirestoreService {
         
         // Structure 0: extractedData.extracted_data.journal_entries (new simplified structure)
         if (result.extractedData?.extracted_data?.journal_entries && Array.isArray(result.extractedData.extracted_data.journal_entries)) {
+          // Debug: Log what OpenAI actually returned in journal_entries
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔍 DEBUG: OpenAI journal_entries:', JSON.stringify(result.extractedData.extracted_data.journal_entries, null, 2))
+          }
+          
           // Journal entries now come enriched with all data from OpenAI
           journalData = {
             journal_entry_set: [{
@@ -1147,6 +1152,11 @@ class RealtimeFirestoreService {
             }
             
             journalEntries.forEach((entry: any, entryIndex: number) => {
+              // Debug: Log the actual journal entry structure
+              if (process.env.NODE_ENV === 'development') {
+                console.log('🔍 DEBUG: Journal entry structure:', JSON.stringify(entry, null, 2))
+              }
+              
               const invoiceNumber = result.extractedData?.extracted_data?.invoice_details?.invoice_number || 
                                    result.extractedData?.extracted_data?.invoice_number || 
                                    result.extractedData?.invoice_details?.invoice_number || 
@@ -1165,6 +1175,11 @@ class RealtimeFirestoreService {
                                   journalSet.date || 
                                   ''
 
+              // Get fallback data from items array if journal entries don't have enriched data
+              const extractedData = result.extractedData.extracted_data || result.extractedData
+              const items = extractedData.items || []
+              const firstItem = items[0] // Use first item for enrichment fallback
+              
               const journalEntry = {
                 id: `${result.jobId}_${setIndex}_${entryIndex}`,
                 invoiceId: result.id,
@@ -1178,10 +1193,11 @@ class RealtimeFirestoreService {
                 debitAmount: parseFloat(entry.debit_amount) || 0,
                 creditAmount: parseFloat(entry.credit_amount) || 0,
                 narration: entry.narration || journalSet.entry_description || '',
-                hsnCode: entry.hsn_code || '', // Map OpenAI hsn_code
-                itemDescription: entry.item_description || entry.account_name || '', // Map OpenAI item_description
-                quantity: parseFloat(entry.quantity) || 0, // Map OpenAI quantity
-                unitPrice: parseFloat(entry.unit_price) || 0, // Map OpenAI unit_price
+                // Enhanced fields - try multiple possible field names from OpenAI, with item fallback
+                hsnCode: entry.hsn_code || entry.account_code || entry.hsnCode || firstItem?.hsn_code || '', // Try journal entry first, then item fallback
+                itemDescription: entry.item_description || entry.itemDescription || entry.description || firstItem?.description || entry.account_name || '', // Try multiple variants with fallback
+                quantity: parseFloat(entry.quantity) || parseFloat(entry.qty) || parseFloat(firstItem?.quantity) || 0, // Try journal entry first, then item fallback
+                unitPrice: parseFloat(entry.unit_price) || parseFloat(entry.unitPrice) || parseFloat(entry.price) || parseFloat(firstItem?.unit_price) || 0, // Try multiple variants with fallback
                 isBalanced: false,
                 userId: result.userEmail,
                 createdAt: result.createdAt
