@@ -1274,19 +1274,19 @@ class RealtimeFirestoreService {
                 entryIndex: entryIndex,
                 date: invoiceDate,
                 accountName: entry.account_name || '',
-                accountCode: entry.account_code || entry.hsn_code || '', // Map OpenAI account_code or hsn_code
+                accountCode: entry.account_code || '', // Direct mapping from OpenAI schema
                 accountType: entry.account_type || '',
                 debitAmount: parseFloat(entry.debit_amount) || 0,
                 creditAmount: parseFloat(entry.credit_amount) || 0,
                 description: entry.narration || journalSet.entry_description || '', // Map narration to description for CSV compatibility
                 narration: entry.narration || journalSet.entry_description || '', // Keep narration for legacy compatibility
-                reference: entry.reference_number || invoiceNumber, // Map reference_number to reference for CSV compatibility
-                // Enhanced fields - try multiple possible field names from OpenAI, with item fallback
-                hsnCode: entry.hsn_code || entry.account_code || entry.hsnCode || firstItem?.hsn_code || '', // Try journal entry first, then item fallback
-                itemDescription: entry.item_description || entry.itemDescription || entry.description || firstItem?.description || entry.account_name || '', // Try multiple variants with fallback
-                quantity: parseFloat(entry.quantity) || parseFloat(entry.qty) || parseFloat(firstItem?.quantity) || 0, // Try journal entry first, then item fallback
-                unitPrice: parseFloat(entry.unit_price) || parseFloat(entry.unitPrice) || parseFloat(entry.price) || parseFloat(firstItem?.unit_price) || 0, // Try multiple variants with fallback
-                // Additional enhanced fields from new prompt
+                reference: entry.reference_number || invoiceNumber, // Direct mapping - no variations
+                // Enhanced fields - use exact field names from OpenAI schema
+                hsnCode: entry.hsn_code || firstItem?.hsn_code || '', // Exact field name mapping
+                itemDescription: entry.item_description || firstItem?.description || entry.account_name || '', // Exact field name mapping
+                quantity: parseFloat(entry.quantity) || parseFloat(firstItem?.quantity) || 0, // Exact field name mapping
+                unitPrice: parseFloat(entry.unit_price) || parseFloat(firstItem?.unit_price) || 0, // Exact field name mapping
+                // Additional enhanced fields from strict schema
                 gstAmount: parseFloat(entry.gst_amount) || 0,
                 cgstAmount: parseFloat(entry.cgst_amount) || 0,
                 sgstAmount: parseFloat(entry.sgst_amount) || 0,
@@ -1295,7 +1295,7 @@ class RealtimeFirestoreService {
                 lineTotal: parseFloat(entry.line_total) || 0,
                 isGstApplicable: entry.is_gst_applicable || false,
                 placeOfSupply: entry.place_of_supply || '',
-                isBalanced: entry.entry_balanced !== undefined ? entry.entry_balanced : true, // Map OpenAI entry_balanced to isBalanced
+                isBalanced: entry.entry_balanced !== undefined ? entry.entry_balanced : true, // Exact field name mapping
                 userId: result.userEmail,
                 createdAt: result.createdAt
               }

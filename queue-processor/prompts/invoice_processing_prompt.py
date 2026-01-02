@@ -171,7 +171,47 @@ Return ONLY the JSON.
 No explanations.
 No extra text.
 No comments.
-No trailing commas."""
+No trailing commas.
+
+CRITICAL SCHEMA ENFORCEMENT:
+The response MUST use EXACT field names as specified. NO variations allowed:
+- Use "hsn_code" (never "HSN", "hsn", "HSN Code", "HS Number", etc.)
+- Use "item_description" (never "description", "itemDescription", "item_desc", etc.)
+- Use "unit_price" (never "unitPrice", "price", "unit_cost", etc.)
+- Use "account_name" (never "accountName", "account", etc.)
+- Use "account_code" (never "accountCode", "code", etc.)
+- Use "debit_amount" (never "debitAmount", "debit", etc.)
+- Use "credit_amount" (never "creditAmount", "credit", etc.)
+- Use "reference_number" (never "referenceNumber", "ref", "invoice_number", etc.)
+- Use "vendor_name" (never "vendorName", "vendor", "supplier", etc.)
+- Use "entry_balanced" (never "isBalanced", "balanced", etc.)
+
+SCHEMA VALIDATION:
+Every journal entry MUST contain ALL these fields with EXACT names:
+{
+  "account_name": "string",
+  "account_type": "string", 
+  "account_code": "string",
+  "debit_amount": number,
+  "credit_amount": number,
+  "narration": "string",
+  "hsn_code": "string",
+  "item_description": "string",
+  "quantity": number,
+  "unit_price": number,
+  "vendor_name": "string",
+  "reference_number": "string",
+  "invoice_date": "string",
+  "gst_amount": number,
+  "cgst_amount": number,
+  "sgst_amount": number,
+  "igst_amount": number,
+  "taxable_amount": number,
+  "line_total": number,
+  "is_gst_applicable": boolean,
+  "place_of_supply": "string",
+  "entry_balanced": boolean
+}"""
 
 INVOICE_PROCESSING_PROMPT_ARCHIVE = """You are an accountant for an INDIAN business recording PURCHASE / VENDOR invoices
 in the BUYER'S books.
@@ -259,25 +299,19 @@ CRITICAL REQUIREMENTS:
    - Debit: Expense accounts (Office Expenses, Equipment, etc.) for taxable amounts
    - Debit: GST Input accounts (CGST Input, SGST Input, IGST Input) for tax amounts  
    - Credit: Accounts Payable or Cash/Bank accounts for total amount
-4. COMPLETE DATA VALIDATION - Every journal entry MUST have:
-   - Non-empty account_name with descriptive details
-   - Valid account_type (Asset, Liability, Expense)
-   - Appropriate account_code (never leave blank)
-   - Either debit_amount > 0 OR credit_amount > 0 (never both)
-   - Meaningful narration describing the transaction
-   - Consistent vendor_name across all entries
-   - Consistent reference_number (invoice number) across all entries
-   - Consistent invoice_date across all entries
-   - Proper GST breakdown when applicable
-5. MATHEMATICAL ACCURACY:
-   - Total debit_amount = Total credit_amount (must balance)
-   - taxable_amount + gst_amount = line_total for expense entries
-   - Sum of all cgst_amount + sgst_amount + igst_amount = total GST on invoice
-6. DATA COMPLETENESS CHECK:
+4. STRICT SCHEMA COMPLIANCE - Every journal entry MUST have ALL fields with EXACT names:
+   - NO field name variations allowed (hsn_code not HSN, unit_price not price, etc.)
+   - ALL fields must be present even if empty string or 0
+   - Field types must match: strings for text, numbers for amounts, boolean for flags
+5. DATA COMPLETENESS CHECK:
    - If quantity > 0, then unit_price must be populated
    - If HSN code exists in items, copy to ALL related journal entries
    - If vendor GSTIN exists, incorporate into account codes where appropriate
-   - Never leave reference fields blank if source data is available  
+   - Never leave reference fields blank if source data is available
+6. MATHEMATICAL ACCURACY:
+   - Total debit_amount = Total credit_amount (must balance)
+   - taxable_amount + gst_amount = line_total for expense entries
+   - Sum of all cgst_amount + sgst_amount + igst_amount = total GST on invoice  
    - Credit: Accounts Payable or Cash/Bank accounts for total amount
 
 HSN CODE CLASSIFICATION REFERENCE:
