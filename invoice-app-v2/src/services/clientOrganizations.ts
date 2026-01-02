@@ -2,11 +2,9 @@ import {
   collection, 
   doc, 
   addDoc, 
-  updateDoc, 
-  deleteDoc, 
+  updateDoc,
   getDocs, 
   query, 
-  where, 
   orderBy,
   Timestamp,
   getDoc 
@@ -330,7 +328,8 @@ class ClientOrganizationService {
       client_address: '',
       client_contact_person: '',
       client_phone: '',
-      client_email: ''
+      client_email: '',
+      is_active: true
     }
 
     const id = await this.create(clientData)

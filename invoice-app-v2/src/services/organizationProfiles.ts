@@ -48,7 +48,29 @@ export interface ClientOrganization {
   user_uid: string
 }
 
-// Legacy interface for backward compatibility
+// User organization interface (for the user's own company, not clients)
+export interface UserOrganizationProfile {
+  id?: string
+  name: string
+  gstin: string
+  business_type: string
+  industry: string
+  business_description: string
+  capitalization_threshold: number
+  common_hsn_codes: string[]
+  expense_categories: string[]
+  address: string
+  contact_person: string
+  phone: string
+  email: string
+  is_default: boolean
+  is_active: boolean
+  created_at: Timestamp
+  updated_at: Timestamp
+  user_uid: string
+}
+
+// Legacy interface for backward compatibility with client organizations
 export interface OrganizationProfile extends ClientOrganization {
   name: string
   gstin: string
@@ -158,14 +180,14 @@ class OrganizationService {
   /**
    * Create a new organization profile
    */
-  async createOrganization(organizationData: Omit<OrganizationProfile, 'id' | 'created_at' | 'updated_at' | 'user_uid'>): Promise<string> {
+  async createOrganization(organizationData: Omit<UserOrganizationProfile, 'id' | 'created_at' | 'updated_at' | 'user_uid'>): Promise<string> {
     try {
       const user = authService.getCurrentUser()
       if (!user?.uid) throw new Error('User not authenticated')
 
       const orgRef = collection(db, this.getUserOrganizationPath())
       
-      const newOrg: Omit<OrganizationProfile, 'id'> = {
+      const newOrg: Omit<UserOrganizationProfile, 'id'> = {
         ...organizationData,
         created_at: Timestamp.now(),
         updated_at: Timestamp.now(),
@@ -303,7 +325,7 @@ class OrganizationService {
   /**
    * Create organization from business type template
    */
-  createFromTemplate(businessType: string, orgName: string, gstin: string): Omit<OrganizationProfile, 'id' | 'created_at' | 'updated_at' | 'user_uid'> {
+  createFromTemplate(businessType: string, orgName: string, gstin: string): Omit<UserOrganizationProfile, 'id' | 'created_at' | 'updated_at' | 'user_uid'> {
     const template = this.getBusinessTypeTemplate(businessType)
     
     if (!template) {
@@ -323,7 +345,8 @@ class OrganizationService {
       contact_person: '',
       phone: '',
       email: '',
-      is_default: false
+      is_default: false,
+      is_active: true
     }
   }
 }

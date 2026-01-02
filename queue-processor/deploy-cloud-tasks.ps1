@@ -9,7 +9,6 @@ Write-Host "🚀 Deploying Queue Processor with Cloud Tasks integration..." -For
 $PROJECT_ID = "watch-mail-trial"
 $SERVICE_NAME = "queue-processor"
 $REGION = "asia-south1"
-$IMAGE_NAME = "queue-processor-cloud-tasks"
 
 # Check if we're in the right directory
 if (-not (Test-Path "main_cloud_tasks.py")) {

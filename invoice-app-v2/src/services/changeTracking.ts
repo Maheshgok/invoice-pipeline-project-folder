@@ -182,21 +182,7 @@ class ChangeTrackingService {
     return (userModifications?.total_changes || 0) > 0
   }
 
-  /**
-   * Helper to increment a field value
-   */
-  private incrementField(increment: number = 1) {
-    // Return a function that Firestore will use to increment the field
-    return (current: number) => (current || 0) + increment
-  }
 
-  /**
-   * Helper to append to an array field
-   */
-  private appendToArray(...items: any[]) {
-    // Return a function that Firestore will use to append to the array
-    return (currentArray: any[]) => [...(currentArray || []), ...items]
-  }
 }
 
 export const changeTrackingService = new ChangeTrackingService()

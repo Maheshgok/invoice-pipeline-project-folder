@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react'
-import { organizationService, OrganizationProfile, BUSINESS_TYPES, BusinessType } from '../../services/organizationProfiles'
+import { organizationService, UserOrganizationProfile, BUSINESS_TYPES } from '../../services/organizationProfiles'
 import toast from 'react-hot-toast'
 
 interface OrganizationManagementProps {
-  onSelectOrganization?: (org: OrganizationProfile) => void
+  onSelectOrganization?: (org: UserOrganizationProfile) => void
   selectionMode?: boolean
 }
 
@@ -11,9 +11,9 @@ const OrganizationManagement: React.FC<OrganizationManagementProps> = ({
   onSelectOrganization, 
   selectionMode = false 
 }) => {
-  const [organizations, setOrganizations] = useState<OrganizationProfile[]>([])
+  const [organizations, setOrganizations] = useState<UserOrganizationProfile[]>([])
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [editingOrg, setEditingOrg] = useState<OrganizationProfile | null>(null)
+  const [editingOrg, setEditingOrg] = useState<UserOrganizationProfile | null>(null)
   const [loading, setLoading] = useState(false)
 
   // Form state
@@ -30,7 +30,8 @@ const OrganizationManagement: React.FC<OrganizationManagementProps> = ({
     contact_person: '',
     phone: '',
     email: '',
-    is_default: false
+    is_default: false,
+    is_active: true
   })
 
   useEffect(() => {
@@ -131,7 +132,7 @@ const OrganizationManagement: React.FC<OrganizationManagementProps> = ({
     }
   }
 
-  const startEdit = (org: OrganizationProfile) => {
+  const startEdit = (org: UserOrganizationProfile) => {
     setEditingOrg(org)
     setFormData({
       name: org.name,
@@ -146,7 +147,8 @@ const OrganizationManagement: React.FC<OrganizationManagementProps> = ({
       contact_person: org.contact_person,
       phone: org.phone,
       email: org.email,
-      is_default: org.is_default
+      is_default: org.is_default,
+      is_active: org.is_active || true
     })
   }
 
@@ -164,7 +166,8 @@ const OrganizationManagement: React.FC<OrganizationManagementProps> = ({
       contact_person: '',
       phone: '',
       email: '',
-      is_default: false
+      is_default: false,
+      is_active: true
     })
   }
 

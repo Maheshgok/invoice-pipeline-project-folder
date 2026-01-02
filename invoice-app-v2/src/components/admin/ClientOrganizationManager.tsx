@@ -4,8 +4,7 @@ import {
   userOrganizationService,
   ClientOrganization,
   UserOrganization,
-  BUSINESS_TYPES,
-  BusinessType
+  BUSINESS_TYPES
 } from '../../services/clientOrganizations'
 import { toast } from 'react-hot-toast'
 
@@ -79,7 +78,8 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
         client_contact_person: '',
         client_phone: '',
         client_email: '',
-        processing_notes: newClient.processing_notes
+        processing_notes: newClient.processing_notes,
+        is_active: true
       }
 
       await clientOrganizationService.create(clientData)
