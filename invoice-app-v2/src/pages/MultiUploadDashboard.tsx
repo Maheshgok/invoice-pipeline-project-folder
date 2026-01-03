@@ -1022,15 +1022,13 @@ const MultiUploadDashboard: React.FC = () => {
                 <tbody className="bg-white divide-y divide-gray-200">
                   {journalEntries.map((entry) => {
                     // Debug log to check data structure
-                    if (process.env.NODE_ENV === 'development') {
-                      console.log('🔍 Entry data for', entry.id, ':', {
-                        accountName: entry.accountName,
-                        accountCode: entry.accountCode, 
-                        description: entry.description,
-                        hsnCode: entry.hsnCode,
-                        shouldShowAccountCode: shouldDisplayInTable('accountCodes')
-                      })
-                    }
+                    console.log('🔍 Entry data for', entry.id, ':', {
+                      accountName: entry.accountName,
+                      accountCode: entry.accountCode, 
+                      description: entry.description,
+                      hsnCode: entry.hsnCode,
+                      shouldShowAccountCode: shouldDisplayInTable('accountCodes')
+                    })
                     
                     return (
                     <tr key={entry.id} className="hover:bg-gray-50">{/* Document availability indicator */}

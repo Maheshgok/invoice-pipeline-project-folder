@@ -1206,17 +1206,15 @@ class RealtimeFirestoreService {
         // Structure 0.5: Check if data is at extractedData.journal_entries (direct path)
         else if (result.extractedData?.journal_entries && Array.isArray(result.extractedData.journal_entries)) {
           // Debug: This might be the correct path for current data
-          if (process.env.NODE_ENV === 'development') {
-            console.log('🔍 DEBUG: Direct journal_entries:', JSON.stringify(result.extractedData.journal_entries, null, 2))
-            result.extractedData.journal_entries.forEach((entry: any, idx: number) => {
-              console.log(`🔍 Direct Entry ${idx} HSN Debug:`, {
-                entryId: idx,
-                hsn_code: entry.hsn_code,
-                account_name: entry.account_name,
-                item_description: entry.item_description
-              })
+          console.log('🔍 DEBUG: Direct journal_entries:', JSON.stringify(result.extractedData.journal_entries, null, 2))
+          result.extractedData.journal_entries.forEach((entry: any, idx: number) => {
+            console.log(`🔍 Direct Entry ${idx} HSN Debug:`, {
+              entryId: idx,
+              hsn_code: entry.hsn_code,
+              account_name: entry.account_name,
+              item_description: entry.item_description
             })
-          }
+          })
           
           journalData = {
             journal_entry_set: [{
@@ -1279,9 +1277,7 @@ class RealtimeFirestoreService {
             
             journalEntries.forEach((entry: any, entryIndex: number) => {
               // Debug: Log the actual journal entry structure
-              if (process.env.NODE_ENV === 'development') {
-                console.log('🔍 DEBUG: Journal entry structure:', JSON.stringify(entry, null, 2))
-              }
+              console.log('🔍 DEBUG: Journal entry structure:', JSON.stringify(entry, null, 2))
               
               const invoiceNumber = result.extractedData?.extracted_data?.invoice_details?.invoice_number || 
                                    result.extractedData?.extracted_data?.invoice_number || 
