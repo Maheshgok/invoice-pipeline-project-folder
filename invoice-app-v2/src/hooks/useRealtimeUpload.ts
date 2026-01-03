@@ -5,6 +5,7 @@ import { realtimeFirestoreService } from '../services/firestore-realtime'
 import { archiveService } from '../services/archive'
 import { getApiUrl } from '../config/api'
 import type { InvoiceProcessingResult } from '../services/firestore-realtime'
+import { shouldDisplayInTable } from '../config/features'
 
 interface UploadedFile {
   id: string
@@ -436,25 +437,37 @@ export const useRealtimeUpload = () => {
       // Archive completed results before download to clean up interface
       await archiveCompletedResults()
       
-      // Create CSV content
-      const headers = ['Date', 'Account Name', 'Account Code', 'Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 'HSN Code', 'Item Description', 'Quantity', 'Unit Price', 'Balanced']
+      // Create CSV content with conditional headers
+      const baseHeaders = ['Date', 'Account Name'];
+      const conditionalHeaders = shouldDisplayInTable('accountCodes') ? ['Account Code'] : [];
+      const remainingHeaders = ['Description', 'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 'HSN Code', 'Item Description', 'Quantity', 'Unit Price', 'CGST Amount', 'SGST Amount', 'IGST Amount', 'Total GST Amount', 'Balanced'];
+      const headers = [...baseHeaders, ...conditionalHeaders, ...remainingHeaders];
       const csvContent = [
         headers.join(','),
-        ...journalEntries.map(entry => [
-          entry.date,
-          `"${entry.accountName}"`,
-          entry.accountCode,
-          `"${entry.description}"`,
-          entry.debitAmount,
-          entry.creditAmount,
-          `"${entry.reference}"`,
-          `"${entry.vendor || ''}"`,
-          `"${entry.hsnCode || ''}"`,
-          `"${entry.itemDescription || ''}"`,
-          entry.quantity || '',
-          entry.unitPrice || '',
-          entry.isBalanced ? 'Balanced' : 'Unbalanced'
-        ].join(','))
+        ...journalEntries.map(entry => {
+          const baseRow = [
+            entry.date,
+            `"${entry.accountName}"`
+          ];
+          const conditionalRow = shouldDisplayInTable('accountCodes') ? [entry.accountCode || ''] : [];
+          const remainingRow = [
+            `"${entry.description}"`,
+            entry.debitAmount,
+            entry.creditAmount,
+            `"${entry.reference}"`,
+            `"${entry.vendor || ''}"`,
+            `"${entry.hsnCode || ''}"`,
+            `"${entry.itemDescription || ''}"`,
+            entry.quantity || '',
+            entry.unitPrice || '',
+            entry.cgstAmount || 0,
+            entry.sgstAmount || 0,
+            entry.igstAmount || 0,
+            entry.gstAmount || 0,
+            entry.isBalanced ? 'Yes' : 'No'
+          ];
+          return [...baseRow, ...conditionalRow, ...remainingRow].join(',');
+        })
       ].join('\n')
 
       // Create and download file

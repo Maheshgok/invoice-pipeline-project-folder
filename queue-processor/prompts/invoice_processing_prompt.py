@@ -191,7 +191,6 @@ Every journal entry MUST contain ALL these fields with EXACT names:
 {
   "account_name": "string",
   "account_type": "string", 
-  "account_code": "string",
   "debit_amount": number,
   "credit_amount": number,
   "narration": "string",
@@ -346,7 +345,6 @@ Use this reference to assign appropriate HSN codes and expense categories based 
 
 ENRICHED JOURNAL ENTRY REQUIREMENTS:
 7. ALWAYS populate ALL journal entry fields with complete data:
-   - "account_code": Use HSN code from items when available, or create appropriate account code (e.g., 2000 for Payables, 8517 for Equipment)
    - "hsn_code": Copy from matching item's hsn_code field, use "" if not applicable
    - "item_description": Copy from matching item's description field, be descriptive
    - "quantity": Copy from matching item's quantity field, default to 0 if not line-item specific
@@ -369,22 +367,11 @@ ENRICHED JOURNAL ENTRY REQUIREMENTS:
    - If IGST: Create single debit entry for IGST
    - Always use appropriate GST account codes: CGST (1801), SGST (1802), IGST (1803)
 
-9. COMPREHENSIVE ACCOUNT CODING SYSTEM:
-   - Assets/Equipment: Use HSN code of the item (8517, 84713000, etc.)
-   - CGST Input Credit: 1801
-   - SGST Input Credit: 1802  
-   - IGST Input Credit: 1803
-   - Accounts Payable: 2000 + last 3 digits of vendor GSTIN (if available)
-   - Office Expenses: 6001
-   - Equipment Purchase: 1200 + HSN prefix
-   - Professional Services: 6200
-
 EXAMPLE for ₹3000 modem with HSN 8517 (with GST ₹540):
 [
   {
     "account_name": "Office Equipment - Modem", 
     "account_type": "Asset", 
-    "account_code": "8517",
     "debit_amount": 2460, 
     "credit_amount": 0, 
     "narration": "Modem Purchase - Plan 1277",

@@ -20,6 +20,9 @@ export interface JournalEntry {
   totalAmount?: number
   taxableAmount?: number
   gstAmount?: number
+  cgstAmount?: number
+  sgstAmount?: number
+  igstAmount?: number
   isBalanced?: boolean
   hsnCode?: string
   itemDescription?: string

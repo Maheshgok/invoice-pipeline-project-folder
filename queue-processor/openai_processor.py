@@ -247,135 +247,40 @@ class OpenAIProcessor:
                 # Prepare messages with system prompt if provided
                 messages = []
                 
-                # Use multi-phase processing for better accuracy
+                # Always use multi-phase processing for better accuracy (fallback disabled)
+                logger.info(f"🚀 PROCESSING APPROACH: Multi-Phase (3 OpenAI API calls)")
                 if client_organization_context or client_organization_id:
-                    logger.info(f"🚀 PROCESSING APPROACH: Multi-Phase (3 OpenAI API calls)")
                     logger.info(f"📋 CLIENT ORG CONTEXT: Available - Using enhanced GST taxonomy processing")
-                    logger.info(f"🔧 Phases: 1️⃣ Data extraction → 2️⃣ GST enrichment → 3️⃣ JSON conversion")
-                    from multi_phase_processor import MultiPhaseInvoiceProcessor
-                    multi_phase = MultiPhaseInvoiceProcessor()
-                    
-                    # Process with multi-phase approach
-                    result = multi_phase.process_invoice_multi_phase(
-                        image_data=file_content,
-                        image_name=blob_path.split('/')[-1],
-                        client_organization_context=client_organization_context,
-                        client_organization_id=client_organization_id
-                    )
-                    
-                    logger.info(f"✅ MULTI-PHASE PROCESSING: Completed all 3 phases successfully")
-                    return {
-                        "success": True,
-                        "data": result,
-                        "error": None
-                    }
                 else:
-                    logger.info(f"📋 PROCESSING APPROACH: Legacy Single-Phase (1 OpenAI API call)")
-                    logger.info(f"⚠️ CLIENT ORG CONTEXT: Not available - Using basic processing without GST taxonomy")
-                    logger.info(f"🔧 Phases: 1️⃣ Direct image-to-JSON conversion only")
+                    logger.info(f"📋 CLIENT ORG CONTEXT: Not provided - Using standard three-phase processing")
+                logger.info(f"🔧 Phases: 1️⃣ Data extraction → 2️⃣ GST enrichment → 3️⃣ JSON conversion")
                 
-                # Legacy single-phase processing (fallback)
-                if system_prompt and system_prompt.strip():
-                    messages.append({
-                        "role": "system", 
-                        "content": system_prompt
-                    })
+                from multi_phase_processor import MultiPhaseInvoiceProcessor
+                multi_phase = MultiPhaseInvoiceProcessor()
                 
-                # Add user message with invoice prompt and image
-                messages.append({
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": invoice_prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {"url": data_url}
-                        }
-                    ]
-                })
-                
-                # Make API call with configuration parameters
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=self.max_tokens,
-                    temperature=self.temperature
+                # Process with multi-phase approach
+                result = multi_phase.process_invoice_multi_phase(
+                    image_data=file_content,
+                    image_name=blob_path.split('/')[-1],
+                    client_organization_context=client_organization_context,
+                    client_organization_id=client_organization_id
                 )
-                logger.info(f"OpenAI API call successful, extracting response content")
-            except Exception as api_error:
-                # Full exception logging for detailed debugging
-                logger.exception("❌ OpenAI API call failed with full stacktrace:")
                 
-                error_msg = f"OpenAI API connection failed: {str(api_error)}"
+                logger.info(f"✅ MULTI-PHASE PROCESSING: Completed all 3 phases successfully")
+                return {
+                    "success": True,
+                    "data": result,
+                    "error": None
+                }
                 
-                if hasattr(api_error, '__class__'):
-                    error_type = api_error.__class__.__name__
-                    logger.error(f"❌ OpenAI Error Type: {error_type}")
-                
-                # Check for specific OpenAI error types
-                if hasattr(api_error, 'code'):
-                    logger.error(f"❌ OpenAI Error Code: {api_error.code}")
-                    
-                if hasattr(api_error, 'response'):
-                    logger.error(f"❌ OpenAI Response: {api_error.response}")
-                
-                if hasattr(api_error, 'status_code'):
-                    logger.error(f"❌ HTTP Status Code: {api_error.status_code}")
-                    
-                if hasattr(api_error, 'body'):
-                    logger.error(f"❌ Response Body: {api_error.body}")
-                
-                # Log additional debugging info
-                logger.error(f"❌ Full error details: {repr(api_error)}")
-                logger.error(f"❌ Using model: {self.model}")
-                logger.error(f"❌ API key length: {len(self.api_key) if self.api_key else 0}")
-                logger.error(f"❌ Max tokens: {self.max_tokens}, Temperature: {self.temperature}")
-                
+            except Exception as e:
+                logger.error(f"Error in multi-phase processing: {str(e)}")
                 return {
                     "success": False,
-                    "error": error_msg,
+                    "error": str(e),
                     "data": None
                 }
-            
-            # Extract and parse response
-            content = response.choices[0].message.content
-            logger.info(f"📊 OpenAI response content length: {len(content)} characters")
-            logger.info(f"📋 RAW OpenAI response content START:")
-            logger.info(f"{content}")
-            logger.info(f"📋 RAW OpenAI response content END")
-            
-            parsed_data = self._parse_openai_response(content)
-            logger.info(f"🔍 Parsed data type: {type(parsed_data)}")
-            logger.info(f"🔍 Parsed data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
-            logger.info(f"📋 Full parsed data: {parsed_data}")
-            
-            # Check specifically for journal entries
-            if isinstance(parsed_data, dict):
-                journal_entries = parsed_data.get('journal_entries', [])
-                logger.info(f"💰 Journal entries found: {len(journal_entries) if isinstance(journal_entries, list) else 'Not a list'}")
-                if journal_entries:
-                    logger.info(f"💰 First journal entry: {journal_entries[0] if journal_entries else 'None'}")
-                else:
-                    logger.warning(f"⚠️ NO JOURNAL ENTRIES FOUND in parsed data!")
-                    logger.warning(f"⚠️ Available keys: {list(parsed_data.keys())}")
-            
-            result_data = {
-                "extracted_data": parsed_data,
-                "processing_time": datetime.now().isoformat(),
-                "model_used": "gpt-4o"
-            }
-            
-            logger.info(f"📊 Final result data structure before return:")
-            logger.info(f"📊 - extracted_data type: {type(parsed_data)}")
-            logger.info(f"📊 - extracted_data keys: {list(parsed_data.keys()) if isinstance(parsed_data, dict) else 'Not a dict'}")
-            logger.info(f"📊 - processing_time: {result_data['processing_time']}")
-            logger.info(f"📊 - model_used: {result_data['model_used']}")
-            
-            return {
-                "success": True,
-                "data": result_data,
-                "error": None
-            }
-            
+                
         except Exception as e:
             logger.error(f"Error processing image {bucket_name}/{blob_path}: {str(e)}")
             return {

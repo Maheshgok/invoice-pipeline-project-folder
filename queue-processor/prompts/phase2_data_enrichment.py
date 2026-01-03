@@ -11,39 +11,45 @@ BUSINESS-SPECIFIC CATEGORIZATION:
 Based on the organization's business type, categorize purchases appropriately:
 
 SOFTWARE/IT SERVICES:
-- Computers/Laptops → Operational Expense (if <50K), Capital Asset (if >50K)
-- Software licenses → Technology Expenses (Revenue)
-- Office furniture → Capital Asset
-- Internet/Utilities → Operational Expenses (Revenue)
+- Computers/Laptops → Office Equipment (Indirect Cost) if <50K, Capital Asset (Indirect Cost) if >50K
+- Software licenses → Technology Expenses (Indirect Cost)
+- Office furniture → Office Equipment (Indirect Cost)
+- Internet/Utilities → Operational Expenses (Indirect Cost)
+- Client project hardware → Direct Cost
 
 MANUFACTURING:
-- Raw materials → Cost of Goods Sold (Direct)
-- Production equipment → Capital Asset
-- Office supplies → Administrative Expenses (Revenue)
-- Maintenance supplies → Manufacturing Overhead (Revenue)
+- Raw materials → Raw Material Inventory (Direct Cost)
+- Production equipment → Plant & Machinery (Direct Cost)
+- Office supplies → Administrative Expenses (Indirect Cost)
+- Factory utilities → Manufacturing Overhead (Indirect Cost)
+- Transport of goods → Transportation Cost (Direct Cost)
 
 RETAIL/TRADING:
-- Inventory purchases → Cost of Goods Sold (Direct)
-- Store fixtures → Capital Asset
-- Packaging materials → Operating Expenses (Revenue)
-- POS systems → Capital Asset
+- Inventory purchases → Trading Stock (Direct Cost)
+- Store fixtures → Shop Equipment (Indirect Cost)
+- Packaging materials → Packaging Expenses (Direct Cost)
+- POS systems → Office Equipment (Indirect Cost)
+- Delivery expenses → Transportation Cost (Direct Cost)
 
 PROFESSIONAL SERVICES (CA/Legal/Consulting):
-- Office equipment → Capital Asset (if >threshold), Revenue Expense (if <threshold)
-- Professional books → Revenue Expense
-- Client entertainment → Business Development (Revenue)
-- Office rent → Administrative Expenses (Revenue)
+- Office equipment → Office Equipment (Indirect Cost)
+- Professional books → Professional Development (Indirect Cost)
+- Client entertainment → Business Development (Indirect Cost)
+- Office rent → Administrative Expenses (Indirect Cost)
+- Project-specific expenses → Direct Cost
 
 RESTAURANT/FOOD BUSINESS:
-- Kitchen equipment → Capital Asset
-- Food ingredients → Cost of Goods Sold (Direct)
-- Packaging → Operating Expenses (Revenue)
-- Furniture → Capital Asset
+- Kitchen equipment → Kitchen Equipment (Indirect Cost)
+- Food ingredients → Food & Beverage Cost (Direct Cost)
+- Packaging → Packaging Expenses (Direct Cost)
+- Furniture → Furniture & Fixtures (Indirect Cost)
+- Delivery costs → Transportation Cost (Direct Cost)
 
 REAL ESTATE:
-- Property maintenance → Direct Property Expenses
-- Office equipment → Administrative Expenses (Revenue)
-- Marketing materials → Business Development (Revenue)
+- Property maintenance → Direct Property Expenses (Direct Cost)
+- Office equipment → Administrative Expenses (Indirect Cost)
+- Marketing materials → Marketing Expenses (Indirect Cost)
+- Property transport → Transportation Cost (Direct Cost)
 
 CATEGORIZATION LOGIC:
 1. CAPITAL ASSET: Long-term use (>1 year), significant value, enhances business capacity
@@ -67,56 +73,92 @@ INDIAN HSN CODE REFERENCE:
 
 ENRICHMENT OUTPUT FORMAT:
 {
-  "enriched_data": {
-    "business_context": {
-      "organization_type": "",
-      "industry": "",
-      "business_description": "",
-      "capitalization_threshold": 50000
-    },
-    "vendor_details": {
-      "name": "",
-      "gstin": "",
-      "address": "",
-      "contact": ""
-    },
-    "buyer_details": {
-      "name": "",
-      "address": ""
-    },
-    "invoice_details": {
-      "number": "",
-      "date": "",
-      "due_date": ""
-    },
-    "enriched_items": [
-      {
-        "description": "",
-        "hsn_code": "",
-        "expense_category": "",
-        "account_type": "",
-        "business_classification": "",
-        "capitalization_reason": "",
-        "quantity": 0,
-        "unit_price": 0,
-        "total_amount": 0,
-        "tax_rate": 0,
-        "tax_amount": 0
-      }
-    ],
-    "tax_summary": {
-      "taxable_amount": 0,
-      "cgst": 0,
-      "sgst": 0,
-      "igst": 0,
-      "total_tax": 0,
-      "grand_total": 0
+  "document_type": "Tax Invoice",
+  "visibility_confidence": "high",
+  "vendor_details": {
+    "name": "",
+    "gstin": "",
+    "pan": "",
+    "contact_number": "",
+    "email": "",
+    "address": ""
+  },
+  "buyer_details": {
+    "name": "",
+    "gstin": "",
+    "address": "",
+    "place_of_supply": ""
+  },
+  "invoice_details": {
+    "invoice_number": "",
+    "invoice_date": "",
+    "due_date": "",
+    "po_number": "",
+    "challan_number": "",
+    "reverse_charge": "",
+    "transport_details": "",
+    "terms_and_conditions": ""
+  },
+  "currency": "INR",
+  "items": [
+    {
+      "serial_no": "",
+      "description": "",
+      "detailed_narration": "",
+      "hsn_code": "",
+      "quantity": 0,
+      "unit": "",
+      "unit_price": 0,
+      "discount": 0,
+      "taxable_value": 0,
+      "gst_rate": 0,
+      "cgst_amount": 0,
+      "sgst_amount": 0,
+      "igst_amount": 0,
+      "line_total": 0,
+      "cost_type": "",
+      "organization_account_name": "",
+      "business_classification": "",
+      "capitalization_reason": ""
     }
+  ],
+  "tax_summary": {
+    "taxable_value": 0,
+    "cgst_total": 0,
+    "sgst_total": 0,
+    "igst_total": 0,
+    "total_gst": 0,
+    "round_off": 0,
+    "grand_total": 0
+  },
+  "journal_entries": [
+    {
+      "account_name": "",
+      "account_type": "",
+      "debit_amount": 0,
+      "credit_amount": 0,
+      "narration": "",
+      "cost_type": "",
+      "organization_account_name": "",
+      "business_classification": ""
+    }
+  ],
+  "bank_details": {
+    "account_number": "",
+    "ifsc": "",
+    "bank_name": "",
+    "upi_id": ""
+  },
+  "compliance_flags": {
+    "gst_invoice_compliant": "",
+    "mandatory_fields_missing": [],
+    "gst_applicable": "",
+    "tds_applicable": ""
   },
   "enrichment_notes": [
     "Added HSN code 85176290 for telecom equipment",
-    "Categorized as Capital Asset due to business use and value >50K",
-    "Business type: IT Services - computers are operational tools"
+    "Categorized as Revenue Expense due to business use and value <50K",
+    "Business type: IT Services - modem is operational equipment"
   ]
 }
 
@@ -126,9 +168,24 @@ ENRICHMENT RULES:
 3. If HSN code is missing, add appropriate one based on item description
 4. Consider business use case for expense vs capital classification
 5. Convert all amounts to numbers (remove currency symbols)
-6. Add business_classification field explaining the reasoning
-7. Note all enrichments and business logic applied
-8. Consider depreciation implications for capital items
+6. Add detailed_narration explaining business classification reasoning
+7. Create preliminary journal entries with proper account names:
+   - Debit appropriate expense/asset accounts (Office Equipment, Office Expenses, etc.)
+   - Credit Accounts Payable
+   - Use HSN codes as account codes where appropriate
+8. Note all enrichments and business logic applied in enrichment_notes
+9. Populate all required schema fields with appropriate values
+
+JOURNAL ENTRY ENRICHMENT:
+- Create balanced debit/credit entries
+- Use account names like "Office Equipment", "Office Expenses", "Accounts Payable"
+- Set appropriate account_types: "Asset", "Expense", "Liability"
+
+COST TYPE CLASSIFICATION:
+- "DIRECT": Directly attributable to products/services sold or specific projects
+- "INDIRECT": General business expenses not directly tied to specific output
+- "TRANSPORT": Transportation, logistics, and delivery related costs
+- "OVERHEAD": Administrative and operational overhead expenses
 
 BUSINESS CLASSIFICATION VALUES:
 - "CAPITAL_ASSET": Fixed asset, depreciate over time

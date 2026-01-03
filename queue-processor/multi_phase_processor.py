@@ -12,7 +12,7 @@ import os
 
 from prompts.phase1_data_extraction import PHASE1_DATA_EXTRACTION_PROMPT
 from prompts.phase2_data_enrichment import PHASE2_DATA_ENRICHMENT_PROMPT  
-from prompts.phase3_json_conversion import PHASE3_JSON_CONVERSION_PROMPT
+from prompts.phase3_json_conversion import PHASE3_JSON_CONVERSION_PROMPT, ACCOUNT_CODE_ENABLED
 from gst_taxonomy_helper import GSTTaxonomyHelper
 
 logger = logging.getLogger(__name__)
@@ -120,9 +120,19 @@ class MultiPhaseInvoiceProcessor:
             
             result = response.choices[0].message.content.strip()
             logger.info(f"📊 Phase 1 raw response length: {len(result)} characters")
+            # DEBUG: Print full Phase 1 OpenAI response
+            logger.info(f"🤖 DEBUG - Phase 1 OpenAI Response: {result}")
             logger.info(f"✅ PHASE 1/3: Data extraction completed successfully")
             
-            return json.loads(result)
+            # Clean up the response to extract JSON (similar to _parse_openai_response)
+            cleaned_result = result
+            if '```json' in cleaned_result:
+                cleaned_result = cleaned_result.split('```json')[1].split('```')[0]
+            elif '```' in cleaned_result:
+                cleaned_result = cleaned_result.split('```')[1]
+            cleaned_result = cleaned_result.strip()
+            
+            return json.loads(cleaned_result)
             
         except json.JSONDecodeError as e:
             logger.error(f"❌ Phase 1 JSON decode error: {str(e)}")
@@ -136,8 +146,11 @@ class MultiPhaseInvoiceProcessor:
         try:
             logger.info(f"🔧 PHASE 2/3: Starting data enrichment with GST taxonomy integration")
             logger.info(f"📋 Client organization context: {'Available' if client_organization_context else 'Not available'}")
-            logger.info(f"🔧 PHASE 2/3: Starting data enrichment with GST taxonomy integration")
-            logger.info(f"📋 Client organization context: {'Available' if client_organization_context else 'Not available'}")
+            # DEBUG: Print client organization context details
+            if client_organization_context:
+                logger.info(f"🏢 DEBUG - Client Organization Context: {client_organization_context}")
+            else:
+                logger.info(f"🏢 DEBUG - No client organization context provided")
             # Build enriched prompt with GST taxonomy and client organization context
             prompt_parts = [PHASE2_DATA_ENRICHMENT_PROMPT]
             
@@ -200,9 +213,19 @@ Consider their common HSN codes, expense categories, and capitalization threshol
             
             result = response.choices[0].message.content.strip()
             logger.info(f"🔧 Phase 2 enrichment response length: {len(result)} characters")
+            # DEBUG: Print full Phase 2 OpenAI response
+            logger.info(f"🤖 DEBUG - Phase 2 OpenAI Response: {result}")
             logger.info(f"✅ PHASE 2/3: Data enrichment completed successfully")
             
-            return json.loads(result)
+            # Clean up the response to extract JSON (similar to _parse_openai_response)
+            cleaned_result = result
+            if '```json' in cleaned_result:
+                cleaned_result = cleaned_result.split('```json')[1].split('```')[0]
+            elif '```' in cleaned_result:
+                cleaned_result = cleaned_result.split('```')[1]
+            cleaned_result = cleaned_result.strip()
+            
+            return json.loads(cleaned_result)
             
         except json.JSONDecodeError as e:
             logger.error(f"❌ Phase 2 JSON decode error: {str(e)}")
@@ -270,7 +293,30 @@ Consider their common HSN codes, expense categories, and capitalization threshol
         try:
             logger.info(f"📋 PHASE 3/3: Starting JSON schema conversion for frontend compliance")
             logger.info(f"🔍 Enforcing strict field naming and schema validation")
-            prompt = f"{PHASE3_JSON_CONVERSION_PROMPT}\n\nINPUT DATA:\n{json.dumps(phase2_data, indent=2)}"
+            logger.info(f"⚙️ Account codes enabled: {ACCOUNT_CODE_ENABLED}")
+            
+            # Build prompt with conditional account code instructions
+            prompt_parts = [PHASE3_JSON_CONVERSION_PROMPT]
+            
+            if ACCOUNT_CODE_ENABLED:
+                account_code_instructions = """
+ACCOUNT CODE HANDLING (ENABLED):
+- Include "account_code" field in journal entries
+- Map account names to appropriate codes using chart of accounts
+- Use standard account coding structure
+"""
+                prompt_parts.append(account_code_instructions)
+            else:
+                account_code_instructions = """
+ACCOUNT CODE HANDLING (DISABLED):
+- Do NOT include "account_code" field in journal entries
+- Focus on account names and descriptions only
+- Account codes are not required for this configuration
+"""
+                prompt_parts.append(account_code_instructions)
+            
+            prompt_parts.append(f"\nINPUT DATA:\n{json.dumps(phase2_data, indent=2)}")
+            prompt = '\n'.join(prompt_parts)
             
             response = self.client.chat.completions.create(
                 model="gpt-4o", 
@@ -281,9 +327,19 @@ Consider their common HSN codes, expense categories, and capitalization threshol
             
             result = response.choices[0].message.content.strip()
             logger.info(f"📋 Phase 3 conversion response length: {len(result)} characters")
+            # DEBUG: Print full Phase 3 OpenAI response
+            logger.info(f"🤖 DEBUG - Phase 3 OpenAI Response: {result}")
             logger.info(f"✅ PHASE 3/3: JSON schema conversion completed successfully")
             
-            return json.loads(result)
+            # Clean up the response to extract JSON (similar to _parse_openai_response)
+            cleaned_result = result
+            if '```json' in cleaned_result:
+                cleaned_result = cleaned_result.split('```json')[1].split('```')[0]
+            elif '```' in cleaned_result:
+                cleaned_result = cleaned_result.split('```')[1]
+            cleaned_result = cleaned_result.strip()
+            
+            return json.loads(cleaned_result)
             
         except json.JSONDecodeError as e:
             logger.error(f"❌ Phase 3 JSON decode error: {str(e)}")

@@ -3,6 +3,7 @@ import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
 import { firestoreService, InvoiceProcessingResult, JournalEntryData } from '../services/firestore'
 import { getApiUrl } from '../config/api'
+import { shouldDisplayInTable } from '../config/features'
 
 interface UploadedFile {
   id: string
@@ -308,33 +309,43 @@ export const useMultiUpload = () => {
       return
     }
 
-    const headers = [
-      'Date', 'Account Name', 'Account Code', 'Description', 
+    const baseHeaders = ['Date', 'Account Name'];
+    const conditionalHeaders = shouldDisplayInTable('accountCodes') ? ['Account Code'] : [];
+    const remainingHeaders = ['Description', 
       'Debit Amount', 'Credit Amount', 'Reference', 'Vendor', 
       'HSN Code', 'Item Description', 'Quantity', 'Unit Price',
-      'Total Amount', 'Taxable Amount', 'GST Amount', 'Balanced'
-    ]
+      'Total Amount', 'Taxable Amount', 'CGST Amount', 'SGST Amount', 'IGST Amount', 'Total GST Amount', 'Balanced'
+    ];
+    const headers = [...baseHeaders, ...conditionalHeaders, ...remainingHeaders];
 
     const csvContent = [
       headers.join(','),
-      ...journalEntries.map(entry => [
-        entry.date,
-        `"${entry.accountName.replace(/"/g, '""')}"`,
-        entry.accountCode,
-        `"${entry.description.replace(/"/g, '""')}"`,
-        entry.debitAmount,
-        entry.creditAmount,
-        `"${entry.reference.replace(/"/g, '""')}"`,
-        `"${(entry.vendor || '').replace(/"/g, '""')}"`,
-        `"${(entry.hsnCode || '').replace(/"/g, '""')}"`,
-        `"${(entry.itemDescription || '').replace(/"/g, '""')}"`,
-        entry.quantity || '',
-        entry.unitPrice || '',
-        entry.totalAmount || 0,
-        entry.taxableAmount || 0,
-        entry.gstAmount || 0,
-        entry.isBalanced ? 'Yes' : 'No'
-      ].join(','))
+      ...journalEntries.map(entry => {
+        const baseRow = [
+          entry.date,
+          `"${entry.accountName.replace(/"/g, '""')}"`,
+        ];
+        const conditionalRow = shouldDisplayInTable('accountCodes') ? [entry.accountCode || ''] : [];
+        const remainingRow = [
+          `"${entry.description.replace(/"/g, '""')}"`,
+          entry.debitAmount,
+          entry.creditAmount,
+          `"${entry.reference.replace(/"/g, '""')}"`,
+          `"${(entry.vendor || '').replace(/"/g, '""')}"`,
+          `"${(entry.hsnCode || '').replace(/"/g, '""')}"`,
+          `"${(entry.itemDescription || '').replace(/"/g, '""')}"`,
+          entry.quantity || '',
+          entry.unitPrice || '',
+          entry.totalAmount || 0,
+          entry.taxableAmount || 0,
+          entry.cgstAmount || 0,
+          entry.sgstAmount || 0,
+          entry.igstAmount || 0,
+          entry.gstAmount || 0,
+          entry.isBalanced ? 'Yes' : 'No'
+        ];
+        return [...baseRow, ...conditionalRow, ...remainingRow].join(',');
+      })
     ].join('\n')
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
