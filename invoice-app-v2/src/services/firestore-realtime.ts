@@ -984,6 +984,13 @@ class RealtimeFirestoreService {
             hasHsnCode: !!firstItem.hsn_code
           } : 'No items'
         })
+        
+        // SPECIFIC HSN DEBUG
+        console.log(`🎯 RAW HSN DATA for ${result.jobId}:`, {
+          'firstItem_hsn_code': firstItem?.hsn_code,
+          'hsn_code_type': typeof firstItem?.hsn_code,
+          'hsn_code_length': firstItem?.hsn_code?.length || 0
+        })
 
         // Create journal entries based on the new structure
         let entryIndex = 0
@@ -1012,10 +1019,6 @@ class RealtimeFirestoreService {
                 unitPrice: parseFloat(item.unit_price) || 0,
                 narration: item.detailed_narration || item.description || 'Purchase expense',
                 reference: invoiceNumber,
-                hsnCode: item.hsn_code || '',
-                itemDescription: item.description || '',
-                quantity: parseFloat(item.quantity) || 0,
-                unitPrice: parseFloat(item.unit_price) || 0,
                 gstAmount: parseFloat(item.cgst_amount || 0) + parseFloat(item.sgst_amount || 0) + parseFloat(item.igst_amount || 0),
                 cgstAmount: parseFloat(item.cgst_amount) || 0,
                 sgstAmount: parseFloat(item.sgst_amount) || 0,

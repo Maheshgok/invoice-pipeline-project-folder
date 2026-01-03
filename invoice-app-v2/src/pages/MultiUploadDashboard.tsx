@@ -1030,6 +1030,16 @@ const MultiUploadDashboard: React.FC = () => {
                       shouldShowAccountCode: shouldDisplayInTable('accountCodes')
                     })
                     
+                    // SPECIFIC HSN DEBUG
+                    console.log(`🎯 HSN CODE CHECK for ${entry.id}:`, {
+                      'hsnCode_value': entry.hsnCode,
+                      'hsnCode_type': typeof entry.hsnCode,
+                      'is_undefined': entry.hsnCode === undefined,
+                      'is_null': entry.hsnCode === null,
+                      'is_empty_string': entry.hsnCode === '',
+                      'display_value': entry.hsnCode || '-'
+                    })
+                    
                     return (
                     <tr key={entry.id} className="hover:bg-gray-50">{/* Document availability indicator */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
