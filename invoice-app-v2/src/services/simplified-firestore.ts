@@ -43,6 +43,14 @@ export class SimplifiedFirestoreService {
         
         const results = snapshot.docs.map(doc => {
           const data = doc.data()
+          
+          // DEBUG: Show raw document structure
+          console.log('🔍 RAW FIRESTORE DOCUMENT:', {
+            docId: doc.id,
+            allFields: Object.keys(data),
+            rawData: data // This will show ALL the actual field names and values
+          })
+          
           return {
             id: doc.id,
             jobId: data.job_id || data.jobId || doc.id, // Fix jobId mapping
