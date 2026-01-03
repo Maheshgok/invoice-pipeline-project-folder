@@ -4,7 +4,7 @@
  * Separates Firestore logic from batch management
  */
 import { realtimeFirestoreService, type InvoiceProcessingResult } from './firestore-realtime'
-import { simplifiedFirestoreService } from './simplified-firestore'
+import { finalSimplifiedFirestoreService } from './final-simplified-firestore'
 import { BatchManager } from './batch-manager'
 
 export interface JournalEntry {
@@ -56,8 +56,8 @@ export class FirestoreSyncManager {
     console.log('🚀 Starting Firestore sync manager')
     this.isListening = true
 
-    // USE SIMPLIFIED SERVICE for cleaner data mapping
-    simplifiedFirestoreService.listenToUserResults(
+    // USE FINAL SIMPLIFIED SERVICE - uses existing perfect journal entries
+    finalSimplifiedFirestoreService.listenToUserResults(
       (entries) => this.handleDirectJournalEntries(entries),
       (error) => this.handleFirestoreError(error)
     )
@@ -73,7 +73,7 @@ export class FirestoreSyncManager {
 
     console.log('🛑 Stopping Firestore sync manager')
     this.isListening = false
-    simplifiedFirestoreService.cleanup()
+    finalSimplifiedFirestoreService.cleanup()
   }
 
   /**

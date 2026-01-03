@@ -53,14 +53,14 @@ export class SimplifiedFirestoreService {
           
           return {
             id: doc.id,
-            jobId: data.job_id || data.jobId || doc.id, // Fix jobId mapping
+            jobId: data.job_id || doc.id,
             fileName: data.file_name || data.fileName || '',
-            userEmail: data.user_email || data.userEmail || '',
-            userUID: data.user_uid || data.userUID || '',
+            userEmail: data.user_email || '',
+            userUID: data.userUID || '',
             status: data.status || 'unknown',
-            createdAt: data.created_at || data.createdAt || new Date(),
-            extractedData: data.extracted_data || data.extractedData, // Fix extractedData mapping
-            ...data // Include all other fields
+            createdAt: data.created_at || data.updated_at || new Date(),
+            // CORRECT MAPPING: Use 'result' field from your Firestore document
+            extractedData: data.result || data.extracted_data || data.extractedData,
           }
         })
         
@@ -109,7 +109,15 @@ export class SimplifiedFirestoreService {
         hasItems: !!(extractedData.items),
         itemsCount: extractedData.items?.length || 0,
         hasTaxSummary: !!(extractedData.tax_summary),
-        firstItemHsn: extractedData.items?.[0]?.hsn_code
+        firstItemHsn: extractedData.items?.[0]?.hsn_code,
+        // Check for HSN codes in different possible locations
+        directHsnFields: {
+          hsn_code: data.hsn_code,
+          hsn: data.hsn,
+          item_hsn: data.item_hsn
+        },
+        // Show what fields are actually available
+        availableFields: Object.keys(data).slice(0, 10) // First 10 fields
       })
       
       // Extract basic info
