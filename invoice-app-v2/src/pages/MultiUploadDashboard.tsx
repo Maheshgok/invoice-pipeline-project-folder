@@ -1031,13 +1031,9 @@ const MultiUploadDashboard: React.FC = () => {
                         shouldShowAccountCode: shouldDisplayInTable('accountCodes')
                       })
                     }
-                        shouldShowAccountCode: shouldDisplayInTable('accountCodes')
-                      })
-                    }
                     
                     return (
-                    <tr key={entry.id} className="hover:bg-gray-50">
-                      {/* Document availability indicator */}
+                    <tr key={entry.id} className="hover:bg-gray-50">{/* Document availability indicator */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-center">
                         {batchState.files.some(f => f.jobId === entry.invoiceId || f.id === entry.invoiceId) ? (
                           <FileText className="w-4 h-4 text-green-600 mx-auto" title="Document available" />
@@ -1393,7 +1389,8 @@ const MultiUploadDashboard: React.FC = () => {
                         </div>
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             )}
