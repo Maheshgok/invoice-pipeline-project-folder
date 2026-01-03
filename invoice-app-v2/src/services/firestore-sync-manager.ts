@@ -4,6 +4,7 @@
  * Separates Firestore logic from batch management
  */
 import { realtimeFirestoreService, type InvoiceProcessingResult } from './firestore-realtime'
+import { simplifiedFirestoreService } from './simplified-firestore'
 import { BatchManager } from './batch-manager'
 
 export interface JournalEntry {
@@ -55,8 +56,9 @@ export class FirestoreSyncManager {
     console.log('🚀 Starting Firestore sync manager')
     this.isListening = true
 
-    realtimeFirestoreService.listenToActiveResults(
-      (results) => this.handleFirestoreUpdate(results),
+    // USE SIMPLIFIED SERVICE for cleaner data mapping
+    simplifiedFirestoreService.listenToUserResults(
+      (entries) => this.handleDirectJournalEntries(entries),
       (error) => this.handleFirestoreError(error)
     )
   }
@@ -71,7 +73,43 @@ export class FirestoreSyncManager {
 
     console.log('🛑 Stopping Firestore sync manager')
     this.isListening = false
-    realtimeFirestoreService.cleanup()
+    simplifiedFirestoreService.cleanup()
+  }
+
+  /**
+   * SIMPLIFIED: Handle journal entries directly from simplified service
+   */
+  private handleDirectJournalEntries(entries: JournalEntry[]): void {
+    console.log('🔥 SIMPLIFIED: Received', entries.length, 'direct journal entries')
+    
+    this.journalEntries = entries
+    
+    // Notify all journal entry listeners
+    this.listeners.forEach(listener => {
+      try {
+        listener([...this.journalEntries])
+      } catch (error) {
+        console.error('❌ Error in journal entry listener:', error)
+      }
+    })
+    
+    // Update batch state with completions
+    const completedJobs = new Set<string>()
+    entries.forEach(entry => {
+      const jobId = entry.invoiceId
+      if (jobId && !this.processedJobIds.has(jobId)) {
+        completedJobs.add(jobId)
+        this.processedJobIds.add(jobId)
+        console.log('🎉 SIMPLIFIED: New completion detected:', jobId)
+      }
+    })
+    
+    // Update batch manager with completed jobs
+    completedJobs.forEach(jobId => {
+      this.batchManager.markFileCompleted(jobId)
+    })
+    
+    console.log('📊 SIMPLIFIED: Journal entries updated, notified', this.listeners.size, 'listeners')
   }
 
   /**

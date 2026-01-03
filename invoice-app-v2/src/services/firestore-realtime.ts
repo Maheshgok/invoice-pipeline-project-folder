@@ -1031,6 +1031,15 @@ class RealtimeFirestoreService {
                 userId: result.userEmail,
                 createdAt: result.createdAt
               }
+              
+              // CRITICAL DEBUG: Check entry right after creation
+              console.log('🚨 ENTRY CREATED DEBUG:', {
+                entryId: journalEntry.id,
+                itemHsnCode: item.hsn_code,
+                entryHsnCode: journalEntry.hsnCode,
+                hsnMapped: !!journalEntry.hsnCode
+              })
+              
               entries.push(journalEntry)
             }
           })
@@ -1176,6 +1185,15 @@ class RealtimeFirestoreService {
               userId: result.userEmail,
               createdAt: result.createdAt
             }
+            
+            // CRITICAL DEBUG: Check payable entry right after creation  
+            console.log('🚨 PAYABLE ENTRY CREATED DEBUG:', {
+              entryId: payableEntry.id,
+              firstItemHsnCode: firstItem?.hsn_code,
+              entryHsnCode: payableEntry.hsnCode,
+              hsnMapped: !!payableEntry.hsnCode
+            })
+            
             entries.push(payableEntry)
           }
         }
