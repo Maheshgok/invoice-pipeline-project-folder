@@ -954,17 +954,13 @@ class RealtimeFirestoreService {
   extractJournalEntriesFromResults(results: InvoiceProcessingResult[]): any[] {
     const entries: any[] = []
     
-    if (process.env.NODE_ENV === 'development') {
-      console.log('🔍 Extracting journal entries from', results.length, 'results')
-    }
+    console.log('🔍 Extracting journal entries from', results.length, 'results')
     
     results.forEach((result, resultIndex) => {
-      if (process.env.NODE_ENV === 'development') {
-        console.log(`📋 Processing result ${resultIndex + 1}:`, {
-          jobId: result.jobId,
-          hasExtractedData: !!result.extractedData
-        })
-      }
+      console.log(`📋 Processing result ${resultIndex + 1}:`, {
+        jobId: result.jobId,
+        hasExtractedData: !!result.extractedData
+      })
 
       // Create journal entries from the new GST-structured data
       if (result.extractedData) {
@@ -977,6 +973,17 @@ class RealtimeFirestoreService {
         const taxSummary = extractedData.tax_summary || data.tax_summary
         const items = extractedData.items || data.items || []
         const firstItem = items.length > 0 ? items[0] : null
+
+        // DEBUG: Log items structure to see HSN codes
+        console.log('🔍 Items structure for', result.jobId, ':', {
+          itemsCount: items.length,
+          firstItem: firstItem ? {
+            description: firstItem.description,
+            hsn_code: firstItem.hsn_code,
+            account_code: firstItem.account_code,
+            hasHsnCode: !!firstItem.hsn_code
+          } : 'No items'
+        })
 
         // Create journal entries based on the new structure
         let entryIndex = 0
@@ -998,6 +1005,11 @@ class RealtimeFirestoreService {
                 debitAmount: parseFloat(item.taxable_value.toString()) || 0,
                 creditAmount: 0,
                 description: item.detailed_narration || item.description || 'Purchase expense',
+                // FIXED: Add hsnCode field mapping
+                hsnCode: item.hsn_code || item.account_code || '', // Map HSN code correctly
+                itemDescription: item.description || '',
+                quantity: parseFloat(item.quantity) || 0,
+                unitPrice: parseFloat(item.unit_price) || 0,
                 narration: item.detailed_narration || item.description || 'Purchase expense',
                 reference: invoiceNumber,
                 hsnCode: item.hsn_code || '',
@@ -1167,6 +1179,12 @@ class RealtimeFirestoreService {
       }
 
       // Fallback to legacy structure if new structure is not available
+      console.log('🔄 CRITICAL DEBUG: Checking entry count:', {
+        entriesLength: entries.length,
+        jobId: result.jobId,
+        willUseFallback: entries.length === 0
+      })
+      
       if (entries.length === 0) {
         // Check both possible legacy data structures
         let journalData = null
@@ -1318,7 +1336,8 @@ class RealtimeFirestoreService {
                 narration: entry.narration || journalSet.entry_description || '', // Keep narration for legacy compatibility
                 reference: entry.reference_number || invoiceNumber, // Direct mapping - no variations
                 // Enhanced fields - use exact field names from OpenAI schema
-                hsnCode: entry.hsn_code || firstItem?.hsn_code || '', // Exact field name mapping
+                // FIXED: HSN code is actually in account_code field, not hsn_code
+                hsnCode: entry.hsn_code || entry.account_code || firstItem?.hsn_code || firstItem?.account_code || '', // Multiple fallback paths
                 
                 // Debug HSN code mapping
                 ...(process.env.NODE_ENV === 'development' && {
