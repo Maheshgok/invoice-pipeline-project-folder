@@ -41,10 +41,26 @@ export class SimplifiedFirestoreService {
       (snapshot: QuerySnapshot<DocumentData>) => {
         console.log('📡 SIMPLIFIED: Snapshot received:', snapshot.docs.length, 'documents')
         
-        const results = snapshot.docs.map(doc => ({
-          id: doc.id,
-          ...doc.data()
-        }))
+        const results = snapshot.docs.map(doc => {
+          const data = doc.data()
+          return {
+            id: doc.id,
+            jobId: data.job_id || data.jobId || doc.id, // Fix jobId mapping
+            fileName: data.file_name || data.fileName || '',
+            userEmail: data.user_email || data.userEmail || '',
+            userUID: data.user_uid || data.userUID || '',
+            status: data.status || 'unknown',
+            createdAt: data.created_at || data.createdAt || new Date(),
+            extractedData: data.extracted_data || data.extractedData, // Fix extractedData mapping
+            ...data // Include all other fields
+          }
+        })
+        
+        console.log('🎯 SIMPLIFIED: Mapped results:', results.map(r => ({
+          id: r.id,
+          jobId: r.jobId,
+          hasExtractedData: !!r.extractedData
+        })))
         
         const journalEntries = this.extractJournalEntriesDirectly(results)
         onUpdate(journalEntries)
@@ -64,13 +80,29 @@ export class SimplifiedFirestoreService {
     console.log('🎯 SIMPLIFIED: Processing', results.length, 'results')
     
     results.forEach((result, resultIndex) => {
+      console.log(`📋 SIMPLIFIED: Processing result ${resultIndex + 1}:`, {
+        id: result.id,
+        jobId: result.jobId,
+        hasExtractedData: !!result.extractedData,
+        extractedDataKeys: result.extractedData ? Object.keys(result.extractedData) : 'none'
+      })
+
       if (!result.extractedData) {
-        console.log('⚠️ SIMPLIFIED: No extracted data for', result.jobId)
+        console.log('⚠️ SIMPLIFIED: No extracted data for', result.jobId || result.id)
         return
       }
 
       const data = result.extractedData
       const extractedData = data.extracted_data || data
+      
+      console.log('📊 SIMPLIFIED: Data structure analysis:', {
+        hasExtracted_data: !!data.extracted_data,
+        hasVendorDetails: !!(extractedData.vendor_details || extractedData.vendor_name),
+        hasItems: !!(extractedData.items),
+        itemsCount: extractedData.items?.length || 0,
+        hasTaxSummary: !!(extractedData.tax_summary),
+        firstItemHsn: extractedData.items?.[0]?.hsn_code
+      })
       
       // Extract basic info
       const vendorName = extractedData.vendor_details?.name || extractedData.vendor_name || 'Unknown'
