@@ -1000,13 +1000,13 @@ class RealtimeFirestoreService {
                 entryIndex: entryIndex++,
                 date: invoiceDate,
                 accountName: 'Expense - ' + (item.description || 'General'),
-                accountCode: item.hsn_code || '',
+                accountCode: '5000', // Proper expense account code, NOT HSN code
                 accountType: 'Expense',
                 debitAmount: parseFloat(item.taxable_value.toString()) || 0,
                 creditAmount: 0,
                 description: item.detailed_narration || item.description || 'Purchase expense',
-                // FIXED: Add hsnCode field mapping
-                hsnCode: item.hsn_code || item.account_code || '', // Map HSN code correctly
+                // FIXED: Add hsnCode field mapping - HSN goes here, not accountCode
+                hsnCode: item.hsn_code || '', // Map HSN code to correct field
                 itemDescription: item.description || '',
                 quantity: parseFloat(item.quantity) || 0,
                 unitPrice: parseFloat(item.unit_price) || 0,
