@@ -67,7 +67,7 @@ class MultiPhaseInvoiceProcessor:
             
             # Phase 3: JSON Conversion
             logger.info("📋 Phase 3: Converting to structured JSON...")
-            phase3_result = self._phase3_convert_to_json(phase2_result)
+            phase3_result = self._phase3_convert_to_json(phase2_result, client_organization_context)
             logger.info("✅ Phase 3 completed. Final structured data ready")
             
             # Combine results with processing metadata
@@ -288,22 +288,27 @@ Consider their common HSN codes, expense categories, and capitalization threshol
             
         return enhanced_data
     
-    def _phase3_convert_to_json(self, phase2_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Phase 3: Convert to strict JSON schema for frontend"""
+    def _phase3_convert_to_json(self, phase2_data: Dict[str, Any], client_organization_context: Optional[str] = None) -> Dict[str, Any]:
+        """Phase 3: Convert to strict JSON schema for frontend with conditional account codes"""
         try:
             logger.info(f"📋 PHASE 3/3: Starting JSON schema conversion for frontend compliance")
-            logger.info(f"🔍 Enforcing strict field naming and schema validation")
-            logger.info(f"⚙️ Account codes enabled: {ACCOUNT_CODE_ENABLED}")
+            
+            # Import the conditional check function
+            from prompts.phase3_json_conversion import should_include_account_codes
+            
+            # Determine if account codes should be included
+            include_account_codes = should_include_account_codes(client_organization_context)
+            logger.info(f"💼 Account codes {'ENABLED' if include_account_codes else 'DISABLED'} for this processing")
             
             # Build prompt with conditional account code instructions
             prompt_parts = [PHASE3_JSON_CONVERSION_PROMPT]
             
-            if ACCOUNT_CODE_ENABLED:
+            if include_account_codes:
                 account_code_instructions = """
 ACCOUNT CODE HANDLING (ENABLED):
 - Include "account_code" field in journal entries
-- Map account names to appropriate codes using chart of accounts
-- Use standard account coding structure
+- Generate appropriate codes based on account types (Assets: 1xxx, Liabilities: 2xxx, Expenses: 5xxx-6xxx)
+- Use logical account coding structure
 """
                 prompt_parts.append(account_code_instructions)
             else:
@@ -311,7 +316,7 @@ ACCOUNT CODE HANDLING (ENABLED):
 ACCOUNT CODE HANDLING (DISABLED):
 - Do NOT include "account_code" field in journal entries
 - Focus on account names and descriptions only
-- Account codes are not required for this configuration
+- Exclude account codes entirely from the schema
 """
                 prompt_parts.append(account_code_instructions)
             

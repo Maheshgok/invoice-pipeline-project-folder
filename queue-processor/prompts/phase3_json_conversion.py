@@ -5,6 +5,21 @@
 ACCOUNT_CODE_ENABLED = False  # Toggle: True if chart of accounts with codes is provided
 CHART_OF_ACCOUNTS = {}  # Will contain account mappings when enabled
 
+def should_include_account_codes(client_organization_context=None):
+    """Determine if account codes should be included based on available chart of accounts"""
+    if not client_organization_context:
+        return False
+    
+    # Check if client organization context contains chart of accounts
+    if 'chart_of_accounts' in str(client_organization_context).lower():
+        return True
+    if 'account_codes' in str(client_organization_context).lower():
+        return True
+    if CHART_OF_ACCOUNTS:
+        return True
+        
+    return ACCOUNT_CODE_ENABLED
+
 PHASE3_JSON_CONVERSION_PROMPT = """You are a data conversion specialist creating structured accounting data.
 
 INPUT: You will receive enriched invoice data from Phase 2.
@@ -118,7 +133,7 @@ JOURNAL ENTRIES REQUIREMENTS:
 2. ALL required fields MUST be populated (no empty fields)
 3. Use organization-specific account names from Phase 2 enrichment
 4. Account types: "Asset", "Expense", "Liability" only
-5. Do NOT include "account_code" field (conditional feature - currently disabled)
+5. CONDITIONAL ACCOUNT CODES: Only include "account_code" field if chart of accounts is available
 6. Copy hsn_code, item_description, quantity, unit_price to EVERY journal entry
 7. Copy vendor_name and reference_number (invoice number) to ALL entries
 8. Copy cost_type, organization_account_name, business_classification from items
@@ -126,6 +141,10 @@ JOURNAL ENTRIES REQUIREMENTS:
 10. Copy invoice_date to ALL journal entries
 11. CRITICAL GST BREAKDOWN: Always populate cgst_amount, sgst_amount, igst_amount, and calculate total gst_amount = cgst + sgst + igst
 12. For entries without GST, set all GST amounts to 0
+
+ACCOUNT CODE LOGIC:
+- IF chart of accounts is provided: Include "account_code" field with appropriate codes
+- IF no chart of accounts: Exclude "account_code" field entirely from journal entries
 11. Calculate and populate GST amounts (cgst_amount, sgst_amount, igst_amount, gst_amount)
 12. Set is_gst_applicable = true for GST entries, false for others
 13. Set entry_balanced = true for all entries

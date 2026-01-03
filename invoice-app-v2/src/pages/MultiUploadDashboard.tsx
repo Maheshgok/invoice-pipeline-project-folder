@@ -1095,38 +1095,42 @@ const MultiUploadDashboard: React.FC = () => {
                           </div>
                         )}
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {editingCell === `${entry.id}-accountCode` ? (
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="text"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              className="border rounded px-2 py-1 text-sm w-24"
-                              autoFocus
-                            />
-                            <button
-                              onClick={() => handleCellSave(entry.id, 'accountCode')}
-                              className="text-green-600 hover:text-green-800"
+                      
+                      {/* Account Code - Conditional Display */}
+                      {shouldDisplayInTable('accountCodes') && (
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                          {editingCell === `${entry.id}-accountCode` ? (
+                            <div className="flex items-center space-x-2">
+                              <input
+                                type="text"
+                                value={editValue}
+                                onChange={(e) => setEditValue(e.target.value)}
+                                className="border rounded px-2 py-1 text-sm w-24"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleCellSave(entry.id, 'accountCode')}
+                                className="text-green-600 hover:text-green-800"
+                              >
+                                <CheckCircle className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={handleCellCancel}
+                                className="text-gray-500 hover:text-gray-700"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div 
+                              className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
+                              onClick={() => handleCellEdit(entry.id, 'accountCode', entry.accountCode)}
                             >
-                              <CheckCircle className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={handleCellCancel}
-                              className="text-gray-500 hover:text-gray-700"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div 
-                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
-                            onClick={() => handleCellEdit(entry.id, 'accountCode', entry.accountCode)}
-                          >
-                            {entry.accountCode}
-                          </div>
-                        )}
-                      </td>
+                              {entry.accountCode}
+                            </div>
+                          )}
+                        </td>
+                      )}
                       <td className="px-6 py-4 text-sm text-gray-900">
                         {editingCell === `${entry.id}-description` ? (
                           <div className="flex items-center space-x-2">
@@ -1311,7 +1315,23 @@ const MultiUploadDashboard: React.FC = () => {
                         {entry.unitPrice ? `₹${entry.unitPrice.toFixed(2)}` : '-'}
                       </td>
                       
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                      {/* CGST Amount */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                        ₹{(entry.cgstAmount || 0).toFixed(2)}
+                      </td>
+                      
+                      {/* SGST Amount */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                        ₹{(entry.sgstAmount || 0).toFixed(2)}
+                      </td>
+                      
+                      {/* IGST Amount */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
+                        ₹{(entry.igstAmount || 0).toFixed(2)}
+                      </td>
+                      
+                      {/* Total GST Amount */}
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
                         {editingCell === `${entry.id}-gstAmount` ? (
                           <div className="flex items-center space-x-2">
                             <input
@@ -1337,13 +1357,15 @@ const MultiUploadDashboard: React.FC = () => {
                           </div>
                         ) : (
                           <div 
-                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1"
+                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1 text-right"
                             onClick={() => handleCellEdit(entry.id, 'gstAmount', entry.gstAmount || 0)}
                           >
                             ₹{(entry.gstAmount || 0).toFixed(2)}
                           </div>
                         )}
                       </td>
+                      
+                      {/* Balanced Status */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                           entry.isBalanced === true ? 'bg-green-100 text-green-800' : 

@@ -28,10 +28,23 @@ export const shouldDisplayInTable = (feature: keyof FeatureConfig): boolean => {
   return featureConfig?.enabled && featureConfig?.displayInTable || false;
 };
 
-// Function to toggle features (for future admin panel)
-export const toggleFeature = (feature: keyof FeatureConfig, enabled: boolean): void => {
-  if (FEATURE_CONFIG[feature]) {
-    FEATURE_CONFIG[feature].enabled = enabled;
-    FEATURE_CONFIG[feature].displayInTable = enabled; // Auto-sync display with enabled state
-  }
+// Function to dynamically enable account codes when chart of accounts is available
+export const enableAccountCodesFeature = (enabled: boolean = true): void => {
+  FEATURE_CONFIG.accountCodes.enabled = enabled;
+  FEATURE_CONFIG.accountCodes.displayInTable = enabled;
+};
+
+// Function to check if organization has chart of accounts
+export const hasChartOfAccounts = (organizationContext?: any): boolean => {
+  if (!organizationContext) return false;
+  
+  // Check various indicators of chart of accounts availability
+  const contextStr = JSON.stringify(organizationContext).toLowerCase();
+  return (
+    contextStr.includes('chart_of_accounts') ||
+    contextStr.includes('account_codes') ||
+    contextStr.includes('account_mapping') ||
+    organizationContext.chart_of_accounts ||
+    organizationContext.account_codes
+  );
 };
