@@ -18,6 +18,7 @@ import OrganizationSetup from '../components/organization/OrganizationSetup'
 import ClientOrganizationManager from '../components/admin/ClientOrganizationManager'
 import { clientOrganizationService, userOrganizationService, ClientOrganization, UserOrganization } from '../services/clientOrganizations'
 import { sessionSecurityService } from '../services/sessionSecurityService'
+import { shouldDisplayInTable } from '../config/features'
 
 const MultiUploadDashboard: React.FC = () => {
   const { user, userProfile, logout, hasPermission, checkUsageLimits, validateFileSize, markHasResults } = useAuth()
