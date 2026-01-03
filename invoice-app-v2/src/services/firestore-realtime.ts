@@ -1200,7 +1200,37 @@ class RealtimeFirestoreService {
             }]
           }
           if (process.env.NODE_ENV === 'development') {
-            console.log('📊 Found new simplified journal_entries structure')
+            console.log('📊 Found new simplified journal_entries structure with', result.extractedData.extracted_data.journal_entries.length, 'entries')
+          }
+        }
+        // Structure 0.5: Check if data is at extractedData.journal_entries (direct path)
+        else if (result.extractedData?.journal_entries && Array.isArray(result.extractedData.journal_entries)) {
+          // Debug: This might be the correct path for current data
+          if (process.env.NODE_ENV === 'development') {
+            console.log('🔍 DEBUG: Direct journal_entries:', JSON.stringify(result.extractedData.journal_entries, null, 2))
+            result.extractedData.journal_entries.forEach((entry: any, idx: number) => {
+              console.log(`🔍 Direct Entry ${idx} HSN Debug:`, {
+                entryId: idx,
+                hsn_code: entry.hsn_code,
+                account_name: entry.account_name,
+                item_description: entry.item_description
+              })
+            })
+          }
+          
+          journalData = {
+            journal_entry_set: [{
+              entry_number: 1,
+              date: result.extractedData.invoice_details?.invoice_date || '',
+              entries: result.extractedData.journal_entries,
+              total_debit: result.extractedData.journal_entries.reduce((sum: number, entry: any) => sum + (entry.debit_amount || 0), 0),
+              total_credit: result.extractedData.journal_entries.reduce((sum: number, entry: any) => sum + (entry.credit_amount || 0), 0),
+              is_balanced: true,
+              entry_description: 'Purchase Invoice Journal Entry'
+            }]
+          }
+          if (process.env.NODE_ENV === 'development') {
+            console.log('📊 Found direct journal_entries structure with', result.extractedData.journal_entries.length, 'entries')
           }
         }
         // Structure 1: extractedData.journal_entries (direct structure - fallback)
