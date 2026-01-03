@@ -1176,6 +1176,15 @@ class RealtimeFirestoreService {
           // Debug: Log what OpenAI actually returned in journal_entries
           if (process.env.NODE_ENV === 'development') {
             console.log('🔍 DEBUG: OpenAI journal_entries:', JSON.stringify(result.extractedData.extracted_data.journal_entries, null, 2))
+            // Specific HSN code debugging
+            result.extractedData.extracted_data.journal_entries.forEach((entry: any, idx: number) => {
+              console.log(`🔍 Entry ${idx} HSN Debug:`, {
+                entryId: idx,
+                hsn_code: entry.hsn_code,
+                account_name: entry.account_name,
+                item_description: entry.item_description
+              })
+            })
           }
           
           // Journal entries now come enriched with all data from OpenAI
@@ -1284,6 +1293,16 @@ class RealtimeFirestoreService {
                 reference: entry.reference_number || invoiceNumber, // Direct mapping - no variations
                 // Enhanced fields - use exact field names from OpenAI schema
                 hsnCode: entry.hsn_code || firstItem?.hsn_code || '', // Exact field name mapping
+                
+                // Debug HSN code mapping
+                ...(process.env.NODE_ENV === 'development' && {
+                  _debug_hsnMapping: {
+                    entry_hsn_code: entry.hsn_code,
+                    firstItem_hsn_code: firstItem?.hsn_code,
+                    final_hsnCode: entry.hsn_code || firstItem?.hsn_code || '',
+                    has_firstItem: !!firstItem
+                  }
+                }),
                 itemDescription: entry.item_description || firstItem?.description || entry.account_name || '', // Exact field name mapping
                 quantity: parseFloat(entry.quantity) || parseFloat(firstItem?.quantity) || 0, // Exact field name mapping
                 unitPrice: parseFloat(entry.unit_price) || parseFloat(firstItem?.unit_price) || 0, // Exact field name mapping
