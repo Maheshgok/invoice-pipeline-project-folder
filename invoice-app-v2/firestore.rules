@@ -37,6 +37,16 @@ service cloud.firestore {
         && request.resource.data.userUID == userId;  // Verify data integrity
     }
     
+    // User organization stored under each user: allow user to manage their own organization
+    match /users/{userId}/user_organization/{orgId} {
+      allow read, write, create, update, delete: if request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Allow authenticated users to query the user_organization collection
+    match /users/{userId}/user_organization/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    
     // Client organizations stored under each user: allow user to manage their clients
     match /users/{userId}/client_organizations/{clientId} {
       allow read, write, create, update, delete: if request.auth != null && request.auth.uid == userId;
