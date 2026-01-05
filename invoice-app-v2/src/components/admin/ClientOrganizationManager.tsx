@@ -7,6 +7,8 @@ import {
 } from '../../services/clientOrganizations'
 import { BUSINESS_TYPES } from '../../services/organizationProfiles'
 import { toast } from 'react-hot-toast'
+import { useAuth } from '../../contexts/AuthContext'
+import { authService } from '../../services/auth'
 
 interface ClientOrganizationManagerProps {
   onClientSelect?: (clientId: string) => void
@@ -23,6 +25,31 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
   const [userOrganization, setUserOrganization] = useState<UserOrganization | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
   const [loading, setLoading] = useState(true)
+  
+  // Authentication and permissions debugging
+  const { user, userProfile, hasPermission } = useAuth()
+  const [debugInfo, setDebugInfo] = useState<any>({})
+  
+  // Debug authentication and permissions
+  useEffect(() => {
+    const currentUser = authService.getCurrentUser()
+    const debugData = {
+      authUser: currentUser ? { uid: currentUser.uid, email: currentUser.email } : null,
+      contextUser: user ? { uid: user.uid, email: user.email } : null,
+      userProfile: userProfile ? {
+        role: userProfile.role,
+        organizationId: userProfile.organizationId,
+        permissions: userProfile.permissions
+      } : null,
+      permissionChecks: {
+        canUpload: hasPermission('canUpload'),
+        canConfigureOrg: hasPermission('canConfigureOrg'),
+        canManageOrgUsers: hasPermission('canManageOrgUsers')
+      }
+    }
+    setDebugInfo(debugData)
+    console.log('🔍 CLIENT CREATION DEBUG:', debugData)
+  }, [user, userProfile])
 
   // Form state for new client
   const [newClient, setNewClient] = useState({
@@ -56,14 +83,33 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
   }
 
   const handleAddClient = async () => {
+    console.log('🚀 STARTING CLIENT CREATION')
+    console.log('🔍 Current debug info:', debugInfo)
+    console.log('🔍 Form data:', newClient)
+    
     if (!newClient.client_name || !newClient.business_type) {
+      console.log('❌ Validation failed: Missing required fields')
       toast.error('Please fill in required fields')
       return
     }
 
     try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) {
+        console.log('❌ No authenticated user found')
+        toast.error('User not authenticated')
+        return
+      }
+      
+      console.log('✅ Authenticated user:', currentUser.uid)
+      
       const businessType = BUSINESS_TYPES.find(bt => bt.value === newClient.business_type)
-      if (!businessType) throw new Error('Invalid business type')
+      if (!businessType) {
+        console.log('❌ Invalid business type:', newClient.business_type)
+        throw new Error('Invalid business type')
+      }
+      
+      console.log('✅ Business type found:', businessType.label)
 
       const clientData = {
         client_name: newClient.client_name,
@@ -81,8 +127,12 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
         processing_notes: newClient.processing_notes,
         is_active: true
       }
+      
+      console.log('📝 Final client data:', clientData)
+      console.log('🎯 About to call clientOrganizationService.create()')
 
-      await clientOrganizationService.create(clientData)
+      const clientId = await clientOrganizationService.create(clientData)
+      console.log('✅ Client created successfully with ID:', clientId)
       toast.success(`Client "${newClient.client_name}" added successfully`)
       
       // Reset form and reload data
@@ -121,6 +171,14 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Debug Information */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="bg-gray-100 p-4 rounded-lg text-xs">
+          <strong>🔍 Debug Info:</strong>
+          <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
+        </div>
+      )}
+      
       {/* User Organization (if enabled) */}
       {showUserOrg && (
         <div className="bg-gray-50 p-4 rounded-lg border-l-4 border-gray-400">
