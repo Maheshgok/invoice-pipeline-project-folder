@@ -36,7 +36,7 @@ export interface ClientOrganization {
   business_type: string
   industry: string
   business_description: string
-  capitalization_threshold: number
+  capitalization_threshold?: number
   common_hsn_codes: string[]
   expense_categories: string[]
   client_address: string
@@ -264,7 +264,7 @@ class ClientOrganizationService {
 - Industry: ${client.industry}
 - Business Type: ${client.business_type}
 - Description: ${client.business_description}
-- Capitalization Threshold: ₹${client.capitalization_threshold.toLocaleString()}
+- Capitalization Threshold: ₹${(client.capitalization_threshold || 0).toLocaleString()}
 - Common HSN Codes: ${client.common_hsn_codes.join(', ')}
 - Expense Categories: ${client.expense_categories.join(', ')}
 - GSTIN: ${client.client_gstin || 'Not provided'}

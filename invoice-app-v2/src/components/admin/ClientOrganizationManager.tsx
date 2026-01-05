@@ -39,7 +39,8 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
     client_gstin: '',
     business_type: '',
     client_address: '',
-    processing_notes: ''
+    processing_notes: '',
+    capitalization_threshold: 0
   })
   
   // Debug authentication and permissions
@@ -180,7 +181,8 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
       client_gstin: client.client_gstin || '',
       business_type: client.business_type,
       client_address: client.client_address || '',
-      processing_notes: client.processing_notes || ''
+      processing_notes: client.processing_notes || '',
+      capitalization_threshold: client.capitalization_threshold || 0
     })
   }
 
@@ -200,7 +202,7 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
         business_type: businessType.value,
         industry: businessType.label,
         business_description: businessType.description,
-        capitalization_threshold: businessType.capitalization_threshold,
+        capitalization_threshold: editForm.capitalization_threshold,
         common_hsn_codes: businessType.common_hsn_codes,
         expense_categories: businessType.expense_categories,
         client_address: editForm.client_address,
@@ -216,7 +218,8 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
         client_gstin: '',
         business_type: '',
         client_address: '',
-        processing_notes: ''
+        processing_notes: '',
+        capitalization_threshold: 0
       })
       loadData()
     } catch (error) {
@@ -443,6 +446,21 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
                   />
                 </div>
                 
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Capitalization Threshold
+                  </label>
+                  <input
+                    type="number"
+                    value={editForm.capitalization_threshold}
+                    onChange={(e) => setEditForm({...editForm, capitalization_threshold: parseFloat(e.target.value) || 0})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Minimum amount to capitalize as asset"
+                    min="0"
+                    step="0.01"
+                  />
+                </div>
+                
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-gray-700 mb-1">
                     Processing Notes
@@ -563,7 +581,7 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
                     {client.client_gstin && (
                       <p><strong>GSTIN:</strong> {client.client_gstin}</p>
                     )}
-                    <p><strong>Capitalization:</strong> ₹{client.capitalization_threshold.toLocaleString()}</p>
+                    <p><strong>Capitalization:</strong> ₹{(client.capitalization_threshold || 0).toLocaleString()}</p>
                     <p><strong>HSN Codes:</strong> {client.common_hsn_codes.slice(0, 3).join(', ')}
                       {client.common_hsn_codes.length > 3 && '...'}
                     </p>
