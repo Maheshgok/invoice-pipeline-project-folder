@@ -271,7 +271,7 @@ const MultiUploadDashboard: React.FC = () => {
       })
     
     // Setup final-simplified-firestore listeners directly  
-    const unsubscribe = finalSimplifiedFirestoreService.listenToActiveResults(
+    const unsubscribe = finalSimplifiedFirestoreService.listenToUserResults(
       (results) => {
         console.log('📡 Received results from final-simplified-firestore:', results.length)
         setSmartListenerResults(results as ProcessingResult[])

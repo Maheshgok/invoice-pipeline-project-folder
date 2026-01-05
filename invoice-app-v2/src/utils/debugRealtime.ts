@@ -19,7 +19,7 @@ export const debugRealtimeConnection = () => {
   try {
     console.log('🔥 DEBUG: Setting up test listener...')
     
-    finalSimplifiedFirestoreService.listenToActiveResults(
+    finalSimplifiedFirestoreService.listenToUserResults(
       (results) => {
         console.log('📡 DEBUG: Received active results:', results)
         toast.success(`Real-time working! Found ${results.length} active results`)

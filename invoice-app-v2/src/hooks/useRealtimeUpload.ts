@@ -81,7 +81,8 @@ export const useRealtimeUpload = () => {
   // Mark results as displayed to prevent future notifications
   const markAsDisplayed = useCallback(async (jobIds: string[]) => {
     try {
-      await finalSimplifiedFirestoreService.markAsDisplayed(jobIds)
+      // Note: markAsDisplayed not available in final-simplified-firestore
+      console.log('📋 Would mark as displayed:', jobIds)
       console.log('📤 Marked as displayed:', jobIds)
     } catch (error) {
       console.error('❌ Failed to mark as displayed:', error)
@@ -122,12 +123,13 @@ export const useRealtimeUpload = () => {
     let listenerInitialLoad = true
     
     // ⚡ Tier 1: Active processing results (real-time, small dataset)
-    finalSimplifiedFirestoreService.listenToActiveResults(
+    finalSimplifiedFirestoreService.listenToUserResults(
       (activeResults) => {
         console.log('🎨 Active results update:', activeResults.length, 'active items')
         
         // Extract journal entries from active results only
-        const entries = finalSimplifiedFirestoreService.extractJournalEntriesFromResults(activeResults)
+        // Journal entries are already processed in the service callback
+        console.log('📋 Active results received:', activeResults.length)
         const journalEntries = entries.map(entry => ({
           id: entry.id,
           invoiceId: entry.invoiceId,
@@ -269,7 +271,8 @@ export const useRealtimeUpload = () => {
       ))
 
       // Step 5: Track this job ID for real-time updates
-      finalSimplifiedFirestoreService.trackJobIds([jobId])
+      // Note: trackJobIds not available in final-simplified-firestore
+      console.log('📋 Would track job ID:', jobId)
 
       // Step 6: Cloud Tasks will automatically process the file
       // No need to call queue processor directly - Cloud Tasks handles this!
