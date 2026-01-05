@@ -9,6 +9,7 @@ import { BUSINESS_TYPES } from '../../services/organizationProfiles'
 import { toast } from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { authService } from '../../services/auth'
+import { Pencil, Trash2, X, Save } from 'lucide-react'
 
 interface ClientOrganizationManagerProps {
   onClientSelect?: (clientId: string) => void
@@ -29,6 +30,17 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
   // Authentication and permissions debugging
   const { user, userProfile, hasPermission } = useAuth()
   const [debugInfo, setDebugInfo] = useState<any>({})
+  
+  // Edit and delete state
+  const [editingClient, setEditingClient] = useState<ClientOrganization | null>(null)
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({
+    client_name: '',
+    client_gstin: '',
+    business_type: '',
+    client_address: '',
+    processing_notes: ''
+  })
   
   // Debug authentication and permissions
   useEffect(() => {
@@ -161,6 +173,72 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
     }
   }
 
+  const handleEditClient = (client: ClientOrganization) => {
+    setEditingClient(client)
+    setEditForm({
+      client_name: client.client_name,
+      client_gstin: client.client_gstin || '',
+      business_type: client.business_type,
+      client_address: client.client_address || '',
+      processing_notes: client.processing_notes || ''
+    })
+  }
+
+  const handleUpdateClient = async () => {
+    if (!editingClient || !editForm.client_name || !editForm.business_type) {
+      toast.error('Please fill in required fields')
+      return
+    }
+
+    try {
+      const businessType = BUSINESS_TYPES.find(bt => bt.value === editForm.business_type)
+      if (!businessType) throw new Error('Invalid business type')
+
+      const updateData = {
+        client_name: editForm.client_name,
+        client_gstin: editForm.client_gstin,
+        business_type: businessType.value,
+        industry: businessType.label,
+        business_description: businessType.description,
+        capitalization_threshold: businessType.capitalization_threshold,
+        common_hsn_codes: businessType.common_hsn_codes,
+        expense_categories: businessType.expense_categories,
+        client_address: editForm.client_address,
+        processing_notes: editForm.processing_notes
+      }
+
+      await clientOrganizationService.update(editingClient.id!, updateData)
+      toast.success(`Client "${editForm.client_name}" updated successfully`)
+      
+      setEditingClient(null)
+      setEditForm({
+        client_name: '',
+        client_gstin: '',
+        business_type: '',
+        client_address: '',
+        processing_notes: ''
+      })
+      loadData()
+    } catch (error) {
+      console.error('❌ Error updating client:', error)
+      toast.error('Failed to update client organization')
+    }
+  }
+
+  const handleDeleteClient = async (clientId: string) => {
+    try {
+      await clientOrganizationService.deactivate(clientId)
+      const client = clientOrganizations.find(c => c.id === clientId)
+      toast.success(`Client "${client?.client_name}" deleted successfully`)
+      
+      setShowDeleteConfirm(null)
+      loadData()
+    } catch (error) {
+      console.error('❌ Error deleting client:', error)
+      toast.error('Failed to delete client organization')
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex justify-center py-8">
@@ -172,7 +250,7 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
   return (
     <div className="space-y-6">
       {/* Debug Information */}
-      {process.env.NODE_ENV === 'development' && (
+      {typeof window !== 'undefined' && import.meta.env?.DEV && (
         <div className="bg-gray-100 p-4 rounded-lg text-xs">
           <strong>🔍 Debug Info:</strong>
           <pre>{JSON.stringify(debugInfo, null, 2)}</pre>
@@ -293,6 +371,137 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
           </div>
         )}
 
+        {/* Edit Client Form Modal */}
+        {editingClient && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-2xl w-full mx-4 max-h-screen overflow-y-auto">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Edit Client Organization</h3>
+                <button
+                  onClick={() => setEditingClient(null)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Client Name *
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.client_name}
+                    onChange={(e) => setEditForm({...editForm, client_name: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Business Type *
+                  </label>
+                  <select
+                    value={editForm.business_type}
+                    onChange={(e) => setEditForm({...editForm, business_type: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="">Select Business Type</option>
+                    {BUSINESS_TYPES.map((type) => {
+                      const hsnPrefix = type.common_hsn_codes[0]?.substring(0, 2) || type.chapter_number.toString().padStart(2, '0')
+                      return (
+                        <option key={type.value} value={type.value}>
+                          HSN {hsnPrefix}xx - {type.label} | {type.description}
+                        </option>
+                      )
+                    })}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Client GSTIN
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.client_gstin}
+                    onChange={(e) => setEditForm({...editForm, client_gstin: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Client Address
+                  </label>
+                  <input
+                    type="text"
+                    value={editForm.client_address}
+                    onChange={(e) => setEditForm({...editForm, client_address: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+                
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Processing Notes
+                  </label>
+                  <textarea
+                    value={editForm.processing_notes}
+                    onChange={(e) => setEditForm({...editForm, processing_notes: e.target.value})}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Special processing instructions or notes for this client..."
+                  />
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-2">
+                <button
+                  onClick={() => setEditingClient(null)}
+                  className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleUpdateClient}
+                  className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 flex items-center space-x-2"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Update Client</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Delete Confirmation Modal */}
+        {showDeleteConfirm && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
+              <h3 className="text-lg font-medium text-gray-900 mb-4">Confirm Delete</h3>
+              <p className="text-gray-600 mb-6">
+                Are you sure you want to delete this client organization? This action cannot be undone.
+              </p>
+              <div className="flex justify-end space-x-2">
+                <button
+                  onClick={() => setShowDeleteConfirm(null)}
+                  className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteClient(showDeleteConfirm)}
+                  className="px-4 py-2 bg-red-500 text-white rounded-md hover:bg-red-600"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Client Organizations List */}
         {clientOrganizations.length === 0 ? (
           <div className="text-center py-8 text-gray-500">
@@ -304,40 +513,68 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
             {clientOrganizations.map((client) => (
               <div
                 key={client.id}
-                className={`border rounded-lg p-4 cursor-pointer transition-all ${
+                className={`border rounded-lg p-4 transition-all relative ${
                   selectedClientId === client.id
                     ? 'border-blue-500 bg-blue-50 shadow-md'
                     : 'border-gray-200 hover:border-gray-300 hover:shadow-sm'
                 }`}
-                onClick={() => handleClientSelect(client.id!)}
               >
-                <div className="flex items-start justify-between mb-2">
-                  <h4 className="font-medium text-gray-900 truncate">
-                    {client.client_name}
-                  </h4>
-                  {selectedClientId === client.id && (
-                    <div className="text-blue-500">
-                      ✓
+                {/* Action buttons */}
+                <div className="absolute top-2 right-2 flex space-x-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      handleEditClient(client)
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+                    title="Edit client"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setShowDeleteConfirm(client.id!)
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                    title="Delete client"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div 
+                  className="cursor-pointer pr-16"
+                  onClick={() => handleClientSelect(client.id!)}
+                >
+                  <div className="flex items-start justify-between mb-2">
+                    <h4 className="font-medium text-gray-900 truncate">
+                      {client.client_name}
+                    </h4>
+                    {selectedClientId === client.id && (
+                      <div className="text-blue-500">
+                        ✓
+                      </div>
+                    )}
+                  </div>
+                  
+                  <div className="space-y-1 text-sm text-gray-600">
+                    <p><strong>Industry:</strong> {client.industry}</p>
+                    {client.client_gstin && (
+                      <p><strong>GSTIN:</strong> {client.client_gstin}</p>
+                    )}
+                    <p><strong>Capitalization:</strong> ₹{client.capitalization_threshold.toLocaleString()}</p>
+                    <p><strong>HSN Codes:</strong> {client.common_hsn_codes.slice(0, 3).join(', ')}
+                      {client.common_hsn_codes.length > 3 && '...'}
+                    </p>
+                  </div>
+                  
+                  {client.processing_notes && (
+                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
+                      <strong>Notes:</strong> {client.processing_notes}
                     </div>
                   )}
                 </div>
-                
-                <div className="space-y-1 text-sm text-gray-600">
-                  <p><strong>Industry:</strong> {client.industry}</p>
-                  {client.client_gstin && (
-                    <p><strong>GSTIN:</strong> {client.client_gstin}</p>
-                  )}
-                  <p><strong>Capitalization:</strong> ₹{client.capitalization_threshold.toLocaleString()}</p>
-                  <p><strong>HSN Codes:</strong> {client.common_hsn_codes.slice(0, 3).join(', ')}
-                    {client.common_hsn_codes.length > 3 && '...'}
-                  </p>
-                </div>
-                
-                {client.processing_notes && (
-                  <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs">
-                    <strong>Notes:</strong> {client.processing_notes}
-                  </div>
-                )}
               </div>
             ))}
           </div>

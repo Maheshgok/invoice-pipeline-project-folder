@@ -138,7 +138,7 @@ export class SimplifiedFirestoreService {
       let entryIndex = 0
 
       // Create entries directly from items (where HSN exists)
-      items.forEach((item, itemIndex) => {
+      items.forEach((item: any, itemIndex: number) => {
         if (item.taxable_value && parseFloat(item.taxable_value) > 0) {
           entries.push({
             id: `${result.jobId}_item_${itemIndex}`,

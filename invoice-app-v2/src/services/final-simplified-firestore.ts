@@ -66,7 +66,7 @@ export class FinalSimplifiedFirestoreService {
     
     console.log('🎯 FINAL SIMPLIFIED: Processing', results.length, 'results')
     
-    results.forEach((result, resultIndex) => {
+    results.forEach((result) => {
       if (!result.extractedData) {
         console.log('⚠️ No extractedData for', result.jobId)
         return
@@ -81,7 +81,7 @@ export class FinalSimplifiedFirestoreService {
 
       // Use existing perfect journal entries from backend!
       if (data.journal_entries && Array.isArray(data.journal_entries)) {
-        data.journal_entries.forEach((entry, entryIndex) => {
+        data.journal_entries.forEach((entry: any, entryIndex: number) => {
           const mappedEntry = {
             id: `${result.jobId}_${entryIndex}`,
             invoiceId: result.id,
