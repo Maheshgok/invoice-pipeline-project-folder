@@ -20,7 +20,15 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { datastoreConfigManager, DatastoreOperation } from './datastoreConfigManager'
-import { InvoiceProcessingResult } from './firestore-realtime'
+
+// Define the interface locally to avoid dependencies
+export interface InvoiceProcessingResult {
+  id: string
+  jobId?: string
+  status: 'queued' | 'processing' | 'completed' | 'error'
+  extractedData?: any
+  [key: string]: any
+}
 
 export interface SecureQueryOptions {
   collection: 'active' | 'archive' | 'backup'

@@ -4,7 +4,7 @@
  */
 
 import { authTokenManager } from './authTokenManager'
-import { smartListenerManager } from './smartListenerManager'
+import { finalSimplifiedFirestoreService } from './final-simplified-firestore'
 import { memoryManager } from './memoryManager'
 import { openAICircuitBreaker } from './openAICircuitBreaker'
 import { collectionPathResolver } from './collectionPathResolver'
@@ -13,7 +13,6 @@ import { datastoreConfigManager } from './datastoreConfigManager'
 
 export interface ServiceStats {
   authTokenManager: ReturnType<typeof authTokenManager.getStats>
-  smartListenerManager: ReturnType<typeof smartListenerManager.getStats>
   circuitBreaker: ReturnType<typeof openAICircuitBreaker.getStats>
   secureDatastore: ReturnType<typeof secureDatastoreService.getServiceStats>
 }
@@ -82,7 +81,7 @@ class CentralizedServiceManager {
   }
 
   /**
-   * Initialize SmartListenerManager after upload
+   * Initialize real-time listeners (now using final-simplified-firestore directly)
    */
   async initializeSmartListeners(jobId?: string): Promise<void> {
     if (!this.initialized) {
@@ -90,7 +89,7 @@ class CentralizedServiceManager {
       await this.initialize()
     }
 
-    return smartListenerManager.initializeAfterUpload(jobId || 'manual_trigger')
+    console.log('✅ Using final-simplified-firestore service directly for real-time updates')
   }
 
   /**
@@ -99,7 +98,7 @@ class CentralizedServiceManager {
   getServiceStats(): ServiceStats {
     return {
       authTokenManager: authTokenManager.getStats(),
-      smartListenerManager: smartListenerManager.getStats(),
+
       circuitBreaker: openAICircuitBreaker.getStats(),
       secureDatastore: secureDatastoreService.getServiceStats()
     }
@@ -116,9 +115,6 @@ class CentralizedServiceManager {
     return (
       // Token manager should have valid tokens or not be in error state
       stats.authTokenManager.cachedTokens >= 0 &&
-      
-      // Smart listener should not be in error state
-      stats.smartListenerManager.state !== 'error' &&
       
       // Circuit breaker should be healthy
       openAICircuitBreaker.isHealthy()
@@ -147,18 +143,6 @@ class CentralizedServiceManager {
       services.authTokenManager = { status: 'warning', details: 'No cached tokens' }
     }
 
-    // Smart Listener Manager
-    switch (stats.smartListenerManager.state) {
-      case 'active':
-        services.smartListenerManager = { status: 'healthy', details: `Active, ${stats.smartListenerManager.documentsReceived} docs received` }
-        break
-      case 'error':
-        services.smartListenerManager = { status: 'error', details: `Error state, ${stats.smartListenerManager.errorCount} errors` }
-        break
-      default:
-        services.smartListenerManager = { status: 'warning', details: `State: ${stats.smartListenerManager.state}` }
-    }
-
     // Circuit Breaker
     if (openAICircuitBreaker.isHealthy()) {
       services.circuitBreaker = { status: 'healthy', details: `State: ${stats.circuitBreaker.state}, Success rate: ${Math.round((stats.circuitBreaker.totalSuccesses / Math.max(stats.circuitBreaker.totalCalls, 1)) * 100)}%` }
@@ -180,7 +164,6 @@ class CentralizedServiceManager {
     
     try {
       authTokenManager.clearTokenCache()
-      smartListenerManager.reset()
       openAICircuitBreaker.reset()
       memoryManager.cleanup()
       
@@ -204,7 +187,6 @@ class CentralizedServiceManager {
     
     try {
       authTokenManager.cleanup()
-      smartListenerManager.cleanup()
       memoryManager.cleanup()
       openAICircuitBreaker.cleanup()
       

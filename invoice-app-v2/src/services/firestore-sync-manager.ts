@@ -3,7 +3,6 @@
  * Handles synchronization between Firestore updates and local batch state
  * Separates Firestore logic from batch management
  */
-import { realtimeFirestoreService, type InvoiceProcessingResult } from './firestore-realtime'
 import { finalSimplifiedFirestoreService } from './final-simplified-firestore'
 import { BatchManager } from './batch-manager'
 

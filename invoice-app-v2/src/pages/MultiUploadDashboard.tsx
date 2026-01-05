@@ -8,7 +8,8 @@ import { useMultiUploadSimplified } from '../hooks/useMultiUploadSimplified'
 import { authService } from '../services/auth'
 import { userService } from '../services/userService'
 import { pricingService } from '../services/pricingService'
-import { smartListenerManager, type ProcessingResult } from '../services/smartListenerManager'
+import { finalSimplifiedFirestoreService } from '../services/final-simplified-firestore'
+import type { InvoiceProcessingResult as ProcessingResult } from '../services/final-simplified-firestore'
 import { memoryManager } from '../services/memoryManager'
 import { authTokenManager } from '../services/authTokenManager'
 import { collectionPathResolver } from '../services/collectionPathResolver'
@@ -269,21 +270,21 @@ const MultiUploadDashboard: React.FC = () => {
         toast.error('Failed to initialize services')
       })
     
-    // Setup SmartListenerManager event listeners
-    const unsubscribeResults = smartListenerManager.onResultsUpdate((results) => {
-      console.log('📡 Received results from SmartListenerManager:', results.length)
-      setSmartListenerResults(results)
-    })
-    
-    const unsubscribeError = smartListenerManager.onError((error) => {
-      console.error('❌ SmartListenerManager error:', error)
-      toast.error(`Listener error: ${error.message}`)
-    })
+    // Setup final-simplified-firestore listeners directly  
+    const unsubscribe = finalSimplifiedFirestoreService.listenToActiveResults(
+      (results) => {
+        console.log('📡 Received results from final-simplified-firestore:', results.length)
+        setSmartListenerResults(results as ProcessingResult[])
+      },
+      (error) => {
+        console.error('❌ Final-simplified-firestore error:', error)
+        toast.error(`Listener error: ${error.message}`)
+      }
+    )
     
     return () => {
       centralizedServiceManager.cleanup()
-      unsubscribeResults()
-      unsubscribeError()
+      unsubscribe() // Cleanup the real-time listener
     }
   }, [])
 

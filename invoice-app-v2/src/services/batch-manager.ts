@@ -62,6 +62,16 @@ export class BatchManager {
   }
 
   /**
+   * Mark file as completed by job ID
+   */
+  markFileCompleted(jobId: string): void {
+    this.updateFileByJobId(jobId, { 
+      status: 'completed', 
+      progress: 100 
+    })
+  }
+
+  /**
    * Remove a file from the batch
    */
   removeFile(fileId: string): void {

@@ -5,6 +5,8 @@ class WindowCloseHandler {
   private hasResults = false
   private user: any = null
   private cleanupPromise: Promise<void> | null = null
+  private visibilityTimeout: NodeJS.Timeout | null = null
+  private lastVisibilityChange = 0
 
   /**
    * Initialize the window close handler with event listeners
@@ -51,6 +53,12 @@ class WindowCloseHandler {
     window.removeEventListener('pagehide', this.handlePageHide)
     document.removeEventListener('visibilitychange', this.handleVisibilityChange)
     window.removeEventListener('user-logout', this.handleManualLogout)
+    
+    // Clear any pending visibility timeout
+    if (this.visibilityTimeout) {
+      clearTimeout(this.visibilityTimeout)
+      this.visibilityTimeout = null
+    }
   }
 
   /**
@@ -120,17 +128,41 @@ class WindowCloseHandler {
    * Handle visibility change - cleanup if hidden for extended time
    */
   private handleVisibilityChange = () => {
+    const now = Date.now()
+    this.lastVisibilityChange = now
+    
     if (document.visibilityState === 'hidden' && this.user && this.hasResults) {
       console.log('👁️ Page hidden with results - will cleanup only on actual page close')
       
+      // Clear any existing timeout to avoid multiple concurrent ones
+      if (this.visibilityTimeout) {
+        clearTimeout(this.visibilityTimeout)
+        this.visibilityTimeout = null
+      }
+      
       // Only schedule cleanup after a very long delay (30 minutes)
       // This gives users plenty of time to return without losing their results
-      setTimeout(() => {
-        if (document.visibilityState === 'hidden' && this.user && this.hasResults) {
+      this.visibilityTimeout = setTimeout(() => {
+        // Double-check: only cleanup if still hidden and this timeout hasn't been superseded
+        if (document.visibilityState === 'hidden' && 
+            this.user && 
+            this.hasResults &&
+            this.lastVisibilityChange <= now) {
           console.log('⏰ Page still hidden after extended delay - triggering cleanup')
           this.performAsyncCleanup()
+        } else {
+          console.log('🔄 Page visibility changed during timeout - skipping cleanup')
         }
-      }, 1800000) // 30 minutes delay instead of 45 seconds
+        this.visibilityTimeout = null
+      }, 1800000) // 30 minutes delay
+      
+    } else if (document.visibilityState === 'visible') {
+      console.log('👁️ Page visible again - cancelling any pending cleanup')
+      // Cancel cleanup if page becomes visible again
+      if (this.visibilityTimeout) {
+        clearTimeout(this.visibilityTimeout)
+        this.visibilityTimeout = null
+      }
     }
   }
 

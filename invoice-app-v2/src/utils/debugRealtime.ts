@@ -1,5 +1,5 @@
 import { authService } from '../services/auth'
-import { realtimeFirestoreService } from '../services/firestore-realtime'
+import { finalSimplifiedFirestoreService } from '../services/final-simplified-firestore'
 import toast from 'react-hot-toast'
 
 export const debugRealtimeConnection = () => {
@@ -19,7 +19,7 @@ export const debugRealtimeConnection = () => {
   try {
     console.log('🔥 DEBUG: Setting up test listener...')
     
-    realtimeFirestoreService.listenToActiveResults(
+    finalSimplifiedFirestoreService.listenToActiveResults(
       (results) => {
         console.log('📡 DEBUG: Received active results:', results)
         toast.success(`Real-time working! Found ${results.length} active results`)

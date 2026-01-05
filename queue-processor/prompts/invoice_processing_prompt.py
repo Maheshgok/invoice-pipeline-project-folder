@@ -29,7 +29,18 @@ PHASE 2: DATA ENRICHMENT & ACCOUNTING
     * Chapter 99: Services
   - Categorize expenses based on business type and GST classification
   - Examples: IT Services (998313), Telecom Equipment (85176290), Office Supplies (48239090)
-- Create journal entries using standard double-entry principles
+- Create journal entries using standard double-entry principles with CONSISTENT ACCOUNT MAPPING:
+  * Use DETERMINISTIC account names based on expense categories:
+    - Office Equipment (HSN 84xx, 85xx): "Office Equipment & Furniture"
+    - IT Services (HSN 998313): "Technology Services"
+    - Food & Travel (HSN 21xx, 22xx): "Travel & Food Expenses"
+    - Stationery (HSN 48xx): "Office Supplies"
+    - Professional Services (HSN 99xx): "Professional Services"
+  * ALWAYS create separate GST entries - NEVER combine:
+    - "CGST Input Credit" (Account Code: 1801) - separate line
+    - "SGST Input Credit" (Account Code: 1802) - separate line  
+    - "IGST Input Credit" (Account Code: 1803) - separate line
+  * Use consistent vendor liability account: "Accounts Payable - [Vendor Name]"
 - Apply Indian accounting standards for purchase transactions
 
 CRITICAL: The "journal_entries" section is MANDATORY - always populate it with proper debit/credit entries.
@@ -336,6 +347,16 @@ EXPENSE CATEGORIZATION BY BUSINESS TYPE:
 • Professional Services: Professional Development, Office Expenses, Client Entertainment, Reference Materials
 • Healthcare: Medical Equipment, Consumables & Supplies, Professional Services, Facility Management
 • Construction: Construction Materials, Equipment Rental, Labor Costs, Legal & Documentation
+
+DETERMINISTIC ACCOUNT MAPPING RULES:
+For IDENTICAL item descriptions, ALWAYS use the SAME account names and HSN codes:
+• "Modem", "Router", "Network Equipment" → Account: "Office Equipment & Furniture", HSN: "85176290"
+• "Food", "Meals", "Lunch", "Dinner" → Account: "Travel & Food Expenses", HSN: "21069030"
+• "Stationery", "Paper", "Pens" → Account: "Office Supplies", HSN: "48239090"
+• "Software", "License", "Subscription" → Account: "Technology Services", HSN: "998313"
+• "Consultation", "Advisory", "Legal" → Account: "Professional Services", HSN: "998721"
+• "Petrol", "Diesel", "Fuel" → Account: "Vehicle & Transport", HSN: "27101200"
+• "Rent", "Office Rent" → Account: "Office Rent", HSN: "997212"
 
 Use this reference to assign appropriate HSN codes and expense categories based on item descriptions and business context.  
    - Credit: Accounts Payable or vendor name for total invoice amount

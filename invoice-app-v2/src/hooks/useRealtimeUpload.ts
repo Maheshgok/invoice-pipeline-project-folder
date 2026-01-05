@@ -1,11 +1,18 @@
 import { useState, useCallback, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import { authService } from '../services/auth'
-import { realtimeFirestoreService } from '../services/firestore-realtime'
+import { finalSimplifiedFirestoreService } from '../services/final-simplified-firestore'
 import { archiveService } from '../services/archive'
 import { getApiUrl } from '../config/api'
-import type { InvoiceProcessingResult } from '../services/firestore-realtime'
 import { shouldDisplayInTable } from '../config/features'
+
+// Define interface locally to avoid dependencies
+interface InvoiceProcessingResult {
+  id: string
+  filename?: string
+  status: 'queued' | 'processing' | 'completed' | 'error'
+  [key: string]: any
+}
 
 interface UploadedFile {
   id: string
@@ -74,7 +81,7 @@ export const useRealtimeUpload = () => {
   // Mark results as displayed to prevent future notifications
   const markAsDisplayed = useCallback(async (jobIds: string[]) => {
     try {
-      await realtimeFirestoreService.markAsDisplayed(jobIds)
+      await finalSimplifiedFirestoreService.markAsDisplayed(jobIds)
       console.log('📤 Marked as displayed:', jobIds)
     } catch (error) {
       console.error('❌ Failed to mark as displayed:', error)
@@ -115,12 +122,12 @@ export const useRealtimeUpload = () => {
     let listenerInitialLoad = true
     
     // ⚡ Tier 1: Active processing results (real-time, small dataset)
-    realtimeFirestoreService.listenToActiveResults(
+    finalSimplifiedFirestoreService.listenToActiveResults(
       (activeResults) => {
         console.log('🎨 Active results update:', activeResults.length, 'active items')
         
         // Extract journal entries from active results only
-        const entries = realtimeFirestoreService.extractJournalEntriesFromResults(activeResults)
+        const entries = finalSimplifiedFirestoreService.extractJournalEntriesFromResults(activeResults)
         const journalEntries = entries.map(entry => ({
           id: entry.id,
           invoiceId: entry.invoiceId,
@@ -184,7 +191,7 @@ export const useRealtimeUpload = () => {
     return () => {
       if (listenersActive) {
         console.log('🧹 Cleaning up real-time listeners on unmount...')
-        realtimeFirestoreService.cleanup()
+        finalSimplifiedFirestoreService.cleanup()
       }
     }
   }, [listenersActive]) // Empty dependency array - set up once on mount
@@ -262,7 +269,7 @@ export const useRealtimeUpload = () => {
       ))
 
       // Step 5: Track this job ID for real-time updates
-      realtimeFirestoreService.trackJobIds([jobId])
+      finalSimplifiedFirestoreService.trackJobIds([jobId])
 
       // Step 6: Cloud Tasks will automatically process the file
       // No need to call queue processor directly - Cloud Tasks handles this!
@@ -327,7 +334,7 @@ export const useRealtimeUpload = () => {
       // Restart listeners after archive to get fresh data
       if (listenersActive) {
         console.log('🔄 Restarting listeners after archive...')
-        realtimeFirestoreService.cleanup()
+        finalSimplifiedFirestoreService.cleanup()
         setListenersActive(false)
         // Small delay before restarting
         setTimeout(() => {
@@ -355,7 +362,7 @@ export const useRealtimeUpload = () => {
         // Refresh real-time listeners after archiving to show updated active collection
         if (listenersActive) {
           console.log('🔄 Refreshing listeners after archive...')
-          realtimeFirestoreService.cleanup()
+          finalSimplifiedFirestoreService.cleanup()
           setTimeout(() => {
             startRealtimeListeners()
           }, 500)
