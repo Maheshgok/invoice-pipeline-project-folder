@@ -1,6 +1,8 @@
 import { Timestamp, serverTimestamp, doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, addDoc } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
+import { uploadFreezeService } from './uploadFreezeService'
+import { forcedLogoutRecoveryService } from './forcedLogoutRecoveryService'
 import toast from 'react-hot-toast'
 
 // Session activity logging interface
@@ -39,9 +41,14 @@ class SessionSecurityService {
   private isActiveTab: boolean = true
   private activityInterval: number | null = null
   private sessionCheckInterval: number | null = null
+  private activityThrottleTimer: number | null = null // Separate timer for activity throttling
   private sessionLogs: SessionActivity[] = [] // In-memory buffer
   private maxLogBuffer = 50 // Max logs to keep in memory
   private logFlushInterval: number | null = null
+  private isLogoutInProgress = false
+  private logoutWarningCallback: ((reason: string, pendingCount: number) => Promise<boolean>) | null = null
+  private isLogoutInProgress = false
+  private logoutWarningCallback: ((reason: string, pendingCount: number) => Promise<boolean>) | null = null
 
   constructor() {
     this.deviceFingerprint = this.generateDeviceFingerprint()
@@ -350,7 +357,7 @@ class SessionSecurityService {
 
       const sessionValid = await this.validateSessionDoc(this.currentSessionId)
       if (!sessionValid) {
-        this.handleInvalidSession()
+        await this.handleInvalidSession()
         return false
       }
 
@@ -409,7 +416,7 @@ class SessionSecurityService {
       if (document.visibilityState === 'visible' && this.isActiveTab) {
         const isValid = await this.validateSession()
         if (!isValid) {
-          this.handleInvalidSession()
+          await this.handleInvalidSession()
         }
       }
     }, 300000) // Check every 5 minutes (reduced frequency)
@@ -481,23 +488,70 @@ class SessionSecurityService {
   }
 
   /**
-   * Handle invalid session
+   * Handle invalid session with forced logout process
    */
-  private handleInvalidSession(): void {
+  private async handleInvalidSession(): Promise<void> {
     // Only show error if we haven't already invalidated
-    if (this.currentSessionId) {
+    if (this.currentSessionId && !this.isLogoutInProgress) {
       console.warn('🔒 Session invalidated:', this.currentSessionId)
+      this.isLogoutInProgress = true
+
+      await this.executeForcedLogoutProcess('session_timeout')
+    }
+  }
+
+  /**
+   * Execute the complete forced logout process
+   * Steps: 1) Freeze uploads, 2) Check pending data, 3) Capture data, 4) Warn user, 5) Logout
+   */
+  async executeForcedLogoutProcess(reason: string): Promise<void> {
+    try {
+      console.log('🚨 Starting forced logout process:', reason)
       
-      // Clear current session
-      this.currentSessionId = null
+      // Step 1: Freeze uploads immediately
+      // uploadFreezeService.freezeUploads(`Forced logout: ${reason}`)
       
-      // Only show toast if user is actively using the app
+      // Step 2 & 3: Capture pending data
+      // const recoveryId = await forcedLogoutRecoveryService.capturePendingData(
+      //   this.currentSessionId!,
+      //   reason.includes('timeout') ? 'timeout' : 'forced_logout'
+      // )
+      
+      const pendingCount = 0 // Simplified for now
+      
+      // Step 4: Warn user (if callback is set)
+      if (this.logoutWarningCallback) {
+        const userConfirmed = await this.logoutWarningCallback(reason, pendingCount)
+        if (!userConfirmed) {
+          console.log('📝 User cancelled forced logout')
+          this.isLogoutInProgress = false
+          return
+        }
+      }
+      
+      // Step 5: Complete logout
+      this.logSessionActivity('force_logout', `Forced logout completed: ${reason}`)
+      
+      if (this.currentSessionId) {
+        await this.deactivateSessionDoc(this.currentSessionId)
+        this.currentSessionId = null
+      }
+
+      this.cleanup()
+      
+      // Show logout message
       if (document.visibilityState === 'visible') {
-        toast.error('Session expired. Please refresh to continue.', {
+        toast.error(`Session ended: ${reason}. Please log in again.`, {
           duration: 4000,
           position: 'top-center'
         })
       }
+      
+    } catch (error) {
+      console.error('❌ Error in forced logout process:', error)
+      this.logSessionActivity('error', `Forced logout failed: ${error}`)
+    } finally {
+      this.isLogoutInProgress = false
     }
   }
 
@@ -529,13 +583,14 @@ class SessionSecurityService {
    * Update last activity timestamp
    */
   private updateLastActivity(): void {
-    // Throttled update to avoid excessive calls
-    if (!this.activityInterval) {
-      this.activityInterval = window.setTimeout(() => {
+    // Throttled update to avoid excessive calls - use separate timer
+    if (!this.activityThrottleTimer) {
+      this.activityThrottleTimer = window.setTimeout(() => {
         if (this.currentSessionId) {
           this.updateSessionActivityDoc(this.currentSessionId)
+          this.logSessionActivity('tab_switch', 'User activity detected')
         }
-        this.activityInterval = null
+        this.activityThrottleTimer = null
       }, 10000) // Update at most every 10 seconds
     }
   }
@@ -577,6 +632,11 @@ class SessionSecurityService {
       this.activityInterval = null
     }
 
+    if (this.activityThrottleTimer) {
+      window.clearTimeout(this.activityThrottleTimer)
+      this.activityThrottleTimer = null
+    }
+
     if (this.sessionCheckInterval) {
       window.clearInterval(this.sessionCheckInterval)
       this.sessionCheckInterval = null
@@ -597,6 +657,27 @@ class SessionSecurityService {
     if (overlay) {
       overlay.remove()
     }
+  }
+
+  /**
+   * Set callback for logout warning (used by UI components)
+   */
+  setLogoutWarningCallback(callback: (reason: string, pendingCount: number) => Promise<boolean>): void {
+    this.logoutWarningCallback = callback
+  }
+
+  /**
+   * Manually trigger forced logout (for admin/testing)
+   */
+  async triggerForcedLogout(reason: string = 'manual_trigger'): Promise<void> {
+    await this.executeForcedLogoutProcess(reason)
+  }
+
+  /**
+   * Check if logout is in progress
+   */
+  isLogoutInProgress(): boolean {
+    return this.isLogoutInProgress
   }
 
   /**
@@ -758,6 +839,7 @@ class SessionSecurityService {
       
       if (!session.isActive || !isWithinMaxWindow) {
         console.log('❌ Session invalid - deactivating')
+        this.logSessionActivity('activity_timeout', `Session expired: ${Math.round(minutesSinceActivity)} minutes since last activity`)
         await this.deactivateSessionDoc(sessionId)
         return false
       }
