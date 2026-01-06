@@ -1,7 +1,18 @@
-import { Timestamp, serverTimestamp, doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, orderBy } from 'firebase/firestore'
+import { Timestamp, serverTimestamp, doc, setDoc, getDoc, updateDoc, collection, query, where, getDocs, orderBy, addDoc } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
 import toast from 'react-hot-toast'
+
+// Session activity logging interface
+interface SessionActivity {
+  sessionId: string
+  userUid: string
+  event: 'session_start' | 'session_end' | 'tab_switch' | 'activity_timeout' | 'force_logout' | 'error'
+  details?: string
+  timestamp: Timestamp
+  tabId: string
+  browserInfo: string
+}
 
 // Local UserSession interface for session tracking
 interface UserSession {
@@ -28,6 +39,9 @@ class SessionSecurityService {
   private isActiveTab: boolean = true
   private activityInterval: number | null = null
   private sessionCheckInterval: number | null = null
+  private sessionLogs: SessionActivity[] = [] // In-memory buffer
+  private maxLogBuffer = 50 // Max logs to keep in memory
+  private logFlushInterval: number | null = null
 
   constructor() {
     this.deviceFingerprint = this.generateDeviceFingerprint()
@@ -35,6 +49,102 @@ class SessionSecurityService {
     this.initializeBroadcastChannel()
     this.setupActivityTracking()
     this.setupBeforeUnloadHandler()
+    this.initializeSessionLogging()
+  }
+
+  /**
+   * Initialize session logging with periodic flush to Firestore
+   */
+  private initializeSessionLogging(): void {
+    // Flush logs every 30 seconds to balance performance and data consistency
+    this.logFlushInterval = window.setInterval(() => {
+      this.flushSessionLogs()
+    }, 30000)
+  }
+
+  /**
+   * Log session activity efficiently (in-memory first, batch write later)
+   */
+  private logSessionActivity(event: SessionActivity['event'], details?: string): void {
+    const currentUser = authService.getCurrentUser()
+    if (!currentUser || !this.currentSessionId) return
+
+    const activity: SessionActivity = {
+      sessionId: this.currentSessionId,
+      userUid: currentUser.uid,
+      event,
+      details,
+      timestamp: serverTimestamp() as Timestamp,
+      tabId: this.tabId,
+      browserInfo: this.getBrowserInfo()
+    }
+
+    // Add to in-memory buffer
+    this.sessionLogs.push(activity)
+
+    // Keep buffer size manageable
+    if (this.sessionLogs.length > this.maxLogBuffer) {
+      this.sessionLogs = this.sessionLogs.slice(-this.maxLogBuffer)
+    }
+
+    // For critical events, flush immediately
+    if (['session_start', 'session_end', 'force_logout', 'error'].includes(event)) {
+      this.flushSessionLogs()
+    }
+  }
+
+  /**
+   * Flush session logs to Firestore efficiently
+   */
+  private async flushSessionLogs(): Promise<void> {
+    if (this.sessionLogs.length === 0) return
+
+    const logsToFlush = [...this.sessionLogs]
+    this.sessionLogs = [] // Clear buffer
+
+    try {
+      // Batch write all logs at once
+      const promises = logsToFlush.map(log => 
+        addDoc(collection(db, 'session_logs'), log)
+      )
+      
+      await Promise.all(promises)
+      console.log(`🔒 Flushed ${logsToFlush.length} session logs to Firestore`)
+    } catch (error) {
+      console.error('❌ Failed to flush session logs:', error)
+      // Re-add failed logs to buffer (up to max size)
+      this.sessionLogs = [...logsToFlush.slice(-this.maxLogBuffer), ...this.sessionLogs]
+    }
+  }
+
+  /**
+   * Get session logs for a user (admin/debug use)
+   */
+  async getUserSessionLogs(userUid: string, limit = 100): Promise<SessionActivity[]> {
+    try {
+      const logsQuery = query(
+        collection(db, 'session_logs'),
+        where('userUid', '==', userUid),
+        orderBy('timestamp', 'desc')
+      )
+      
+      const snapshot = await getDocs(logsQuery)
+      return snapshot.docs.map(doc => ({ ...doc.data() } as SessionActivity))
+    } catch (error) {
+      console.error('❌ Failed to get session logs:', error)
+      return []
+    }
+  }
+
+  /**
+   * Clean up old session logs (call periodically to manage storage costs)
+   */
+  async cleanupOldSessionLogs(daysToKeep = 30): Promise<void> {
+    const cutoffDate = new Date()
+    cutoffDate.setDate(cutoffDate.getDate() - daysToKeep)
+    
+    console.log(`🧹 Cleaning up session logs older than ${daysToKeep} days would require Cloud Functions`)
+    // Note: This would typically be implemented as a Cloud Function for efficiency
   }
 
   /**
@@ -160,6 +270,7 @@ class SessionSecurityService {
       this.claimActiveTab()
 
       console.log('🔒 Session started successfully:', this.currentSessionId)
+      this.logSessionActivity('session_start', 'New session created')
       return true
 
     } catch (error) {
@@ -195,6 +306,7 @@ class SessionSecurityService {
   async endSession(): Promise<void> {
     try {
       if (this.currentSessionId) {
+        this.logSessionActivity('session_end', 'Session ended by user')
         await this.deactivateSessionDoc(this.currentSessionId)
         this.currentSessionId = null
       }
@@ -457,6 +569,9 @@ class SessionSecurityService {
    * Cleanup resources
    */
   private cleanup(): void {
+    // Flush any remaining logs before cleanup
+    this.flushSessionLogs()
+
     if (this.activityInterval) {
       window.clearTimeout(this.activityInterval)
       this.activityInterval = null
@@ -465,6 +580,11 @@ class SessionSecurityService {
     if (this.sessionCheckInterval) {
       window.clearInterval(this.sessionCheckInterval)
       this.sessionCheckInterval = null
+    }
+
+    if (this.logFlushInterval) {
+      window.clearInterval(this.logFlushInterval)
+      this.logFlushInterval = null
     }
 
     if (this.broadcastChannel) {
