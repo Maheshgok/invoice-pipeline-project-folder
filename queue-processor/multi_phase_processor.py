@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, Tuple
 from openai import OpenAI
 from google.cloud import secretmanager
 import os
+import tiktoken
 
 from prompts.phase1_data_extraction import PHASE1_DATA_EXTRACTION_PROMPT
 from prompts.phase2_data_enrichment import PHASE2_DATA_ENRICHMENT_PROMPT  
@@ -20,6 +21,11 @@ logger = logging.getLogger(__name__)
 class MultiPhaseInvoiceProcessor:
     def __init__(self):
         self.client = self._initialize_openai_client()
+        # Token management
+        self.encoding = tiktoken.encoding_for_model("gpt-4o")
+        self.max_tokens = 4000  # Response limit
+        self.token_buffer = 500  # Safety buffer
+        self.use_optimized_prompts = True  # Toggle for optimization
         
     def _initialize_openai_client(self) -> OpenAI:
         """Initialize OpenAI client with API key from Secret Manager"""
@@ -96,9 +102,18 @@ class MultiPhaseInvoiceProcessor:
         try:
             logger.info(f"🔍 PHASE 1/3: Starting data extraction from invoice image")
             logger.info(f"🔧 Using GPT-4o with OCR capabilities for raw data extraction")
+            
+            # Get optimized prompt if available
+            prompt = self._get_optimized_prompt(1, PHASE1_DATA_EXTRACTION_PROMPT)
+            prompt_tokens = self._count_tokens(prompt)
+            logger.info(f"📊 Phase 1 prompt tokens: {prompt_tokens}")
+            
             # Encode image for OpenAI
             import base64
             base64_image = base64.b64encode(image_data).decode('utf-8')
+            
+            # Adjust max_tokens based on prompt size
+            response_tokens = min(self.max_tokens, 8000 - prompt_tokens - self.token_buffer)
             
             response = self.client.chat.completions.create(
                 model="gpt-4o",
@@ -106,7 +121,7 @@ class MultiPhaseInvoiceProcessor:
                     {
                         "role": "user",
                         "content": [
-                            {"type": "text", "text": PHASE1_DATA_EXTRACTION_PROMPT},
+                            {"type": "text", "text": prompt},
                             {
                                 "type": "image_url",
                                 "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}
@@ -132,7 +147,14 @@ class MultiPhaseInvoiceProcessor:
                 cleaned_result = cleaned_result.split('```')[1]
             cleaned_result = cleaned_result.strip()
             
-            return json.loads(cleaned_result)
+            # Attempt to parse JSON with error recovery
+            try:
+                return json.loads(cleaned_result)
+            except json.JSONDecodeError as parse_error:
+                logger.warning(f"⚠️ Phase 1 JSON parse failed, attempting repair: {str(parse_error)}")
+                # Try to repair common JSON issues
+                repaired_json = self._attempt_json_repair(cleaned_result, parse_error)
+                return json.loads(repaired_json)
             
         except json.JSONDecodeError as e:
             logger.error(f"❌ Phase 1 JSON decode error: {str(e)}")
@@ -225,7 +247,14 @@ Consider their common HSN codes, expense categories, and capitalization threshol
                 cleaned_result = cleaned_result.split('```')[1]
             cleaned_result = cleaned_result.strip()
             
-            return json.loads(cleaned_result)
+            # Attempt to parse JSON with error recovery
+            try:
+                return json.loads(cleaned_result)
+            except json.JSONDecodeError as parse_error:
+                logger.warning(f"⚠️ Phase 2 JSON parse failed, attempting repair: {str(parse_error)}")
+                # Try to repair common JSON issues
+                repaired_json = self._attempt_json_repair(cleaned_result, parse_error)
+                return json.loads(repaired_json)
             
         except json.JSONDecodeError as e:
             logger.error(f"❌ Phase 2 JSON decode error: {str(e)}")
@@ -344,7 +373,14 @@ ACCOUNT CODE HANDLING (DISABLED):
                 cleaned_result = cleaned_result.split('```')[1]
             cleaned_result = cleaned_result.strip()
             
-            return json.loads(cleaned_result)
+            # Attempt to parse JSON with error recovery
+            try:
+                return json.loads(cleaned_result)
+            except json.JSONDecodeError as parse_error:
+                logger.warning(f"⚠️ Phase 3 JSON parse failed, attempting repair: {str(parse_error)}")
+                # Try to repair common JSON issues
+                repaired_json = self._attempt_json_repair(cleaned_result, parse_error)
+                return json.loads(repaired_json)
             
         except json.JSONDecodeError as e:
             logger.error(f"❌ Phase 3 JSON decode error: {str(e)}")
@@ -352,6 +388,100 @@ ACCOUNT CODE HANDLING (DISABLED):
         except Exception as e:
             logger.error(f"❌ Phase 3 conversion error: {str(e)}")
             raise
+
+    def _attempt_json_repair(self, json_str: str, error: json.JSONDecodeError) -> str:
+        """Attempt to repair common JSON formatting issues"""
+        logger.info(f"🔧 Attempting to repair JSON at position {error.pos}")
+        
+        # Common fixes for malformed JSON
+        repaired = json_str
+        
+        # 1. Fix unterminated strings by finding unmatched quotes
+        if "Unterminated string" in str(error):
+            lines = repaired.split('\n')
+            error_line_idx = error.lineno - 1 if error.lineno <= len(lines) else len(lines) - 1
+            
+            # Try to close unterminated string on the error line
+            if error_line_idx < len(lines):
+                line = lines[error_line_idx]
+                # Count quotes to find if we have an odd number
+                quote_count = line.count('"')
+                if quote_count % 2 == 1:  # Odd number of quotes means unterminated
+                    # Add closing quote at the end of the line
+                    lines[error_line_idx] = line.rstrip() + '"'
+                    logger.info(f"🔧 Added closing quote to line {error.lineno}")
+            
+            # Also try to truncate at the error position if it's near the end
+            if error.pos and error.pos > len(json_str) - 100:  # Near end of string
+                repaired = json_str[:error.pos] + '"}]}'
+                logger.info(f"🔧 Truncated and closed JSON structure at position {error.pos}")
+            else:
+                repaired = '\n'.join(lines)
+        
+        # 2. Fix missing closing brackets/braces
+        if "Expecting" in str(error):
+            # Try adding common closing patterns
+            if repaired.count('{') > repaired.count('}'):
+                repaired += '}'
+                logger.info("🔧 Added missing closing brace")
+            if repaired.count('[') > repaired.count(']'):
+                repaired += ']'
+                logger.info("🔧 Added missing closing bracket")
+        
+        # 3. Remove trailing commas
+        repaired = repaired.replace(',}', '}').replace(',]', ']')
+        
+        logger.info(f"🔧 JSON repair completed, length: {len(repaired)}")
+        return repaired
+
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens in text using tiktoken"""
+        try:
+            return len(self.encoding.encode(text))
+        except Exception as e:
+            logger.warning(f"⚠️ Token counting failed: {e}")
+            return len(text) // 3  # Rough estimate: ~3 chars per token
+
+    def _truncate_response_if_needed(self, response: str, max_length: int) -> str:
+        """Truncate response if it exceeds token limits, trying to preserve JSON structure"""
+        if len(response) <= max_length:
+            return response
+            
+        logger.warning(f"⚠️ Response too long ({len(response)} chars), truncating to {max_length}")
+        
+        # Try to find a good JSON truncation point
+        truncated = response[:max_length]
+        
+        # Look for last complete JSON object/array element
+        for ending in ['"}]}', '"}]', '"}', '}]', '}']:
+            last_pos = truncated.rfind(ending)
+            if last_pos > max_length * 0.8:  # Don't truncate too aggressively
+                truncated = truncated[:last_pos + len(ending)]
+                break
+                
+        logger.info(f"🔧 Truncated response to {len(truncated)} characters")
+        return truncated
+
+    def _get_optimized_prompt(self, phase: int, original_prompt: str) -> str:
+        """Get optimized prompt if enabled, otherwise return original"""
+        if not self.use_optimized_prompts:
+            return original_prompt
+            
+        # Import optimized prompts dynamically
+        try:
+            if phase == 1:
+                from prompts.phase1_data_extraction_optimized import PHASE1_DATA_EXTRACTION_PROMPT
+                return PHASE1_DATA_EXTRACTION_PROMPT
+            elif phase == 2:
+                from prompts.phase2_data_enrichment_optimized import PHASE2_DATA_ENRICHMENT_PROMPT
+                return PHASE2_DATA_ENRICHMENT_PROMPT  
+            elif phase == 3:
+                from prompts.phase3_json_conversion_optimized import PHASE3_JSON_CONVERSION_PROMPT
+                return PHASE3_JSON_CONVERSION_PROMPT
+        except ImportError:
+            logger.warning(f"⚠️ Optimized prompt for phase {phase} not found, using original")
+            
+        return original_prompt
 
 # Create global instance for use in main processor
 multi_phase_processor = MultiPhaseInvoiceProcessor()
