@@ -19,9 +19,9 @@ from pdf2image import convert_from_bytes
 from PIL import Image
 import io
 
-# Import prompts from external files
-from prompts import get_invoice_prompt, get_system_prompt, prompt_config
-from multi_phase_processor import multi_phase_processor
+# Import new 3-agent processing system
+from three_agent_processor import ThreeAgentInvoiceProcessor
+from multi_phase_processor import MultiPhaseInvoiceProcessor  # Keep as fallback
 
 logger = logging.getLogger(__name__)
 
@@ -247,31 +247,65 @@ class OpenAIProcessor:
                 # Prepare messages with system prompt if provided
                 messages = []
                 
-                # Always use multi-phase processing for better accuracy (fallback disabled)
-                logger.info(f"🚀 PROCESSING APPROACH: Multi-Phase (3 OpenAI API calls)")
-                if client_organization_context or client_organization_id:
-                    logger.info(f"📋 CLIENT ORG CONTEXT: Available - Using enhanced GST taxonomy processing")
-                else:
-                    logger.info(f"📋 CLIENT ORG CONTEXT: Not provided - Using standard three-phase processing")
-                logger.info(f"🔧 Phases: 1️⃣ Data extraction → 2️⃣ GST enrichment → 3️⃣ JSON conversion")
+                # Use NEW 3-Agent processing system for better token management and role separation
+                logger.info(f"🚀 PROCESSING APPROACH: New 3-Agent System")
+                logger.info(f"🤖 Agent 1: Data Analyst (Extraction) → Agent 2: Accountant (Journal) → Agent 3: Data Engineer (Format)")
                 
-                from multi_phase_processor import MultiPhaseInvoiceProcessor
-                multi_phase = MultiPhaseInvoiceProcessor()
+                # Initialize 3-agent processor
+                three_agent = ThreeAgentInvoiceProcessor()
                 
-                # Process with multi-phase approach
-                result = multi_phase.process_invoice_multi_phase(
-                    image_data=file_content,
-                    image_name=blob_path.split('/')[-1],
-                    client_organization_context=client_organization_context,
-                    client_organization_id=client_organization_id
+                # Process with new 3-agent approach
+                result = three_agent.process_invoice(
+                    image_content=data_url,  # Pass the base64 data URL
+                    invoice_metadata={
+                        'filename': blob_path.split('/')[-1],
+                        'user_uid': user_uid,
+                        'client_organization_context': client_organization_context,
+                        'client_organization_id': client_organization_id
+                    }
                 )
                 
-                logger.info(f"✅ MULTI-PHASE PROCESSING: Completed all 3 phases successfully")
-                return {
-                    "success": True,
-                    "data": result,
-                    "error": None
-                }
+                if result['status'] == 'SUCCESS':
+                    logger.info(f"✅ 3-AGENT PROCESSING: Completed successfully")
+                    logger.info(f"📊 Pipeline Stats: {result['pipeline_stats']}")
+                    return {
+                        "success": True,
+                        "data": result['final_result'],
+                        "error": None,
+                        "pipeline_stats": result['pipeline_stats'],
+                        "processing_type": "3-agent"
+                    }
+                elif result['status'] == 'SAFE_FAIL':
+                    logger.warning(f"⚠️ 3-AGENT PROCESSING: Safe fail triggered")
+                    logger.info(f"🔄 Falling back to legacy multi-phase processor")
+                    
+                    # Fallback to legacy system
+                    from multi_phase_processor import MultiPhaseInvoiceProcessor
+                    multi_phase = MultiPhaseInvoiceProcessor()
+                    
+                    fallback_result = multi_phase.process_invoice_multi_phase(
+                        image_data=file_content,
+                        image_name=blob_path.split('/')[-1],
+                        client_organization_context=client_organization_context,
+                        client_organization_id=client_organization_id
+                    )
+                    
+                    return {
+                        "success": True,
+                        "data": fallback_result,
+                        "error": None,
+                        "processing_type": "fallback-legacy",
+                        "original_failure": result.get('error_summary', 'Unknown')
+                    }
+                else:
+                    # Critical fail
+                    logger.error(f"🚨 3-AGENT PROCESSING: Critical failure")
+                    return {
+                        "success": False,
+                        "error": result.get('error', 'Unknown critical error'),
+                        "data": None,
+                        "processing_type": "3-agent-failed"
+                    }
                 
             except Exception as e:
                 logger.error(f"Error in multi-phase processing: {str(e)}")
