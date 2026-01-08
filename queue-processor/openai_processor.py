@@ -22,6 +22,7 @@ import io
 # Import new 3-agent processing system
 from three_agent_processor import ThreeAgentInvoiceProcessor
 from multi_phase_processor import MultiPhaseInvoiceProcessor  # Keep as fallback
+from prompts import get_invoice_prompt, get_system_prompt, prompt_config
 
 logger = logging.getLogger(__name__)
 
