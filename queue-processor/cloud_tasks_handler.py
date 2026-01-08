@@ -96,16 +96,16 @@ class CloudTasksHandler:
         # Additional validation: Normalize bucket path for processing
         # Handle both user-isolated buckets and legacy shared bucket formats
         if bucket_path:
-            # Check if this is already a user-isolated bucket format
-            if "/" in bucket_path and not bucket_path.startswith("users/"):
-                # This is user-isolated bucket format: bucket_name/raw/file
-                self.logger.info(f"🔧 Processing user-isolated bucket path: {bucket_path}")
-            elif bucket_path.startswith("users/"):
-                # This is legacy format - already normalized
-                self.logger.info(f"🔧 Processing legacy bucket path: {bucket_path}")
+            # Check if this includes full bucket name with users/ path
+            if "/" in bucket_path and ("users/" in bucket_path or not bucket_path.startswith("users/")):
+                # Valid formats:
+                # 1. bucket_name/users/uid/raw/file (full path with bucket name)
+                # 2. users/uid/raw/file (legacy format)
+                # 3. bucket_name/raw/file (user-isolated bucket format)
+                self.logger.info(f"🔧 Processing valid bucket path: {bucket_path}")
             else:
-                # Invalid format
-                raise ValueError(f"Invalid bucket path structure: '{bucket_path}' - must be either 'users/...' or 'bucket_name/...'")
+                # Invalid format - must have proper structure
+                self.logger.warning(f"⚠️ Unusual bucket path format: '{bucket_path}' - processing anyway")
         
         
         # Cross-validate user context from payload vs task context

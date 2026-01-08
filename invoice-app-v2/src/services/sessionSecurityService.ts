@@ -45,9 +45,7 @@ class SessionSecurityService {
   private sessionLogs: SessionActivity[] = [] // In-memory buffer
   private maxLogBuffer = 50 // Max logs to keep in memory
   private logFlushInterval: number | null = null
-  private isLogoutInProgress = false
-  private logoutWarningCallback: ((reason: string, pendingCount: number) => Promise<boolean>) | null = null
-  private isLogoutInProgress = false
+  private logoutInProgressFlag = false
   private logoutWarningCallback: ((reason: string, pendingCount: number) => Promise<boolean>) | null = null
 
   constructor() {
@@ -83,7 +81,7 @@ class SessionSecurityService {
       details,
       timestamp: serverTimestamp() as Timestamp,
       tabId: this.tabId,
-      browserInfo: this.getBrowserInfo()
+      browserInfo: navigator.userAgent // Direct access to avoid method binding issues
     }
 
     // Add to in-memory buffer
@@ -187,6 +185,13 @@ class SessionSecurityService {
    */
   private generateTabId(): string {
     return `tab_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+  }
+
+  /**
+   * Get browser information for session tracking
+   */
+  private getBrowserInfo(): string {
+    return navigator.userAgent
   }
 
   /**
@@ -492,9 +497,9 @@ class SessionSecurityService {
    */
   private async handleInvalidSession(): Promise<void> {
     // Only show error if we haven't already invalidated
-    if (this.currentSessionId && !this.isLogoutInProgress) {
+    if (this.currentSessionId && !this.logoutInProgressFlag) {
       console.warn('🔒 Session invalidated:', this.currentSessionId)
-      this.isLogoutInProgress = true
+      this.logoutInProgressFlag = true
 
       await this.executeForcedLogoutProcess('session_timeout')
     }
@@ -524,7 +529,7 @@ class SessionSecurityService {
         const userConfirmed = await this.logoutWarningCallback(reason, pendingCount)
         if (!userConfirmed) {
           console.log('📝 User cancelled forced logout')
-          this.isLogoutInProgress = false
+          this.logoutInProgressFlag = false
           return
         }
       }
@@ -551,7 +556,7 @@ class SessionSecurityService {
       console.error('❌ Error in forced logout process:', error)
       this.logSessionActivity('error', `Forced logout failed: ${error}`)
     } finally {
-      this.isLogoutInProgress = false
+      this.logoutInProgressFlag = false
     }
   }
 
@@ -662,7 +667,7 @@ class SessionSecurityService {
   /**
    * Set callback for logout warning (used by UI components)
    */
-  setLogoutWarningCallback(callback: (reason: string, pendingCount: number) => Promise<boolean>): void {
+  setLogoutWarningCallback(callback: ((reason: string, pendingCount: number) => Promise<boolean>) | null): void {
     this.logoutWarningCallback = callback
   }
 
@@ -677,7 +682,7 @@ class SessionSecurityService {
    * Check if logout is in progress
    */
   isLogoutInProgress(): boolean {
-    return this.isLogoutInProgress
+    return this.logoutInProgressFlag
   }
 
   /**

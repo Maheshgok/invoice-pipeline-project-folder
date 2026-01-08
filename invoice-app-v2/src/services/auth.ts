@@ -46,45 +46,51 @@ export class AuthService {
   }
 
   /**
-   * Sign in with Google using popup with fallback to redirect
+   * Detect if device is mobile/touch-based
+   */
+  private isMobileDevice(): boolean {
+    return /Android|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+           ('ontouchstart' in window) ||
+           (navigator.maxTouchPoints > 0)
+  }
+
+  /**
+   * Sign in with Google using the most reliable method per platform
    */
   async signInWithGoogle(): Promise<UserCredential> {
+    console.log('🔐 Initiating Google sign-in...')
+    
+    // Choose primary method based on platform
+    const useMobileFlow = this.isMobileDevice()
+    console.log(`📱 Using ${useMobileFlow ? 'redirect' : 'popup'} flow for ${useMobileFlow ? 'mobile' : 'desktop'}`)
+
     try {
-      console.log(' Initiating Google sign-in...')
+      let result: UserCredential
+
+      if (useMobileFlow) {
+        // Mobile: Use redirect as PRIMARY method (most reliable)
+        await signInWithRedirect(auth, this.googleProvider)
+        // The redirect will handle the rest - this will throw to indicate redirect in progress
+        return Promise.reject(new Error('REDIRECT_IN_PROGRESS'))
+      } else {
+        // Desktop: Use popup as PRIMARY method
+        result = await signInWithPopup(auth, this.googleProvider)
+      }
       
-      // First try popup method
-      const result = await signInWithPopup(auth, this.googleProvider)
-      console.log(' Google sign-in successful:', result.user.email)      
+      console.log('✅ Google sign-in successful:', result.user.email)      
+      
       // Start session security tracking
       try {
         const { sessionSecurityService } = await import('./sessionSecurityService')
         await sessionSecurityService.startSession(result.user.uid)
       } catch (sessionError) {
-        console.warn('\u26a0\ufe0f Session security not available:', sessionError)
+        console.warn('⚠️ Session security not available:', sessionError)
       }
-            return result
+      
+      return result
       
     } catch (error: any) {
-      console.error(' Google sign-in popup failed:', error)
-      
-      // If popup fails, try redirect method
-      if (error.code === 'auth/popup-blocked' || 
-          error.code === 'auth/popup-closed-by-user' ||
-          error.message.includes('popup') ||
-          error.message.includes('Cross-Origin-Opener-Policy')) {
-        
-        console.log(' Falling back to redirect method...')
-        try {
-          await signInWithRedirect(auth, this.googleProvider)
-          // The redirect will handle the rest
-          return Promise.reject(new Error('REDIRECT_IN_PROGRESS'))
-        } catch (redirectError: any) {
-          console.error(' Google redirect sign-in failed:', redirectError)
-          this.handleAuthError(redirectError)
-          throw redirectError
-        }
-      }
-      
+      console.error('❌ Google sign-in failed:', error)
       this.handleAuthError(error)
       throw error
     }
