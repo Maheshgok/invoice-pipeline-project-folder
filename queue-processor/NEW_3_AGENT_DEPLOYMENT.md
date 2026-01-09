@@ -28,6 +28,13 @@ Moving from single multi-phase processor to specialized agent architecture:
 
 ## Key Benefits
 
+### Multi-Key OpenAI Integration
+- **Dedicated API Keys**: Each agent uses its own OpenAI API key
+- **Rate Limit Isolation**: Each agent has independent rate limits
+- **Cost Tracking**: Usage and costs tracked per agent type
+- **Fault Tolerance**: If one key fails, other agents continue working
+- **Fallback Support**: Auto-fallback to main OpenAI key if agent key unavailable
+
 ### Token Management
 - **Distributed Processing**: Each agent has focused token budget
 - **Input Optimization**: Reduced redundancy per phase  
@@ -76,6 +83,18 @@ Moving from single multi-phase processor to specialized agent architecture:
 
 ## Deployment Commands
 
+### Step 1: API Key Configuration (Pre-configured)
+```bash
+# API Key Assignment:
+# Agent 1 (Data Analyst): DataAnalyst1 key - sk-proj-Dkxz7ol6dpGQbQ... (image processing)
+# Agent 2 (Accountant): Current Secret Manager key - openai-api-key-secret (journal entries)  
+# Agent 3 (Data Engineer): DataAnalyst2 key - sk-proj-fIem6C5nLHGbAo... (format conversion)
+
+# No additional secret configuration needed - keys are hardcoded for agents 1&3
+# Agent 2 continues using existing Secret Manager configuration
+```
+
+### Step 2: Deploy to Cloud Run
 ```bash
 # Navigate to queue-processor
 cd queue-processor
@@ -86,7 +105,7 @@ pip install tiktoken
 # Test locally (optional)
 python -c "from three_agent_processor import ThreeAgentInvoiceProcessor; print('✅ Import successful')"
 
-# Deploy to Cloud Run
+# Deploy to Cloud Run (no special environment variables needed)
 gcloud run deploy queue-processor \
     --source . \
     --platform managed \
@@ -98,6 +117,15 @@ gcloud run deploy queue-processor \
 
 # Or use existing deployment script
 ./deploy.sh
+```
+
+### Step 3: Verify Multi-Key Setup
+```bash
+# Check Cloud Run logs to verify key assignments
+gcloud logs read "resource.type=cloud_run_revision AND resource.labels.service_name=queue-processor" --limit=50 --format="value(textPayload)" | grep "Key Distribution"
+
+# Expected log output:
+# "Key Distribution: Agent1=DataAnalyst1, Agent2=Current, Agent3=DataAnalyst2"
 ```
 
 ## Testing Strategy

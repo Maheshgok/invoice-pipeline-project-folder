@@ -20,7 +20,9 @@ logger = logging.getLogger(__name__)
 
 class ThreeAgentInvoiceProcessor:
     def __init__(self):
-        self.client = self._initialize_openai_client()
+        # Initialize separate OpenAI clients for each agent
+        self.clients = self._initialize_agent_clients()
+        
         # Token management
         self.encoding = tiktoken.encoding_for_model("gpt-4o")
         self.max_input_tokens = 8000  # Conservative limit for input
@@ -28,36 +30,65 @@ class ThreeAgentInvoiceProcessor:
         self.token_buffer = 500  # Safety buffer
         self.continuity_retry_limit = 3  # Max retries for continuity
         
-        # Agent-specific token limits
+        # Agent-specific token limits and configurations
         self.agent_limits = {
-            'agent1': {'input': 6000, 'output': 3000},  # Data extraction needs more input
-            'agent2': {'input': 4000, 'output': 3000},  # Journal entries 
-            'agent3': {'input': 4000, 'output': 2000}   # Format conversion
+            'agent1': {'input': 6000, 'output': 3000, 'key': 'AGENT1_OPENAI_KEY'},  # Data extraction
+            'agent2': {'input': 4000, 'output': 3000, 'key': 'AGENT2_OPENAI_KEY'},  # Journal entries 
+            'agent3': {'input': 4000, 'output': 2000, 'key': 'AGENT3_OPENAI_KEY'}   # Format conversion
         }
         
-    def _initialize_openai_client(self) -> OpenAI:
-        """Initialize OpenAI client with API key from Secret Manager"""
+    def _initialize_agent_clients(self) -> Dict[str, OpenAI]:
+        """Initialize separate OpenAI clients for each agent with specific API keys"""
         try:
             project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
-            secret_name = os.getenv('OPENAI_API_KEY_SECRET', 'openai-api-key-secret')
-            
             secret_client = secretmanager.SecretManagerServiceClient()
-            secret_path = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
             
-            response = secret_client.access_secret_version(request={"name": secret_path})
-            api_key = response.payload.data.decode('UTF-8').strip()
+            clients = {}
             
-            logger.info(f"✅ Retrieved OpenAI API key from Secret Manager: {secret_name}")
+            # Agent 1: Data Analyst - Use specific DataAnalyst1 key
+            agent1_key = "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"
+            clients['agent1'] = OpenAI(
+                api_key=agent1_key,
+                base_url="https://api.openai.com/v1",
+                timeout=300.0,
+                max_retries=3
+            )
+            logger.info(f"✅ Agent 1 (Data Analyst) using dedicated DataAnalyst1 API key")
             
-            return OpenAI(
-                api_key=api_key,
+            # Agent 2: Accountant - Use current/existing key from Secret Manager  
+            try:
+                main_secret = os.getenv('OPENAI_API_KEY_SECRET', 'openai-api-key-secret')
+                secret_path = f"projects/{project_id}/secrets/{main_secret}/versions/latest"
+                response = secret_client.access_secret_version(request={"name": secret_path})
+                agent2_key = response.payload.data.decode('UTF-8').strip()
+                logger.info(f"✅ Agent 2 (Accountant) using current OpenAI key from Secret Manager")
+            except Exception as e:
+                logger.error(f"❌ Failed to get current key for Agent 2: {e}")
+                raise
+            
+            clients['agent2'] = OpenAI(
+                api_key=agent2_key,
                 base_url="https://api.openai.com/v1",
                 timeout=300.0,
                 max_retries=3
             )
             
+            # Agent 3: Data Engineer - Use specific DataAnalyst2 key
+            agent3_key = "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"
+            clients['agent3'] = OpenAI(
+                api_key=agent3_key,
+                base_url="https://api.openai.com/v1",
+                timeout=300.0,
+                max_retries=3
+            )
+            logger.info(f"✅ Agent 3 (Data Engineer) using dedicated DataAnalyst2 API key")
+            
+            logger.info(f"🔑 Initialized {len(clients)} OpenAI clients for 3-agent system")
+            logger.info(f"🔑 Key Distribution: Agent1=DataAnalyst1, Agent2=Current, Agent3=DataAnalyst2")
+            return clients
+            
         except Exception as e:
-            logger.error(f"❌ Failed to initialize OpenAI client: {str(e)}")
+            logger.error(f"❌ Failed to initialize agent clients: {str(e)}")
             raise
     
     def _count_tokens(self, text: str) -> int:
@@ -122,8 +153,9 @@ class ThreeAgentInvoiceProcessor:
             return json_text
     
     def _call_agent_with_continuity(self, agent_id: str, prompt: str, content: str, context: str = "") -> Dict[str, Any]:
-        """Call an agent with token management and continuity support"""
+        """Call an agent with token management and continuity support using dedicated client"""
         agent_limit = self.agent_limits[agent_id]
+        agent_client = self.clients[agent_id]  # Use dedicated client for this agent
         full_prompt = f"{prompt}\n\n{context}\n\nDATA TO PROCESS:\n{content}"
         
         # Check input token limit
@@ -138,12 +170,12 @@ class ThreeAgentInvoiceProcessor:
             if was_truncated:
                 logger.info(f"📏 {agent_id} input truncated to fit token limit")
         
-        # Call OpenAI with retry mechanism
+        # Call OpenAI with retry mechanism using agent's dedicated client
         for attempt in range(self.continuity_retry_limit):
             try:
-                logger.info(f"🤖 Calling {agent_id} (attempt {attempt + 1})")
+                logger.info(f"🤖 Calling {agent_id} (attempt {attempt + 1}) with dedicated API key")
                 
-                response = self.client.chat.completions.create(
+                response = agent_client.chat.completions.create(
                     model="gpt-4o",
                     messages=[
                         {"role": "system", "content": full_prompt}
@@ -169,7 +201,8 @@ class ThreeAgentInvoiceProcessor:
                         'data': result,
                         'agent': agent_id,
                         'tokens_used': response.usage.total_tokens,
-                        'truncated': response.choices[0].finish_reason == 'length'
+                        'truncated': response.choices[0].finish_reason == 'length',
+                        'api_key_used': f"{agent_id}_specific_key"
                     }
                     
                 except json.JSONDecodeError as e:
@@ -184,7 +217,8 @@ class ThreeAgentInvoiceProcessor:
                                 'data': result,
                                 'agent': agent_id,
                                 'tokens_used': response.usage.total_tokens,
-                                'repaired': True
+                                'repaired': True,
+                                'api_key_used': f"{agent_id}_specific_key"
                             }
                         except json.JSONDecodeError:
                             continue
@@ -194,7 +228,8 @@ class ThreeAgentInvoiceProcessor:
                             'success': False,
                             'error': f"JSON parse failed after {self.continuity_retry_limit} attempts",
                             'raw_response': result_text,
-                            'agent': agent_id
+                            'agent': agent_id,
+                            'api_key_used': f"{agent_id}_specific_key"
                         }
                         
             except Exception as e:
@@ -206,7 +241,8 @@ class ThreeAgentInvoiceProcessor:
                     return {
                         'success': False,
                         'error': str(e),
-                        'agent': agent_id
+                        'agent': agent_id,
+                        'api_key_used': f"{agent_id}_specific_key"
                     }
         
         # Should not reach here

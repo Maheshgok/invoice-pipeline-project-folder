@@ -30,6 +30,7 @@ export const API_CONFIG = {
     
     // Queue API
     PROCESS_FILE: '/process-file',
+    PROCESS_FILE_CHUNKED: '/process-invoice-chunked',
     GET_RESULTS: '/get-results',
     JOB_STATUS: '/job-status',
     QUEUE_STATUS: '/queue-status'
@@ -67,6 +68,7 @@ export const getApiUrl = {
   
   // Queue API endpoints
   processFile: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.PROCESS_FILE}`,
+  processFileChunked: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.PROCESS_FILE_CHUNKED}`,
   getResults: (userEmail: string) => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.GET_RESULTS}/${userEmail}`,
   jobStatus: (jobId: string) => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.JOB_STATUS}/${jobId}`,
   queueStatus: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.QUEUE_STATUS}`,

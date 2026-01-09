@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { InvoiceData } from '../../types'
-import { ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'\nimport { sessionSecurityService } from '../../services/sessionSecurityService'
+import { ZoomIn, ZoomOut, RotateCw, Download } from 'lucide-react'
+import { sessionSecurityService } from '../../services/sessionSecurityService'
 
 interface InvoiceViewerProps {
   file: File | null

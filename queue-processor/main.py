@@ -13,6 +13,7 @@ from firebase_admin import credentials
 # Import modular services
 from cloud_tasks_handler import CloudTasksHandler
 from invoice_processing_service import InvoiceProcessingService
+from queue_based_chunked_processor import QueueBasedChunkedProcessor
 from test_connection import test_openai_connection
 
 # Configure logging
@@ -33,6 +34,7 @@ PROJECT_ID = os.environ.get('PROJECT_ID', 'watch-mail-trial')
 # Initialize modular services
 cloud_tasks_handler = CloudTasksHandler()
 processing_service = InvoiceProcessingService()
+queue_processor = QueueBasedChunkedProcessor()
 
 logger.info("🚀 Modular Cloud Tasks Invoice Processor initialized")
 logger.info(f"📋 Project ID: {PROJECT_ID}")
@@ -446,6 +448,64 @@ def cleanup_stale_jobs():
             "error": "Authentication required for cleanup access",
             "timestamp": datetime.now().isoformat()
         }), 401
+
+
+@app.route('/process-invoice-chunked', methods=['POST'])
+def process_invoice_chunked():
+    """
+    New endpoint for queue-based chunked processing
+    Processes invoices with line items chunked in groups of 4-or-less
+    """
+    try:
+        request_data = request.get_json()
+        if not request_data:
+            return jsonify({
+                "status": "error", 
+                "error": "No JSON data provided"
+            }), 400
+        
+        # Extract required fields
+        image_content = request_data.get('image_content')
+        invoice_metadata = request_data.get('invoice_metadata', {})
+        user_uid = request_data.get('user_uid')
+        
+        if not image_content:
+            return jsonify({
+                "status": "error",
+                "error": "image_content is required"
+            }), 400
+        
+        filename = invoice_metadata.get('filename', 'unknown')
+        logger.info(f"🚀 Queue-based chunked processing for {filename} (user: {user_uid})")
+        
+        # Process through queue-based chunked processor
+        result = queue_processor.process_invoice(image_content, invoice_metadata)
+        
+        if result['status'] == 'SUCCESS':
+            logger.info(f"✅ Queue-based processing completed for {filename}")
+            return jsonify({
+                "status": "success",
+                "data": result['final_result'],
+                "pipeline_stats": result['pipeline_stats'],
+                "timestamp": datetime.now().isoformat()
+            }), 200
+        else:
+            logger.error(f"❌ Queue-based processing failed for {filename}: {result.get('error')}")
+            return jsonify({
+                "status": "error",
+                "error": result.get('error', 'Unknown error'),
+                "stage": result.get('stage'),
+                "timestamp": datetime.now().isoformat()
+            }), 500
+            
+    except Exception as e:
+        logger.error(f"🚨 Critical error in queue-based endpoint: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "error": "Critical system failure",
+            "message": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
         
     except Exception as e:
         logger.error(f"Cleanup endpoint error: {e}")

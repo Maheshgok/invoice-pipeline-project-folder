@@ -26,9 +26,9 @@ class CloudTasksManager:
         self.base_queue_name = os.environ.get('CLOUD_TASKS_BASE_QUEUE', 'invoice-processing')
         
         # Service URLs
-        self.queue_processor_url = os.environ.get(
-            'QUEUE_PROCESSOR_URL', 
-            'https://queue-processor-812016027146.asia-south1.run.app'
+        self.pipeline_orchestrator_url = os.environ.get(
+            'PIPELINE_ORCHESTRATOR_URL', 
+            'https://pipeline-orchestrator-812016027146.asia-south1.run.app'
         )
         
         # Initialize Cloud Tasks client
@@ -36,7 +36,7 @@ class CloudTasksManager:
         
         logger.info(f"Cloud Tasks Manager initialized for project: {self.project_id}")
         logger.info(f"Base queue name: {self.base_queue_name}")
-        logger.info(f"Processor URL: {self.queue_processor_url}")
+        logger.info(f"Pipeline Orchestrator URL: {self.pipeline_orchestrator_url}")
         
     def get_user_queue_name(self, user_uid: str) -> str:
         """Generate user-specific queue name"""
@@ -151,7 +151,7 @@ class CloudTasksManager:
             task_request = {
                 "http_request": {
                     "http_method": tasks_v2.HttpMethod.POST,
-                    "url": f"{self.queue_processor_url}/process-task",
+                    "url": f"{self.pipeline_orchestrator_url}/process-invoice-from-gcs",
                     "headers": {
                         "Content-Type": "application/json",
                         "Authorization": f"Bearer {auth_token}"

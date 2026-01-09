@@ -10,16 +10,21 @@ import os
 import json
 import logging
 import asyncio
+import base64
 from datetime import datetime
 from flask import Flask, request, jsonify
 import requests
 from typing import Dict, Any
+from google.cloud import storage
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Initialize GCS client
+storage_client = storage.Client()
 
 class PipelineOrchestrator:
     def __init__(self):
@@ -210,6 +215,84 @@ def services_health_check():
     health_result = orchestrator.health_check_services()
     status_code = 200 if health_result['overall_status'] == 'healthy' else 503
     return jsonify(health_result), status_code
+
+@app.route('/process-invoice-from-gcs', methods=['POST'])
+def process_invoice_from_gcs():
+    """Pipeline orchestrator endpoint that accepts GCS paths and processes invoices"""
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                'status': 'error',
+                'error': 'No JSON data provided'
+            }), 400
+        
+        bucket_path = data.get('bucket_path')
+        job_id = data.get('job_id', f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        
+        if not bucket_path:
+            return jsonify({
+                'status': 'error',
+                'error': 'bucket_path is required'
+            }), 400
+        
+        logger.info(f"📥 Processing GCS-based orchestration request for job: {job_id}")
+        logger.info(f"📂 GCS Path: {bucket_path}")
+        
+        # Extract bucket and blob path
+        try:
+            if bucket_path.startswith('gs://'):
+                # Remove gs:// prefix
+                path_without_prefix = bucket_path[5:]
+                bucket_name, blob_path = path_without_prefix.split('/', 1)
+            elif '/' in bucket_path:
+                # Assume bucket/path format
+                bucket_name, blob_path = bucket_path.split('/', 1)
+            else:
+                raise ValueError("Invalid bucket_path format")
+            
+            logger.info(f"📦 Bucket: {bucket_name}, Blob: {blob_path}")
+            
+            # Read file from GCS
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob(blob_path)
+            
+            if not blob.exists():
+                return jsonify({
+                    'status': 'error',
+                    'error': f'File not found in GCS: {bucket_path}'
+                }), 404
+            
+            # Download file content
+            file_content = blob.download_as_bytes()
+            
+            # Convert to base64
+            image_content = base64.b64encode(file_content).decode('utf-8')
+            
+            logger.info(f"✅ Successfully read file from GCS, size: {len(file_content)} bytes")
+            
+        except Exception as gcs_error:
+            logger.error(f"❌ Failed to read from GCS: {str(gcs_error)}")
+            return jsonify({
+                'status': 'error',
+                'error': f'Failed to read from GCS: {str(gcs_error)}'
+            }), 500
+        
+        # Process through orchestrator
+        result = asyncio.run(orchestrator.process_invoice_pipeline(image_content, job_id))
+        
+        if result['status'] == 'SUCCESS':
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
+            
+    except Exception as e:
+        logger.error(f"🚨 Critical error in GCS-based orchestrator: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'error': 'Critical orchestrator failure',
+            'message': str(e)
+        }), 500
 
 @app.route('/process-invoice', methods=['POST'])
 def process_invoice():
