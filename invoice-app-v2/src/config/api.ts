@@ -9,10 +9,10 @@ export const API_CONFIG = {
   ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-812016027146.asia-south1.run.app',
   QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-812016027146.asia-south1.run.app',
   
-  // NEW: Functional Microservices
-  EXTRACTION_API_URL: import.meta.env.VITE_EXTRACTION_API_URL || 'https://extraction-service-812016027146.asia-south1.run.app',
-  ENRICHMENT_API_URL: import.meta.env.VITE_ENRICHMENT_API_URL || 'https://enrichment-service-812016027146.asia-south1.run.app',
-  ANALYSIS_API_URL: import.meta.env.VITE_ANALYSIS_API_URL || 'https://analysis-service-812016027146.asia-south1.run.app',
+  // Multi-stage Orchestrated Pipeline
+  PIPELINE_ORCHESTRATOR_URL: import.meta.env.VITE_PIPELINE_ORCHESTRATOR_URL || 'https://pipeline-orchestrator-812016027146.asia-south1.run.app',
+  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-812016027146.asia-south1.run.app',
+  DATA_COMBINER_URL: import.meta.env.VITE_DATA_COMBINER_URL || 'https://data-combiner-812016027146.asia-south1.run.app',
   
   // Endpoints
   ENDPOINTS: {
@@ -40,11 +40,10 @@ export const API_CONFIG = {
     JOB_STATUS: '/job-status',
     QUEUE_STATUS: '/queue-status',
     
-    // NEW: Functional Services
-    EXTRACT: '/extract',
-    ENRICH: '/enrich', 
-    ANALYZE: '/analyze',
-    TABULATE: '/tabulate'
+    // Orchestrated Pipeline Services
+    PROCESS_INVOICE: '/process-invoice',
+    STANDARDIZE: '/standardize',
+    COMBINE_DATA: '/combine-data'
   }
 } as const
 
@@ -85,14 +84,13 @@ export const getApiUrl = {
   queueStatus: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.QUEUE_STATUS}`,
   queueHealth: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
   
-  // NEW: Functional Services endpoints  
-  extractData: () => `${API_CONFIG.EXTRACTION_API_URL}${API_CONFIG.ENDPOINTS.EXTRACT}`,
-  enrichData: () => `${API_CONFIG.ENRICHMENT_API_URL}${API_CONFIG.ENDPOINTS.ENRICH}`,
-  analyzeData: () => `${API_CONFIG.ANALYSIS_API_URL}${API_CONFIG.ENDPOINTS.ANALYZE}`,
-  tabulateData: () => `${API_CONFIG.ANALYSIS_API_URL}${API_CONFIG.ENDPOINTS.TABULATE}`,
-  extractionHealth: () => `${API_CONFIG.EXTRACTION_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
-  enrichmentHealth: () => `${API_CONFIG.ENRICHMENT_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
-  analysisHealth: () => `${API_CONFIG.ANALYSIS_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`
+  // Orchestrated Pipeline endpoints  
+  processInvoice: () => `${API_CONFIG.PIPELINE_ORCHESTRATOR_URL}${API_CONFIG.ENDPOINTS.PROCESS_INVOICE}`,
+  standardizeData: () => `${API_CONFIG.FIELD_STANDARDIZER_URL}${API_CONFIG.ENDPOINTS.STANDARDIZE}`,
+  combineData: () => `${API_CONFIG.DATA_COMBINER_URL}${API_CONFIG.ENDPOINTS.COMBINE_DATA}`,
+  orchestratorHealth: () => `${API_CONFIG.PIPELINE_ORCHESTRATOR_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
+  standardizerHealth: () => `${API_CONFIG.FIELD_STANDARDIZER_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
+  combinerHealth: () => `${API_CONFIG.DATA_COMBINER_URL}${API_CONFIG.ENDPOINTS.HEALTH}`
 }
 
 export default API_CONFIG

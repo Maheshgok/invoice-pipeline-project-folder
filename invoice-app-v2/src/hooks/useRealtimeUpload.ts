@@ -225,13 +225,9 @@ export const useRealtimeUpload = () => {
         throw new Error('Cloud Run service is not responding. Please check if the service is running.')
       }
 
-      // Step 3: Upload file to initial-api
+      // Step 3: Upload file to initial-api (orchestrator handles all processing)
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
-      
-      // Add functional services flag based on processing mode
-      const useFunctionalServices = processingModeService.getMode() === 'functional'
-      formData.append('use_functional_services', useFunctionalServices.toString())
 
       const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',

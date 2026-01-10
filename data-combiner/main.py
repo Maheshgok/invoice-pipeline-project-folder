@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
 from typing import List, Dict, Any
+from google.cloud import firestore
 
 # Add shared directory to path
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
@@ -19,6 +20,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Initialize Firestore client
+project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
+firestore_client = firestore.Client(project=project_id)
 
 class DataCombinerService:
     def __init__(self):
@@ -56,8 +61,69 @@ Return JSON format:
 }}
 """
     
-    def combine_and_validate_data(self, extracted_data: dict, enriched_data: dict, job_id: str) -> dict:
-        """Combine extracted and enriched data with AI validation"""
+    def store_results_in_firestore(self, final_result: Dict[str, Any], user_context: Dict[str, Any], job_id: str) -> None:
+        """
+        Store results in user's Firestore collection using existing isolation patterns
+        
+        Args:
+            final_result: Complete processing result
+            user_context: User context for proper collection path
+            job_id: Job identifier for document ID
+        """
+        try:
+            user_uid = user_context['uid']
+            user_email = user_context['email']
+            
+            # Use existing user isolation pattern: users/{uid}/invoice_results
+            collection_path = f'users/{user_uid}/invoice_results'
+            
+            # Prepare result for Firestore (maintain existing nomenclature)
+            firestore_result = {
+                'job_id': job_id,
+                'filename': user_context.get('filename', 'unknown.pdf'),
+                'status': 'completed',
+                'processing_mode': 'orchestrated_pipeline',
+                'timestamp': datetime.now().isoformat(),
+                'source': 'data_combiner',
+                
+                # User isolation fields (existing pattern)
+                'userUID': user_uid,
+                'userEmail': user_email,
+                'createdAt': firestore.SERVER_TIMESTAMP,
+                
+                # Complete result data
+                'orchestrator_result': final_result,
+                
+                # Extract key fields for frontend compatibility
+                'tabulation_summary': final_result.get('tabulation_summary', {}),
+                'invoice_header': final_result.get('invoice_header', {}), 
+                'enriched_line_items': final_result.get('enriched_line_items', []),
+                'tabulated_totals': final_result.get('tabulated_totals', {}),
+                
+                # For CSV export compatibility
+                'tabulated_results': final_result,
+                
+                # Processing metadata
+                'processing_metadata': {
+                    'stored_by': 'data_combiner',
+                    'storage_timestamp': datetime.now().isoformat(),
+                    'user_bucket_pattern': f"watch_mail_trial_invoice_{user_uid[:8].lower()}"
+                }
+            }
+            
+            # Store in Firestore using job_id as document ID (existing pattern)
+            doc_ref = firestore_client.collection(collection_path).document(job_id)
+            doc_ref.set(firestore_result, merge=True)
+            
+            logger.info(f"💾 Results stored in Firestore: {collection_path}/{job_id}")
+            logger.info(f"👤 User: {user_email} ({user_uid[:8]})")
+            
+        except Exception as e:
+            logger.error(f"❌ Failed to store results in Firestore: {e}")
+            raise
+    
+    def combine_and_validate_data(self, extracted_data: dict, enriched_data: dict, job_id: str, user_context: dict = None) -> dict:
+        """Combine extracted and enriched data with AI validation and Firestore storage"""
         try:
             logger.info(f"🔄 Combining data for job: {job_id}")
             
@@ -96,12 +162,21 @@ Return JSON format:
                 }
             }
             
+            # Store results in Firestore if user_context provided
+            if user_context:
+                logger.info(f"💾 Storing results in Firestore for job: {job_id}")
+                self.store_results_in_firestore(final_result, user_context, job_id)
+                logger.info(f"✅ Results successfully stored in user's Firestore collection")
+            else:
+                logger.warning(f"⚠️ No user_context provided, skipping Firestore storage for job: {job_id}")
+            
             logger.info(f"✅ Data combination completed for {job_id}")
             
             return {
                 'status': 'SUCCESS',
                 'job_id': job_id,
-                'final_result': final_result
+                'final_result': final_result,
+                'firestore_stored': user_context is not None
             }
             
         except Exception as e:
@@ -140,6 +215,7 @@ def combine_invoice_data():
         extracted_data = data.get('extracted_data')
         enriched_data = data.get('enriched_data') 
         job_id = data.get('job_id', 'unknown')
+        user_context = data.get('user_context')  # Get user context for Firestore storage
         
         if not extracted_data or not enriched_data:
             return jsonify({
@@ -148,9 +224,11 @@ def combine_invoice_data():
             }), 400
         
         logger.info(f"📥 Processing combination request for job: {job_id}")
+        if user_context:
+            logger.info(f"👤 User: {user_context.get('email', 'unknown')} ({user_context.get('uid', 'unknown')[:8]})")
         
-        # Combine data through simple handler service
-        result = combiner_service.combine_and_validate_data(extracted_data, enriched_data, job_id)
+        # Combine data through simple handler service with Firestore storage
+        result = combiner_service.combine_and_validate_data(extracted_data, enriched_data, job_id, user_context)
         
         if result['status'] == 'SUCCESS':
             return jsonify(result), 200
@@ -163,34 +241,6 @@ def combine_invoice_data():
             'status': 'error',
             'error': 'Critical system failure',
             'message': str(e)
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 8080))
-    app.run(host='0.0.0.0', port=port, debug=False)
-        for i, entry in enumerate(journal_entries):
-            if not entry.get('account_name'):
-                validation_errors.append(f"Entry {i+1}: Missing account_name")
-            if 'debit' not in entry or 'credit' not in entry:
-                validation_errors.append(f"Entry {i+1}: Missing debit or credit")
-        
-        result = {
-            'valid': len(validation_errors) == 0 and is_balanced,
-            'balanced': is_balanced,
-            'totals': {
-                'total_debit': round(total_debit, 2),
-                'total_credit': round(total_credit, 2),
-                'difference': round(balance_difference, 2)
-            },
-            'validation_errors': validation_errors,
-            'entry_count': len(journal_entries)
-        }
-        
-        return jsonify(result), 200
-        
-    except Exception as e:
-        logger.error(f"❌ Error validating journal entries: {str(e)}")
-        return jsonify({
-            'error': 'Validation failed',
-            'details': str(e)
         }), 500
 
 @app.route('/combine-and-store', methods=['POST'])

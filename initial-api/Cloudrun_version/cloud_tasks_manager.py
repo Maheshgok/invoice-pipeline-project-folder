@@ -110,7 +110,8 @@ class CloudTasksManager:
         user_context: Dict[str, Any],
         auth_token: str,
         delay_seconds: int = 0,
-        use_functional_services: bool = False
+        use_functional_services: bool = False,
+        use_orchestrator: bool = True
     ) -> str:
         """
         Create a Cloud Task for invoice processing
@@ -122,6 +123,7 @@ class CloudTasksManager:
             auth_token: Firebase ID token for authentication
             delay_seconds: Optional delay before task execution
             use_functional_services: Whether to use new functional microservices
+            use_orchestrator: Whether to use orchestrated pipeline (handles line items properly)
         
         Returns:
             task_name: Full Cloud Tasks task name
@@ -147,7 +149,8 @@ class CloudTasksManager:
                 "source": "cloud_tasks_manager",
                 "expected_user_folder": user_context['uid'][:8],  # For path validation
                 "queue_type": "user_isolated",  # Indicate this is a user-isolated queue
-                "use_functional_services": use_functional_services  # Route to functional services
+                "use_functional_services": use_functional_services,  # Route to functional services
+                "use_orchestrator": use_orchestrator  # Route to orchestrated pipeline
             }
             
             # Create HTTP request for the task

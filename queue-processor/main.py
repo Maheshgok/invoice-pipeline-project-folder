@@ -240,8 +240,8 @@ def process_task():
         use_functional_services = validated_payload.get('use_functional_services', False)
         
         if use_functional_services:
-            logger.info(f"🚀 Processing with functional services for job: {job_id}")
-            # Route to functional processing (will be added to processing service)
+            # Option 1: Direct functional services (new implementation)
+            logger.info(f"🚀 Processing with direct functional services for job: {job_id}")
             response_data, status_code = processing_service.process_invoice_functional(
                 job_id=job_id,
                 bucket_path=bucket_path,
@@ -249,14 +249,26 @@ def process_task():
                 source=source
             )
         else:
-            logger.info(f"📋 Processing with traditional analysis for job: {job_id}")
-            # Use existing processing logic
-            response_data, status_code = processing_service.process_invoice_task(
-                job_id=job_id,
-                bucket_path=bucket_path,
-                user_context=user_context,  # Pass full user context instead of just email
-                source=source
-            )
+            # Option 2: Check if should use orchestrated pipeline (handles line items properly)
+            use_orchestrated = validated_payload.get('use_orchestrator', True)  # Default to orchestrator
+            
+            if use_orchestrated:
+                logger.info(f"🎼 Processing with orchestrated pipeline for job: {job_id}")
+                response_data, status_code = processing_service.process_invoice_orchestrated(
+                    job_id=job_id,
+                    bucket_path=bucket_path,
+                    user_context=user_context,
+                    source=source
+                )
+            else:
+                logger.info(f"📋 Processing with traditional analysis for job: {job_id}")
+                # Use existing processing logic
+                response_data, status_code = processing_service.process_invoice_task(
+                    job_id=job_id,
+                    bucket_path=bucket_path,
+                    user_context=user_context,  # Pass full user context instead of just email
+                    source=source
+                )
         
         return jsonify(response_data), status_code
         

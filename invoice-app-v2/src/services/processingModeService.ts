@@ -16,9 +16,9 @@ export interface ProcessingConfig {
 
 export class ProcessingModeService {
   private config: ProcessingConfig = {
-    mode: 'functional', // Default to new functional services
+    mode: 'legacy', // Use orchestrated pipeline via initial-api
     enableRealtime: true,
-    enableFallback: true
+    enableFallback: false // No fallback needed with orchestrator
   }
 
   /**
@@ -48,34 +48,24 @@ export class ProcessingModeService {
   }
 
   /**
-   * Process using new functional microservices
+   * Process using orchestrated multi-stage pipeline (via initial-api → orchestrator)
+   * NOTE: 'functional' mode now goes through orchestrator for multi-stage processing
    */
   private async processFunctional(file: File, jobId: string): Promise<CompletePipelineResult> {
     try {
-      // Convert file to base64
-      const imageData = await this.fileToBase64(file)
+      console.log('🎼 Using orchestrated pipeline for functional processing')
       
-      // Use functional service
-      const result = await functionalInvoiceService.processInvoiceComplete(imageData, jobId)
-      
-      console.log(`✅ Functional processing completed for ${jobId}`)
-      return result
+      // All functional processing now goes through initial-api → orchestrator
+      return this.processLegacy(file, jobId)
       
     } catch (error) {
-      console.error(`❌ Functional processing failed for ${jobId}:`, error)
-      
-      // Fallback to legacy if enabled
-      if (this.config.enableFallback) {
-        console.log('🔄 Falling back to legacy processing...')
-        return this.processLegacy(file, jobId)
-      }
-      
-      throw error
+      console.error(`❌ Orchestrated processing failed for ${jobId}:`, error)
+      throw error // No fallback - orchestrator is the primary path
     }
   }
 
   /**
-   * Process using legacy Cloud Tasks system
+   * Process using orchestrated pipeline (initial-api → orchestrator → multi-stage services)
    */
   private async processLegacy(file: File, jobId: string): Promise<any> {
     try {
@@ -84,7 +74,7 @@ export class ProcessingModeService {
         throw new Error('Authentication required')
       }
 
-      // Upload using legacy initial-api
+      // Upload using initial-api → orchestrator pipeline
       const formData = new FormData()
       formData.append('file', file)
 
@@ -97,21 +87,21 @@ export class ProcessingModeService {
       })
 
       if (!uploadResponse.ok) {
-        throw new Error(`Legacy upload failed: ${uploadResponse.statusText}`)
+        throw new Error(`Orchestrated upload failed: ${uploadResponse.statusText}`)
       }
 
       const result = await uploadResponse.json()
-      console.log(`✅ Legacy processing initiated for ${jobId}`)
+      console.log(`✅ Orchestrated processing initiated for ${jobId}`)
       
       return {
         job_id: jobId,
         status: 'PROCESSING',
-        legacy: true,
+        orchestrated: true,
         ...result
       }
       
     } catch (error) {
-      console.error(`❌ Legacy processing failed for ${jobId}:`, error)
+      console.error(`❌ Orchestrated processing failed for ${jobId}:`, error)
       throw error
     }
   }
@@ -121,11 +111,20 @@ export class ProcessingModeService {
    */
   async healthCheck(): Promise<{ healthy: boolean; mode: ProcessingMode; details: any }> {
     if (this.config.mode === 'functional') {
-      const health = await functionalInvoiceService.healthCheck()
-      return {
-        healthy: health.overall,
-        mode: 'functional',
-        details: health
+      // Both modes now use orchestrated pipeline
+      try {
+        const response = await fetch(getApiUrl.health())
+        return {
+          healthy: response.ok,
+          mode: 'functional',
+          details: { orchestrated: response.ok }
+        }
+      } catch (error) {
+        return {
+          healthy: false,
+          mode: 'functional', 
+          details: { error: error instanceof Error ? error.message : String(error) }
+        }
       }
     } else {
       try {
@@ -133,7 +132,7 @@ export class ProcessingModeService {
         return {
           healthy: response.ok,
           mode: 'legacy', 
-          details: { legacy: response.ok }
+          details: { orchestrated: response.ok }
         }
       } catch (error) {
         return {

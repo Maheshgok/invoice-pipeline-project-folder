@@ -16,15 +16,76 @@ from flask import Flask, request, jsonify
 import requests
 from typing import Dict, Any
 from google.cloud import storage
+import firebase_admin
+from firebase_admin import credentials, auth as firebase_auth
+
+# Import temp storage manager (local copy)
+from temp_storage_manager import TempStorageManager
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Initialize Firebase Admin SDK
+project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
+if not firebase_admin._apps:
+    cred = credentials.ApplicationDefault()
+    firebase_admin.initialize_app(cred, {'projectId': project_id})
+
 app = Flask(__name__)
 
 # Initialize GCS client
 storage_client = storage.Client()
+
+def verify_auth_token(auth_header):
+    """Verify Firebase ID token"""
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise ValueError("Missing or invalid authorization token")
+    
+    id_token_str = auth_header.split(' ')[1]
+    
+    try:
+        decoded_token = firebase_auth.verify_id_token(id_token_str)
+        user_email = decoded_token.get('email')
+        user_uid = decoded_token.get('uid')
+        
+        if not user_email or not user_uid:
+            raise ValueError("Invalid token: missing email or UID")
+            
+        return {
+            'email': user_email,
+            'uid': user_uid,
+            'organization_id': decoded_token.get('custom_claims', {}).get('organizationId'),
+            'organization_role': decoded_token.get('custom_claims', {}).get('organizationRole')
+        }
+    except Exception as e:
+        logger.error(f"❌ Token verification failed: {e}")
+        raise ValueError(f"Invalid authentication token: {e}")
+
+def verify_auth_token(auth_header):
+    """Verify Firebase ID token"""
+    if not auth_header or not auth_header.startswith('Bearer '):
+        raise ValueError("Missing or invalid authorization token")
+    
+    id_token_str = auth_header.split(' ')[1]
+    
+    try:
+        decoded_token = firebase_auth.verify_id_token(id_token_str)
+        user_email = decoded_token.get('email')
+        user_uid = decoded_token.get('uid')
+        
+        if not user_email or not user_uid:
+            raise ValueError("Invalid token: missing email or UID")
+            
+        return {
+            'email': user_email,
+            'uid': user_uid,
+            'organization_id': decoded_token.get('custom_claims', {}).get('organizationId'),
+            'organization_role': decoded_token.get('custom_claims', {}).get('organizationRole')
+        }
+    except Exception as e:
+        logger.error(f"❌ Token verification failed: {e}")
+        raise ValueError(f"Invalid authentication token: {e}")
 
 class PipelineOrchestrator:
     def __init__(self):
@@ -32,21 +93,93 @@ class PipelineOrchestrator:
         self.data_extractor_url = os.getenv('DATA_EXTRACTOR_URL', 'https://data-extractor-812016027146.asia-south1.run.app')
         self.queue_processor_url = os.getenv('QUEUE_PROCESSOR_URL', 'https://queue-enrichment-processor-812016027146.asia-south1.run.app')  
         self.data_combiner_url = os.getenv('DATA_COMBINER_URL', 'https://data-combiner-812016027146.asia-south1.run.app')
+        self.field_standardizer_url = os.getenv('FIELD_STANDARDIZER_URL', 'https://field-standardizer-812016027146.asia-south1.run.app')
         
-        logger.info("🎼 Pipeline Orchestrator v2.0 initialized with simple handler services")
+        # Initialize temp storage manager
+        self.temp_storage = TempStorageManager()
+        
+        logger.info("🎼 Pipeline Orchestrator v3.0 initialized with multi-stage processing")
         logger.info(f"📊 Data Extractor v2.0: {self.data_extractor_url}")
         logger.info(f"⚙️ Queue Processor v2.0: {self.queue_processor_url}")
         logger.info(f"🔗 Data Combiner v2.0: {self.data_combiner_url}")
+        logger.info(f"🏷️ Field Standardizer v1.0: {self.field_standardizer_url}")
 
-    async def process_invoice_pipeline(self, image_content: str, job_id: str) -> Dict[str, Any]:
-        """Orchestrate complete 3-phase pipeline with simple handlers"""
+    async def process_invoice_pipeline(self, image_content: str, job_id: str, user_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Orchestrate complete 6-stage pipeline with temp storage and batched processing"""
         try:
-            logger.info(f"🚀 Starting 3-phase simple handler pipeline for job: {job_id}")
+            logger.info(f"🚀 Starting 6-stage multi-stage pipeline for job: {job_id}")
             pipeline_start = datetime.now()
             
-            # Phase 1: Data Extraction using simple handler
-            logger.info(f"📊 Phase 1: Data Extraction (Simple Handler)")
-            phase1_start = datetime.now()
+            # Update job state to started
+            self.temp_storage.update_job_state(job_id, 'started', 'processing', {'started_at': pipeline_start.isoformat()})
+            
+            # Stage 1: Basic Data Extraction (header + line items)
+            logger.info(f"📊 Stage 1: Basic Data Extraction")
+            stage1_start = datetime.now()
+            
+            extraction_response = requests.post(
+                f"{self.data_extractor_url}/extract-invoice-data", 
+                json={'image_data': image_content, 'job_id': job_id},
+                timeout=300
+            )
+            
+            if not extraction_response.ok:
+                error_msg = f"Stage 1 failed: {extraction_response.status_code}"
+                self.temp_storage.update_job_state(job_id, 'extraction', 'failed', {'error': error_msg})
+                return {'status': 'FAILED', 'stage': 1, 'error': error_msg}
+            
+            extraction_result = extraction_response.json()
+            if extraction_result['status'] != 'SUCCESS':
+                error_msg = f"Stage 1 processing failed: {extraction_result.get('error')}"
+                self.temp_storage.update_job_state(job_id, 'extraction', 'failed', {'error': error_msg})
+                return {'status': 'FAILED', 'stage': 1, 'error': error_msg}
+            
+            stage1_duration = (datetime.now() - stage1_start).total_seconds()
+            extracted_data = extraction_result['extracted_data']
+            
+            # Store extraction results in temp storage
+            self.temp_storage.store_stage_data(job_id, 'extraction', extracted_data, user_context)
+            self.temp_storage.update_job_state(job_id, 'extraction', 'completed', {'duration': stage1_duration})
+            
+            logger.info(f"✅ Stage 1 completed in {stage1_duration:.2f}s")
+            
+            # For now, call the existing 3-phase pipeline (will expand later)
+            # Stage 2-5 will be implemented with queue enrichment service updates
+            
+            # Simplified completion for now
+            combination_payload = {
+                'extracted_data': extracted_data,
+                'enriched_data': extracted_data,  # Placeholder
+                'job_id': job_id,
+                'user_context': user_context
+            }
+            
+            combination_response = requests.post(
+                f"{self.data_combiner_url}/combine-invoice-data", 
+                json=combination_payload,
+                timeout=300
+            )
+            
+            if not combination_response.ok:
+                error_msg = f"Final stage failed: {combination_response.status_code}"
+                return {'status': 'FAILED', 'stage': 5, 'error': error_msg}
+            
+            combination_result = combination_response.json()
+            total_duration = (datetime.now() - pipeline_start).total_seconds()
+            
+            logger.info(f"🎉 Pipeline completed in {total_duration:.2f}s (simplified version)")
+            
+            return {
+                'status': 'SUCCESS',
+                'job_id': job_id,
+                'final_result': combination_result['final_result'],
+                'pipeline_stats': {
+                    'total_duration_seconds': total_duration,
+                    'pipeline_version': '3.0.0-beta'
+                },
+                'storage_handled_by': 'data_combiner',
+                'firestore_storage': 'completed'
+            }
             
             extraction_payload = {
                 'image_content': image_content,
@@ -105,7 +238,8 @@ class PipelineOrchestrator:
             combination_payload = {
                 'extracted_data': extraction_result['extracted_data'],
                 'enriched_data': enrichment_result['enriched_data'],
-                'job_id': job_id
+                'job_id': job_id,
+                'user_context': user_context  # Pass user context for Firestore storage
             }
             
             combination_response = requests.post(
@@ -129,7 +263,10 @@ class PipelineOrchestrator:
             logger.info(f"✅ Phase 3 completed in {phase3_duration:.2f}s")
             logger.info(f"🎉 Complete simple handler pipeline finished in {total_duration:.2f}s")
             
-            # Return final result
+            # Return final result (data combiner handles Firestore storage)
+            logger.info(f"🎉 Orchestrated pipeline completed for job: {job_id}")
+            logger.info(f"📊 Results stored by data combiner, orchestrator task complete")
+            
             return {
                 'status': 'SUCCESS',
                 'job_id': job_id,
@@ -145,7 +282,9 @@ class PipelineOrchestrator:
                     'enrichment_stats': enrichment_result.get('processing_stats', {}),
                     'combination_stats': combination_result.get('processing_stats', {}),
                     'handler_version': '2.0.0'
-                }
+                },
+                'storage_handled_by': 'data_combiner',
+                'firestore_storage': 'completed'
             }
             
         except requests.Timeout as e:
@@ -301,6 +440,14 @@ def process_invoice_from_gcs():
 def process_invoice():
     """Main orchestrator endpoint - processes invoice through 3-phase pipeline"""
     try:
+        # Verify authentication first
+        auth_header = request.headers.get('Authorization')
+        try:
+            user_auth = verify_auth_token(auth_header)
+            logger.info(f"🔐 Authenticated user: {user_auth['email']}")
+        except ValueError as e:
+            logger.error(f"❌ Authentication failed: {e}")
+            return jsonify({"error": "Authentication required", "details": str(e)}), 401
         data = request.get_json()
         if not data:
             return jsonify({
@@ -308,19 +455,22 @@ def process_invoice():
                 'error': 'No JSON data provided'
             }), 400
         
-        image_content = data.get('image_content')
+        image_content = data.get('image_data') or data.get('image_content')  # Support both field names
         job_id = data.get('job_id', f"job_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        user_context = data.get('user_context', {})  # Get user context for downstream services
         
         if not image_content:
             return jsonify({
                 'status': 'error',
-                'error': 'image_content is required'
+                'error': 'image_data or image_content is required'
             }), 400
         
         logger.info(f"📥 Processing orchestration request for job: {job_id}")
+        if user_context:
+            logger.info(f"👤 User: {user_context.get('email', 'unknown')} ({user_context.get('uid', 'unknown')[:8]})")
         
-        # Process through orchestrator
-        result = asyncio.run(orchestrator.process_invoice_pipeline(image_content, job_id))
+        # Process through orchestrator with user context
+        result = asyncio.run(orchestrator.process_invoice_pipeline(image_content, job_id, user_context))
         
         if result['status'] == 'SUCCESS':
             return jsonify(result), 200

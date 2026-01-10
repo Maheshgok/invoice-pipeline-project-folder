@@ -257,43 +257,66 @@ def upload_file():
         logger.info(f"🆔 GENERATED JOB ID: {job_id} for user: {user_email}")
         logger.info(f"🧩 Job ID components: cust={cust_num}, asset={asset_ref}, token={token}")
         
-        # Create Cloud Task for processing instead of direct queue processor call
+        # Call orchestrator directly for processing
         try:
             auth_header = request.headers.get('Authorization')
             if not auth_header:
-                logger.error("No authorization header for Cloud Tasks creation")
-                return jsonify({"error": "Authentication required for task creation"}), 401
+                logger.error("No authorization header for orchestrator call")
+                return jsonify({"error": "Authentication required for processing"}), 401
             
-            # Extract token from header for Cloud Tasks authentication
+            # Extract token from header
             auth_token = auth_header.split(' ')[1] if auth_header.startswith('Bearer ') else auth_header
             
-            # Check if user wants to use functional services (default false for stability)
-            # Handle both FormData and JSON requests
-            if hasattr(request, 'json') and request.json:
-                use_functional = request.json.get('use_functional_services', False)
-            else:
-                # Check form data for the flag
-                use_functional = request.form.get('use_functional_services', 'false').lower() == 'true'
+            # Prepare orchestrator payload
+            import base64
             
-            # Create Cloud Task for invoice processing
-            task_name = cloud_tasks_manager.create_processing_task(
-                job_id=job_id,
-                bucket_path=f"{user_bucket_name}/{filename}",
-                user_context=user_context,
-                auth_token=auth_token,
-                delay_seconds=5,  # Small delay to ensure file is fully uploaded
-                use_functional_services=use_functional
-            )
+            # Read the uploaded file for orchestrator
+            bucket = storage_client.bucket(user_bucket_name)
+            blob = bucket.blob(filename)
+            file_content = blob.download_as_bytes()
+            image_base64 = base64.b64encode(file_content).decode('utf-8')
             
-            processing_mode = "functional_services" if use_functional else "traditional_analysis"
-            logger.info(f"✅ Created Cloud Task: {task_name} (mode: {processing_mode})")
-            logger.info(f"📋 File uploaded and queued for processing via Cloud Tasks")
+            # Call orchestrator directly
+            import requests
+            orchestrator_url = "https://pipeline-orchestrator-812016027146.asia-south1.run.app"
             
-        except Exception as task_error:
-            logger.error(f"Failed to create Cloud Task: {task_error}")
+            orchestrator_payload = {
+                'image_data': image_base64,
+                'job_id': job_id,
+                'user_context': user_context,
+                'filename': filename,
+                'bucket_path': f"{user_bucket_name}/{filename}"
+            }
+            
+            logger.info(f"🎼 Calling orchestrator directly for job: {job_id}")
+            
+            # Call orchestrator asynchronously (don't wait for response)
+            import threading
+            def call_orchestrator():
+                try:
+                    response = requests.post(
+                        f"{orchestrator_url}/process-invoice",
+                        json=orchestrator_payload,
+                        headers={'Authorization': f'Bearer {auth_token}'},
+                        timeout=600
+                    )
+                    if response.ok:
+                        logger.info(f"✅ Orchestrator processing started for job: {job_id}")
+                    else:
+                        logger.error(f"❌ Orchestrator failed for job {job_id}: {response.status_code}")
+                except Exception as e:
+                    logger.error(f"❌ Orchestrator call failed for job {job_id}: {e}")
+            
+            # Start orchestrator processing in background
+            threading.Thread(target=call_orchestrator, daemon=True).start()
+            
+            processing_mode = "orchestrated_pipeline"
+            logger.info(f"✅ File uploaded and orchestrator processing started")
+            
+        except Exception as process_error:
+            logger.error(f"Failed to start orchestrator processing: {process_error}")
             # Don't fail the upload, just log the error
-            # The job_id is still returned so users can potentially retry
-            logger.warning(f"Upload succeeded but task creation failed for job_id: {job_id}")
+            logger.warning(f"Upload succeeded but orchestrator call failed for job_id: {job_id}")
         
         # Return successful upload response
         logger.info(f"File uploaded successfully. Job ID: {job_id}, Bucket path: {user_bucket_name}/{filename}")
@@ -304,10 +327,10 @@ def upload_file():
             "filename": filename,
             "bucket": user_bucket_name,
             "gcsPath": f"gs://{user_bucket_name}/{filename}",
-            "bucket_path": f"{user_bucket_name}/{filename}",  # Add this for queue processor
-            "task_queued": True,  # Indicate task was queued
-            "processing_mode": "cloud_tasks_user_isolated",  # Indicate we're using user-isolated buckets
-            "using_functional_services": use_functional  # Show which processing mode was used
+            "bucket_path": f"{user_bucket_name}/{filename}",  # Add this for reference
+            "orchestrator_called": True,  # Indicate orchestrator was called
+            "processing_mode": "orchestrated_pipeline",  # Direct orchestrator processing
+            "selected_processing": processing_mode  # Clear indication of processing path
         }), 200
         
     except Exception as e:
