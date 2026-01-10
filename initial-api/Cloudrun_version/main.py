@@ -278,7 +278,7 @@ def upload_file():
             
             # Call orchestrator directly
             import requests
-            orchestrator_url = "https://pipeline-orchestrator-812016027146.asia-south1.run.app"
+            orchestrator_url = "https://pipeline-orchestrator-bhcetby62q-el.a.run.app"
             
             orchestrator_payload = {
                 'image_data': image_base64,

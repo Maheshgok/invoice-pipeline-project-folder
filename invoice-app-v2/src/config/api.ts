@@ -4,15 +4,15 @@
  */
 
 export const API_CONFIG = {
-  // Cloud Run Services (Project ID: 812016027146 - watch-mail-trial)
+  // Cloud Run Services - Updated with actual deployed URLs
   INITIAL_API_URL: import.meta.env.VITE_INITIAL_API_URL || 'https://initial-api-812016027146.asia-south1.run.app',
-  ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-812016027146.asia-south1.run.app',
-  QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-812016027146.asia-south1.run.app',
+  ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-bhcetby62q-el.a.run.app',
+  QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-bhcetby62q-el.a.run.app',
   
   // Multi-stage Orchestrated Pipeline
-  PIPELINE_ORCHESTRATOR_URL: import.meta.env.VITE_PIPELINE_ORCHESTRATOR_URL || 'https://pipeline-orchestrator-812016027146.asia-south1.run.app',
-  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-812016027146.asia-south1.run.app',
-  DATA_COMBINER_URL: import.meta.env.VITE_DATA_COMBINER_URL || 'https://data-combiner-812016027146.asia-south1.run.app',
+  PIPELINE_ORCHESTRATOR_URL: import.meta.env.VITE_PIPELINE_ORCHESTRATOR_URL || 'https://pipeline-orchestrator-bhcetby62q-el.a.run.app',
+  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-bhcetby62q-el.a.run.app',
+  DATA_COMBINER_URL: import.meta.env.VITE_DATA_COMBINER_URL || 'https://data-combiner-bhcetby62q-el.a.run.app',
   
   // Endpoints
   ENDPOINTS: {
