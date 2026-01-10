@@ -1,0 +1,770 @@
+{
+  "job_id": "complete_test_20260109_175248",
+  "status": "COMPLETED_SUCCESSFULLY",
+  "processing_timestamp": "2026-01-09T17:54:56.875532",
+  "source_document": "SUNRISE_ENTERPRISE_GST_Invoice_Inv-5",
+  "extracted_data": {
+    "invoice_header": {
+      "invoice_number": "Inv-5",
+      "invoice_date": "10-01-25",
+      "gstin": "07BGUPD3647XXXX",
+      "original_duplicate": "Original / Duplicate Bill"
+    },
+    "vendor_details": {
+      "name": "SUNRISE ENTERPRISE",
+      "address": "# S-50, 3rd Cross PTC Building, I.T. Estate, New Delhi-1358XX",
+      "contact_number": "+91-985689XX09, +91-98458XX38",
+      "gstin": "07BGUPD3647XXXX"
+    },
+    "billing_details": {
+      "bill_to_name": "Rajiv Gupta",
+      "bill_to_address": "# S-50, 3rd PTC Building, I.T. Estate, Delhi-1358XX",
+      "ship_to_name": "Rajiv Gupta",
+      "ship_to_address": "# S-50, 3rd PTC Building, I.T. Estate, Delhi-1358XX",
+      "state": "Delhi - 07",
+      "gstin": "HVABDAXX456"
+    },
+    "line_items": [
+      {
+        "sr_no": 1,
+        "description": "Best Ball Pen",
+        "hsn": "1495",
+        "quantity": "10 Nos",
+        "rate": 20.0,
+        "taxable": 200.0,
+        "gst_rate": "12%",
+        "gst_amount": 24.0,
+        "total": 224.0
+      },
+      {
+        "sr_no": 2,
+        "description": "Executive Diary",
+        "hsn": "1256",
+        "quantity": "8 Box",
+        "rate": 590.0,
+        "taxable": 4720.0,
+        "gst_rate": "12%",
+        "gst_amount": 566.4,
+        "total": 5286.4
+      },
+      {
+        "sr_no": 3,
+        "description": "Leather Portfolio Folder",
+        "hsn": "1258",
+        "quantity": "2 Box",
+        "rate": 630.0,
+        "taxable": 1260.0,
+        "gst_rate": "12%",
+        "gst_amount": 151.2,
+        "total": 1411.2
+      },
+      {
+        "sr_no": 4,
+        "description": "Wireless Mouse",
+        "hsn": "4589",
+        "quantity": "9 Pcs",
+        "rate": 520.0,
+        "taxable": 4680.0,
+        "gst_rate": "18%",
+        "gst_amount": 842.4,
+        "total": 5522.4
+      },
+      {
+        "sr_no": 5,
+        "description": "A4 Document File",
+        "hsn": "4587",
+        "quantity": "5 Pkt",
+        "rate": 420.0,
+        "taxable": 2100.0,
+        "gst_rate": "12%",
+        "gst_amount": 252.0,
+        "total": 2352.0
+      },
+      {
+        "sr_no": 6,
+        "description": "Power Bank 10000mAh",
+        "hsn": "1248",
+        "quantity": "9 Nos",
+        "rate": 570.0,
+        "taxable": 5130.0,
+        "gst_rate": "12%",
+        "gst_amount": 615.6,
+        "total": 5745.6
+      },
+      {
+        "sr_no": 7,
+        "description": "USB Flash Drive",
+        "hsn": "1256",
+        "quantity": "12 Pkt",
+        "rate": 999.0,
+        "taxable": 11988.0,
+        "gst_rate": "18%",
+        "gst_amount": 2157.84,
+        "total": 14145.84
+      },
+      {
+        "sr_no": 8,
+        "description": "Bluetooth Keyboard",
+        "hsn": "2536",
+        "quantity": "4 Box",
+        "rate": 750.0,
+        "taxable": 3000.0,
+        "gst_rate": "18%",
+        "gst_amount": 540.0,
+        "total": 3540.0
+      }
+    ],
+    "tax_summary": {
+      "sub_total": 32898.0,
+      "cgst_amount": 2563.92,
+      "sgst_amount": 2563.92,
+      "igst_amount": 0.0,
+      "total_gst": 5127.84
+    },
+    "totals": {
+      "total_amount": 38026.0,
+      "amount_in_words": "Rupees ThirtyEight Thousand TwentySix Only"
+    },
+    "payment_details": {
+      "payment_mode": "UPI",
+      "bank_details": {
+        "bank_name": "STATE BANK OF INDIA",
+        "branch": "Delhi",
+        "account_no": "20412XXXXX05",
+        "ifsc_code": "SBIN00XXXXX",
+        "upi_id": "yourid@upi"
+      },
+      "terms": "Reverse Charge: YES"
+    }
+  },
+  "enriched_data": {
+    "data_quality": {
+      "completeness_score": 95,
+      "accuracy_assessment": "The extracted data is mostly complete and accurate. The invoice date format is unconventional and should be verified.",
+      "missing_fields": [
+        "Invoice date format correction"
+      ],
+      "validation_notes": [
+        "GSTIN format appears correct but should be verified for authenticity.",
+        "Invoice date format '10-01-25' should be verified; expected format is 'YYYY-MM-DD'."
+      ]
+    },
+    "business_intelligence": {
+      "line_item_categories": [
+        {
+          "item": "Best Ball Pen",
+          "category": "Office Supplies",
+          "business_use": "Stationery",
+          "account_code": "5010"
+        },
+        {
+          "item": "Executive Diary",
+          "category": "Office Supplies",
+          "business_use": "Stationery",
+          "account_code": "5010"
+        },
+        {
+          "item": "Leather Portfolio Folder",
+          "category": "Office Supplies",
+          "business_use": "Stationery",
+          "account_code": "5010"
+        },
+        {
+          "item": "Wireless Mouse",
+          "category": "IT Equipment",
+          "business_use": "Hardware",
+          "account_code": "5020"
+        },
+        {
+          "item": "A4 Document File",
+          "category": "Office Supplies",
+          "business_use": "Stationery",
+          "account_code": "5010"
+        },
+        {
+          "item": "Power Bank 10000mAh",
+          "category": "IT Equipment",
+          "business_use": "Accessories",
+          "account_code": "5020"
+        },
+        {
+          "item": "USB Flash Drive",
+          "category": "IT Equipment",
+          "business_use": "Storage",
+          "account_code": "5020"
+        },
+        {
+          "item": "Bluetooth Keyboard",
+          "category": "IT Equipment",
+          "business_use": "Hardware",
+          "account_code": "5020"
+        }
+      ],
+      "expense_classification": "Office Supplies and IT Equipment",
+      "purchase_type": "Business Use",
+      "supplier_analysis": {
+        "risk_level": "Low",
+        "business_relationship": "Established Vendor",
+        "compliance_status": "GST Compliant"
+      }
+    },
+    "accounting_suggestions": {
+      "chart_of_accounts": [
+        {
+          "description": "Office Supplies",
+          "account_code": "5010",
+          "debit": 12632.0,
+          "credit": 0.0
+        },
+        {
+          "description": "IT Equipment",
+          "account_code": "5020",
+          "debit": 20266.0,
+          "credit": 0.0
+        },
+        {
+          "description": "GST Input Credit",
+          "account_code": "2100",
+          "debit": 5127.84,
+          "credit": 0.0
+        },
+        {
+          "description": "Accounts Payable",
+          "account_code": "3000",
+          "debit": 0.0,
+          "credit": 38026.0
+        }
+      ],
+      "gst_treatment": "Input GST Credit",
+      "journal_entries": [
+        {
+          "date": "2025-01-10",
+          "particulars": "Office Supplies",
+          "debit": 12632.0,
+          "credit": 0.0
+        },
+        {
+          "date": "2025-01-10",
+          "particulars": "IT Equipment",
+          "debit": 20266.0,
+          "credit": 0.0
+        },
+        {
+          "date": "2025-01-10",
+          "particulars": "GST Input Credit",
+          "debit": 5127.84,
+          "credit": 0.0
+        },
+        {
+          "date": "2025-01-10",
+          "particulars": "Accounts Payable",
+          "debit": 0.0,
+          "credit": 38026.0
+        }
+      ]
+    },
+    "compliance_check": {
+      "gst_validation": true,
+      "hsn_code_accuracy": true,
+      "tax_calculation_correct": true,
+      "regulatory_compliance": "Compliant with GST regulations",
+      "issues_identified": [
+        "Verify invoice date format for accuracy."
+      ]
+    }
+  },
+  "validation_data": {
+    "validation_summary": {
+      "overall_score": 98,
+      "processing_quality": "High",
+      "data_integrity": true,
+      "calculation_accuracy": true,
+      "compliance_status": "Compliant with GST regulations",
+      "ready_for_accounting": true
+    },
+    "calculation_verification": {
+      "line_items_total": 38026.44,
+      "tax_calculations": {
+        "cgst_verified": true,
+        "sgst_verified": true,
+        "total_tax_correct": true
+      },
+      "grand_total_verified": true,
+      "discrepancies_found": []
+    },
+    "recommendations": {
+      "accounting_actions": [
+        "Verify and correct invoice date format to YYYY-MM-DD."
+      ],
+      "approval_required": false,
+      "priority_level": "Medium",
+      "next_steps": [
+        "Proceed with ERP and accounting system integration.",
+        "Ensure invoice date format is corrected before final entry."
+      ]
+    },
+    "integration_readiness": {
+      "erp_ready": true,
+      "accounting_system_ready": true,
+      "required_approvals": [],
+      "estimated_processing_time": "Immediate upon date correction"
+    }
+  },
+  "combined_data": {
+    "job_id": "complete_test_20260109_175248",
+    "processing_timestamp": "2026-01-09T17:54:44.741411",
+    "extracted_data": {
+      "invoice_header": {
+        "invoice_number": "Inv-5",
+        "invoice_date": "10-01-25",
+        "gstin": "07BGUPD3647XXXX",
+        "original_duplicate": "Original / Duplicate Bill"
+      },
+      "vendor_details": {
+        "name": "SUNRISE ENTERPRISE",
+        "address": "# S-50, 3rd Cross PTC Building, I.T. Estate, New Delhi-1358XX",
+        "contact_number": "+91-985689XX09, +91-98458XX38",
+        "gstin": "07BGUPD3647XXXX"
+      },
+      "billing_details": {
+        "bill_to_name": "Rajiv Gupta",
+        "bill_to_address": "# S-50, 3rd PTC Building, I.T. Estate, Delhi-1358XX",
+        "ship_to_name": "Rajiv Gupta",
+        "ship_to_address": "# S-50, 3rd PTC Building, I.T. Estate, Delhi-1358XX",
+        "state": "Delhi - 07",
+        "gstin": "HVABDAXX456"
+      },
+      "line_items": [
+        {
+          "sr_no": 1,
+          "description": "Best Ball Pen",
+          "hsn": "1495",
+          "quantity": "10 Nos",
+          "rate": 20.0,
+          "taxable": 200.0,
+          "gst_rate": "12%",
+          "gst_amount": 24.0,
+          "total": 224.0
+        },
+        {
+          "sr_no": 2,
+          "description": "Executive Diary",
+          "hsn": "1256",
+          "quantity": "8 Box",
+          "rate": 590.0,
+          "taxable": 4720.0,
+          "gst_rate": "12%",
+          "gst_amount": 566.4,
+          "total": 5286.4
+        },
+        {
+          "sr_no": 3,
+          "description": "Leather Portfolio Folder",
+          "hsn": "1258",
+          "quantity": "2 Box",
+          "rate": 630.0,
+          "taxable": 1260.0,
+          "gst_rate": "12%",
+          "gst_amount": 151.2,
+          "total": 1411.2
+        },
+        {
+          "sr_no": 4,
+          "description": "Wireless Mouse",
+          "hsn": "4589",
+          "quantity": "9 Pcs",
+          "rate": 520.0,
+          "taxable": 4680.0,
+          "gst_rate": "18%",
+          "gst_amount": 842.4,
+          "total": 5522.4
+        },
+        {
+          "sr_no": 5,
+          "description": "A4 Document File",
+          "hsn": "4587",
+          "quantity": "5 Pkt",
+          "rate": 420.0,
+          "taxable": 2100.0,
+          "gst_rate": "12%",
+          "gst_amount": 252.0,
+          "total": 2352.0
+        },
+        {
+          "sr_no": 6,
+          "description": "Power Bank 10000mAh",
+          "hsn": "1248",
+          "quantity": "9 Nos",
+          "rate": 570.0,
+          "taxable": 5130.0,
+          "gst_rate": "12%",
+          "gst_amount": 615.6,
+          "total": 5745.6
+        },
+        {
+          "sr_no": 7,
+          "description": "USB Flash Drive",
+          "hsn": "1256",
+          "quantity": "12 Pkt",
+          "rate": 999.0,
+          "taxable": 11988.0,
+          "gst_rate": "18%",
+          "gst_amount": 2157.84,
+          "total": 14145.84
+        },
+        {
+          "sr_no": 8,
+          "description": "Bluetooth Keyboard",
+          "hsn": "2536",
+          "quantity": "4 Box",
+          "rate": 750.0,
+          "taxable": 3000.0,
+          "gst_rate": "18%",
+          "gst_amount": 540.0,
+          "total": 3540.0
+        }
+      ],
+      "tax_summary": {
+        "sub_total": 32898.0,
+        "cgst_amount": 2563.92,
+        "sgst_amount": 2563.92,
+        "igst_amount": 0.0,
+        "total_gst": 5127.84
+      },
+      "totals": {
+        "total_amount": 38026.0,
+        "amount_in_words": "Rupees ThirtyEight Thousand TwentySix Only"
+      },
+      "payment_details": {
+        "payment_mode": "UPI",
+        "bank_details": {
+          "bank_name": "STATE BANK OF INDIA",
+          "branch": "Delhi",
+          "account_no": "20412XXXXX05",
+          "ifsc_code": "SBIN00XXXXX",
+          "upi_id": "yourid@upi"
+        },
+        "terms": "Reverse Charge: YES"
+      }
+    },
+    "enriched_data": {
+      "data_quality": {
+        "completeness_score": 95,
+        "accuracy_assessment": "The extracted data is mostly complete and accurate. The invoice date format is unconventional and should be verified.",
+        "missing_fields": [
+          "Invoice date format correction"
+        ],
+        "validation_notes": [
+          "GSTIN format appears correct but should be verified for authenticity.",
+          "Invoice date format '10-01-25' should be verified; expected format is 'YYYY-MM-DD'."
+        ]
+      },
+      "business_intelligence": {
+        "line_item_categories": [
+          {
+            "item": "Best Ball Pen",
+            "category": "Office Supplies",
+            "business_use": "Stationery",
+            "account_code": "5010"
+          },
+          {
+            "item": "Executive Diary",
+            "category": "Office Supplies",
+            "business_use": "Stationery",
+            "account_code": "5010"
+          },
+          {
+            "item": "Leather Portfolio Folder",
+            "category": "Office Supplies",
+            "business_use": "Stationery",
+            "account_code": "5010"
+          },
+          {
+            "item": "Wireless Mouse",
+            "category": "IT Equipment",
+            "business_use": "Hardware",
+            "account_code": "5020"
+          },
+          {
+            "item": "A4 Document File",
+            "category": "Office Supplies",
+            "business_use": "Stationery",
+            "account_code": "5010"
+          },
+          {
+            "item": "Power Bank 10000mAh",
+            "category": "IT Equipment",
+            "business_use": "Accessories",
+            "account_code": "5020"
+          },
+          {
+            "item": "USB Flash Drive",
+            "category": "IT Equipment",
+            "business_use": "Storage",
+            "account_code": "5020"
+          },
+          {
+            "item": "Bluetooth Keyboard",
+            "category": "IT Equipment",
+            "business_use": "Hardware",
+            "account_code": "5020"
+          }
+        ],
+        "expense_classification": "Office Supplies and IT Equipment",
+        "purchase_type": "Business Use",
+        "supplier_analysis": {
+          "risk_level": "Low",
+          "business_relationship": "Established Vendor",
+          "compliance_status": "GST Compliant"
+        }
+      },
+      "accounting_suggestions": {
+        "chart_of_accounts": [
+          {
+            "description": "Office Supplies",
+            "account_code": "5010",
+            "debit": 12632.0,
+            "credit": 0.0
+          },
+          {
+            "description": "IT Equipment",
+            "account_code": "5020",
+            "debit": 20266.0,
+            "credit": 0.0
+          },
+          {
+            "description": "GST Input Credit",
+            "account_code": "2100",
+            "debit": 5127.84,
+            "credit": 0.0
+          },
+          {
+            "description": "Accounts Payable",
+            "account_code": "3000",
+            "debit": 0.0,
+            "credit": 38026.0
+          }
+        ],
+        "gst_treatment": "Input GST Credit",
+        "journal_entries": [
+          {
+            "date": "2025-01-10",
+            "particulars": "Office Supplies",
+            "debit": 12632.0,
+            "credit": 0.0
+          },
+          {
+            "date": "2025-01-10",
+            "particulars": "IT Equipment",
+            "debit": 20266.0,
+            "credit": 0.0
+          },
+          {
+            "date": "2025-01-10",
+            "particulars": "GST Input Credit",
+            "debit": 5127.84,
+            "credit": 0.0
+          },
+          {
+            "date": "2025-01-10",
+            "particulars": "Accounts Payable",
+            "debit": 0.0,
+            "credit": 38026.0
+          }
+        ]
+      },
+      "compliance_check": {
+        "gst_validation": true,
+        "hsn_code_accuracy": true,
+        "tax_calculation_correct": true,
+        "regulatory_compliance": "Compliant with GST regulations",
+        "issues_identified": [
+          "Verify invoice date format for accuracy."
+        ]
+      }
+    },
+    "source_document": "SUNRISE_ENTERPRISE_Invoice_Inv-5"
+  },
+  "final_tabulation": {
+    "tabulation_summary": {
+      "document_type": "GST Invoice - Tabulated",
+      "processing_status": "Complete with Business Intelligence",
+      "validation_score": 98,
+      "ready_for_accounting": true
+    },
+    "invoice_header": {
+      "invoice_number": "Inv-5",
+      "invoice_date": "10-01-25",
+      "gstin": "07BGUPD3647XXXX",
+      "original_duplicate": "Original / Duplicate Bill",
+      "vendor": {
+        "name": "SUNRISE ENTERPRISE",
+        "address": "# S-50, 3rd Cross PTC Building, I.T. Estate, New Delhi-1358XX",
+        "contact_number": "+91-985689XX09, +91-98458XX38",
+        "gstin": "07BGUPD3647XXXX"
+      },
+      "totals": {
+        "total_amount": 38026.0,
+        "amount_in_words": "Rupees ThirtyEight Thousand TwentySix Only"
+      }
+    },
+    "enriched_line_items": [
+      {
+        "sr_no": 1,
+        "description": "Best Ball Pen",
+        "hsn_code": "1495",
+        "quantity": "10 Nos",
+        "rate": 20.0,
+        "taxable_amount": 200.0,
+        "gst_rate": "12%",
+        "gst_amount": 24.0,
+        "total_amount": 224.0,
+        "business_category": "Office Supplies",
+        "business_use": "Stationery",
+        "account_code": "5010",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 2,
+        "description": "Executive Diary",
+        "hsn_code": "1256",
+        "quantity": "8 Box",
+        "rate": 590.0,
+        "taxable_amount": 4720.0,
+        "gst_rate": "12%",
+        "gst_amount": 566.4,
+        "total_amount": 5286.4,
+        "business_category": "Office Supplies",
+        "business_use": "Stationery",
+        "account_code": "5010",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 3,
+        "description": "Leather Portfolio Folder",
+        "hsn_code": "1258",
+        "quantity": "2 Box",
+        "rate": 630.0,
+        "taxable_amount": 1260.0,
+        "gst_rate": "12%",
+        "gst_amount": 151.2,
+        "total_amount": 1411.2,
+        "business_category": "Office Supplies",
+        "business_use": "Stationery",
+        "account_code": "5010",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 4,
+        "description": "Wireless Mouse",
+        "hsn_code": "4589",
+        "quantity": "9 Pcs",
+        "rate": 520.0,
+        "taxable_amount": 4680.0,
+        "gst_rate": "18%",
+        "gst_amount": 842.4,
+        "total_amount": 5522.4,
+        "business_category": "IT Equipment",
+        "business_use": "Hardware",
+        "account_code": "5020",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 5,
+        "description": "A4 Document File",
+        "hsn_code": "4587",
+        "quantity": "5 Pkt",
+        "rate": 420.0,
+        "taxable_amount": 2100.0,
+        "gst_rate": "12%",
+        "gst_amount": 252.0,
+        "total_amount": 2352.0,
+        "business_category": "Office Supplies",
+        "business_use": "Stationery",
+        "account_code": "5010",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 6,
+        "description": "Power Bank 10000mAh",
+        "hsn_code": "1248",
+        "quantity": "9 Nos",
+        "rate": 570.0,
+        "taxable_amount": 5130.0,
+        "gst_rate": "12%",
+        "gst_amount": 615.6,
+        "total_amount": 5745.6,
+        "business_category": "IT Equipment",
+        "business_use": "Accessories",
+        "account_code": "5020",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 7,
+        "description": "USB Flash Drive",
+        "hsn_code": "1256",
+        "quantity": "12 Pkt",
+        "rate": 999.0,
+        "taxable_amount": 11988.0,
+        "gst_rate": "18%",
+        "gst_amount": 2157.84,
+        "total_amount": 14145.84,
+        "business_category": "IT Equipment",
+        "business_use": "Storage",
+        "account_code": "5020",
+        "expense_type": "Operational"
+      },
+      {
+        "sr_no": 8,
+        "description": "Bluetooth Keyboard",
+        "hsn_code": "2536",
+        "quantity": "4 Box",
+        "rate": 750.0,
+        "taxable_amount": 3000.0,
+        "gst_rate": "18%",
+        "gst_amount": 540.0,
+        "total_amount": 3540.0,
+        "business_category": "IT Equipment",
+        "business_use": "Hardware",
+        "account_code": "5020",
+        "expense_type": "Operational"
+      }
+    ],
+    "tabulated_totals": {
+      "line_items_count": 8,
+      "total_taxable_amount": 33078.0,
+      "total_gst_amount": 5149.4400000000005,
+      "grand_total": 38227.44,
+      "currency": "INR"
+    },
+    "business_summary": {
+      "categories_identified": 2,
+      "account_codes_used": [
+        "5010",
+        "5020"
+      ],
+      "expense_classification": "Office Supplies and IT Equipment",
+      "compliance_status": "Compliant with GST regulations"
+    }
+  },
+  "performance_metrics": {
+    "total_processing_time": 127.93368721008301,
+    "phase_breakdown": {
+      "phase1_extraction": {
+        "time": 104.98222637176514,
+        "tokens": 2326
+      },
+      "phase2_enrichment": {
+        "time": 10.803135395050049,
+        "tokens": 2329
+      },
+      "phase3_validation": {
+        "time": 12.123185157775879,
+        "tokens": 3245
+      }
+    },
+    "total_tokens_consumed": 7900,
+    "average_time_per_phase": 42.644562403361,
+    "tokens_per_second": 61.75074112440157
+  }
+}

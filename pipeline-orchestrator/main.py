@@ -1,9 +1,9 @@
 """
-Pipeline Orchestrator Service
-Coordinates the 3-phase microservices architecture:
-Phase 1: Data Extractor (1A + 1B) 
-Phase 2: Queue Enrichment Processor (2A + 2B + 2C + 2D)
-Phase 3: Data Combiner & Storage (3)
+Pipeline Orchestrator Service - Version 2.0
+Coordinates the restructured 3-phase microservices using simple OpenAI handlers:
+Phase 1: Data Extractor (simple handler for OCR/extraction)
+Phase 2: Queue Enrichment Processor (simple handler for enrichment/validation) 
+Phase 3: Data Combiner (simple handler for final validation/combination)
 """
 
 import os
@@ -28,24 +28,24 @@ storage_client = storage.Client()
 
 class PipelineOrchestrator:
     def __init__(self):
-        # Microservice URLs
+        # Restructured microservice URLs (v2.0 with simple handlers)
         self.data_extractor_url = os.getenv('DATA_EXTRACTOR_URL', 'https://data-extractor-812016027146.asia-south1.run.app')
         self.queue_processor_url = os.getenv('QUEUE_PROCESSOR_URL', 'https://queue-enrichment-processor-812016027146.asia-south1.run.app')  
         self.data_combiner_url = os.getenv('DATA_COMBINER_URL', 'https://data-combiner-812016027146.asia-south1.run.app')
         
-        logger.info("🎼 Pipeline Orchestrator initialized")
-        logger.info(f"📊 Data Extractor: {self.data_extractor_url}")
-        logger.info(f"⚙️ Queue Processor: {self.queue_processor_url}")
-        logger.info(f"🔗 Data Combiner: {self.data_combiner_url}")
+        logger.info("🎼 Pipeline Orchestrator v2.0 initialized with simple handler services")
+        logger.info(f"📊 Data Extractor v2.0: {self.data_extractor_url}")
+        logger.info(f"⚙️ Queue Processor v2.0: {self.queue_processor_url}")
+        logger.info(f"🔗 Data Combiner v2.0: {self.data_combiner_url}")
 
     async def process_invoice_pipeline(self, image_content: str, job_id: str) -> Dict[str, Any]:
-        """Orchestrate complete 3-phase pipeline"""
+        """Orchestrate complete 3-phase pipeline with simple handlers"""
         try:
-            logger.info(f"🚀 Starting 3-phase pipeline for job: {job_id}")
+            logger.info(f"🚀 Starting 3-phase simple handler pipeline for job: {job_id}")
             pipeline_start = datetime.now()
             
-            # Phase 1: Data Extraction (1A + 1B)
-            logger.info(f"📊 Phase 1: Data Extraction")
+            # Phase 1: Data Extraction using simple handler
+            logger.info(f"📊 Phase 1: Data Extraction (Simple Handler)")
             phase1_start = datetime.now()
             
             extraction_payload = {
@@ -71,44 +71,45 @@ class PipelineOrchestrator:
             phase1_duration = (datetime.now() - phase1_start).total_seconds()
             logger.info(f"✅ Phase 1 completed in {phase1_duration:.2f}s")
             
-            # Phase 2: Queue Processing & Standardization (2A + 2B + 2C + 2D)
-            logger.info(f"⚙️ Phase 2: Queue Processing & Standardization")
+            # Phase 2: Data Enrichment using simple handler
+            logger.info(f"⚙️ Phase 2: Data Enrichment (Simple Handler)")
             phase2_start = datetime.now()
             
-            processing_payload = {
+            enrichment_payload = {
                 'extracted_data': extraction_result['extracted_data'],
                 'job_id': job_id
             }
             
-            processing_response = requests.post(
-                f"{self.queue_processor_url}/process-extracted-data",
-                json=processing_payload,
+            enrichment_response = requests.post(
+                f"{self.queue_processor_url}/enrich-invoice-data",
+                json=enrichment_payload,
                 timeout=600
             )
             
-            if not processing_response.ok:
-                error_msg = f"Phase 2 failed: {processing_response.status_code}"
+            if not enrichment_response.ok:
+                error_msg = f"Phase 2 failed: {enrichment_response.status_code}"
                 logger.error(f"❌ {error_msg}")
                 return {'status': 'FAILED', 'phase': 2, 'error': error_msg}
             
-            processing_result = processing_response.json()
-            if processing_result['status'] != 'SUCCESS':
-                return {'status': 'FAILED', 'phase': 2, 'error': processing_result.get('error')}
+            enrichment_result = enrichment_response.json()
+            if enrichment_result['status'] != 'SUCCESS':
+                return {'status': 'FAILED', 'phase': 2, 'error': enrichment_result.get('error')}
             
             phase2_duration = (datetime.now() - phase2_start).total_seconds()
             logger.info(f"✅ Phase 2 completed in {phase2_duration:.2f}s")
             
-            # Phase 3: Data Combination & Storage (3)
-            logger.info(f"🔗 Phase 3: Data Combination & Storage")
+            # Phase 3: Data Combination using simple handler
+            logger.info(f"🔗 Phase 3: Data Combination (Simple Handler)")
             phase3_start = datetime.now()
             
             combination_payload = {
-                'processed_data': processing_result['processed_data'],
+                'extracted_data': extraction_result['extracted_data'],
+                'enriched_data': enrichment_result['enriched_data'],
                 'job_id': job_id
             }
             
             combination_response = requests.post(
-                f"{self.data_combiner_url}/combine-and-store", 
+                f"{self.data_combiner_url}/combine-invoice-data", 
                 json=combination_payload,
                 timeout=300
             )
@@ -126,23 +127,24 @@ class PipelineOrchestrator:
             total_duration = (datetime.now() - pipeline_start).total_seconds()
             
             logger.info(f"✅ Phase 3 completed in {phase3_duration:.2f}s")
-            logger.info(f"🎉 Complete pipeline finished in {total_duration:.2f}s")
+            logger.info(f"🎉 Complete simple handler pipeline finished in {total_duration:.2f}s")
             
             # Return final result
             return {
                 'status': 'SUCCESS',
                 'job_id': job_id,
-                'final_result': combination_result['combined_document'],
+                'final_result': combination_result['final_result'],
                 'pipeline_stats': {
                     'total_duration_seconds': total_duration,
                     'phase_durations': {
                         'phase1_extraction': phase1_duration,
-                        'phase2_processing': phase2_duration,
+                        'phase2_enrichment': phase2_duration,
                         'phase3_combination': phase3_duration
                     },
-                    'extraction_stats': extraction_result.get('extraction_stats', {}),
-                    'processing_stats': processing_result.get('processing_stats', {}),
-                    'storage_stats': combination_result.get('summary', {})
+                    'extraction_stats': extraction_result.get('processing_stats', {}),
+                    'enrichment_stats': enrichment_result.get('processing_stats', {}),
+                    'combination_stats': combination_result.get('processing_stats', {}),
+                    'handler_version': '2.0.0'
                 }
             }
             
@@ -205,8 +207,9 @@ def health_check():
     return jsonify({
         'service': 'pipeline-orchestrator',
         'status': 'healthy',
-        'version': '1.0.0',
-        'architecture': 'microservices_3_phase'
+        'version': '2.0.0',
+        'architecture': 'simple_handler_microservices',
+        'phases': ['data_extraction_v2', 'data_enrichment_v2', 'data_combination_v2']
     })
 
 @app.route('/health/services', methods=['GET'])

@@ -9,6 +9,11 @@ export const API_CONFIG = {
   ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-812016027146.asia-south1.run.app',
   QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-812016027146.asia-south1.run.app',
   
+  // NEW: Functional Microservices
+  EXTRACTION_API_URL: import.meta.env.VITE_EXTRACTION_API_URL || 'https://extraction-service-812016027146.asia-south1.run.app',
+  ENRICHMENT_API_URL: import.meta.env.VITE_ENRICHMENT_API_URL || 'https://enrichment-service-812016027146.asia-south1.run.app',
+  ANALYSIS_API_URL: import.meta.env.VITE_ANALYSIS_API_URL || 'https://analysis-service-812016027146.asia-south1.run.app',
+  
   // Endpoints
   ENDPOINTS: {
     // Initial API
@@ -33,7 +38,13 @@ export const API_CONFIG = {
     PROCESS_FILE_CHUNKED: '/process-invoice-chunked',
     GET_RESULTS: '/get-results',
     JOB_STATUS: '/job-status',
-    QUEUE_STATUS: '/queue-status'
+    QUEUE_STATUS: '/queue-status',
+    
+    // NEW: Functional Services
+    EXTRACT: '/extract',
+    ENRICH: '/enrich', 
+    ANALYZE: '/analyze',
+    TABULATE: '/tabulate'
   }
 } as const
 
@@ -72,7 +83,16 @@ export const getApiUrl = {
   getResults: (userEmail: string) => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.GET_RESULTS}/${userEmail}`,
   jobStatus: (jobId: string) => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.JOB_STATUS}/${jobId}`,
   queueStatus: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.QUEUE_STATUS}`,
-  queueHealth: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`
+  queueHealth: () => `${API_CONFIG.QUEUE_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
+  
+  // NEW: Functional Services endpoints  
+  extractData: () => `${API_CONFIG.EXTRACTION_API_URL}${API_CONFIG.ENDPOINTS.EXTRACT}`,
+  enrichData: () => `${API_CONFIG.ENRICHMENT_API_URL}${API_CONFIG.ENDPOINTS.ENRICH}`,
+  analyzeData: () => `${API_CONFIG.ANALYSIS_API_URL}${API_CONFIG.ENDPOINTS.ANALYZE}`,
+  tabulateData: () => `${API_CONFIG.ANALYSIS_API_URL}${API_CONFIG.ENDPOINTS.TABULATE}`,
+  extractionHealth: () => `${API_CONFIG.EXTRACTION_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
+  enrichmentHealth: () => `${API_CONFIG.ENRICHMENT_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`,
+  analysisHealth: () => `${API_CONFIG.ANALYSIS_API_URL}${API_CONFIG.ENDPOINTS.HEALTH}`
 }
 
 export default API_CONFIG

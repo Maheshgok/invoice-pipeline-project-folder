@@ -267,16 +267,26 @@ def upload_file():
             # Extract token from header for Cloud Tasks authentication
             auth_token = auth_header.split(' ')[1] if auth_header.startswith('Bearer ') else auth_header
             
+            # Check if user wants to use functional services (default false for stability)
+            # Handle both FormData and JSON requests
+            if hasattr(request, 'json') and request.json:
+                use_functional = request.json.get('use_functional_services', False)
+            else:
+                # Check form data for the flag
+                use_functional = request.form.get('use_functional_services', 'false').lower() == 'true'
+            
             # Create Cloud Task for invoice processing
             task_name = cloud_tasks_manager.create_processing_task(
                 job_id=job_id,
                 bucket_path=f"{user_bucket_name}/{filename}",
                 user_context=user_context,
                 auth_token=auth_token,
-                delay_seconds=5  # Small delay to ensure file is fully uploaded
+                delay_seconds=5,  # Small delay to ensure file is fully uploaded
+                use_functional_services=use_functional
             )
             
-            logger.info(f"✅ Created Cloud Task: {task_name}")
+            processing_mode = "functional_services" if use_functional else "traditional_analysis"
+            logger.info(f"✅ Created Cloud Task: {task_name} (mode: {processing_mode})")
             logger.info(f"📋 File uploaded and queued for processing via Cloud Tasks")
             
         except Exception as task_error:
@@ -296,7 +306,8 @@ def upload_file():
             "gcsPath": f"gs://{user_bucket_name}/{filename}",
             "bucket_path": f"{user_bucket_name}/{filename}",  # Add this for queue processor
             "task_queued": True,  # Indicate task was queued
-            "processing_mode": "cloud_tasks_user_isolated"  # Indicate we're using user-isolated buckets
+            "processing_mode": "cloud_tasks_user_isolated",  # Indicate we're using user-isolated buckets
+            "using_functional_services": use_functional  # Show which processing mode was used
         }), 200
         
     except Exception as e:

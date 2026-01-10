@@ -109,7 +109,8 @@ class CloudTasksManager:
         bucket_path: str,
         user_context: Dict[str, Any],
         auth_token: str,
-        delay_seconds: int = 0
+        delay_seconds: int = 0,
+        use_functional_services: bool = False
     ) -> str:
         """
         Create a Cloud Task for invoice processing
@@ -120,6 +121,7 @@ class CloudTasksManager:
             user_context: Full user context including email, UID, and organization info
             auth_token: Firebase ID token for authentication
             delay_seconds: Optional delay before task execution
+            use_functional_services: Whether to use new functional microservices
         
         Returns:
             task_name: Full Cloud Tasks task name
@@ -144,7 +146,8 @@ class CloudTasksManager:
                 "timestamp": datetime.utcnow().isoformat(),
                 "source": "cloud_tasks_manager",
                 "expected_user_folder": user_context['uid'][:8],  # For path validation
-                "queue_type": "user_isolated"  # Indicate this is a user-isolated queue
+                "queue_type": "user_isolated",  # Indicate this is a user-isolated queue
+                "use_functional_services": use_functional_services  # Route to functional services
             }
             
             # Create HTTP request for the task

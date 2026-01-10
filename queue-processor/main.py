@@ -16,6 +16,9 @@ from invoice_processing_service import InvoiceProcessingService
 from queue_based_chunked_processor import QueueBasedChunkedProcessor
 from test_connection import test_openai_connection
 
+# Import new functional processor
+from functional_processor import functional_processor
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -233,13 +236,27 @@ def process_task():
         
         logger.info(f"📨 Received Cloud Task: {job_id} from {user_context['email']}")
         
-        # Step 3: Process the invoice using the business logic service
-        response_data, status_code = processing_service.process_invoice_task(
-            job_id=job_id,
-            bucket_path=bucket_path,
-            user_context=user_context,  # Pass full user context instead of just email
-            source=source
-        )
+        # Step 3: Check if should use functional services
+        use_functional_services = validated_payload.get('use_functional_services', False)
+        
+        if use_functional_services:
+            logger.info(f"🚀 Processing with functional services for job: {job_id}")
+            # Route to functional processing (will be added to processing service)
+            response_data, status_code = processing_service.process_invoice_functional(
+                job_id=job_id,
+                bucket_path=bucket_path,
+                user_context=user_context,
+                source=source
+            )
+        else:
+            logger.info(f"📋 Processing with traditional analysis for job: {job_id}")
+            # Use existing processing logic
+            response_data, status_code = processing_service.process_invoice_task(
+                job_id=job_id,
+                bucket_path=bucket_path,
+                user_context=user_context,  # Pass full user context instead of just email
+                source=source
+            )
         
         return jsonify(response_data), status_code
         
@@ -515,13 +532,76 @@ def process_invoice_chunked():
             "timestamp": datetime.now().isoformat()
         }), 500
 
-@app.errorhandler(404)
-def not_found(error):
-    """Handle 404 errors gracefully"""
-    return jsonify({
-        "status": "error",
-        "error": "Endpoint not found",
-        "available_endpoints": ["/health", "/process-task", "/stats", "/cleanup"],
+@app.route('/process-functional', methods=['POST'])
+def process_functional():
+    """
+    New functional processing endpoint using optimized handlers.
+    Designed for maximum memory efficiency and performance.
+    """
+    try:
+        logger.info("🚀 Functional processing endpoint called")
+        
+        # Get request data
+        data = request.get_json()
+        if not data:
+            return jsonify({
+                "status": "error",
+                "error": "No JSON data provided"
+            }), 400
+        
+        # Extract required fields
+        job_id = data.get('job_id')
+        image_data = data.get('image_data')
+        
+        if not job_id:
+            return jsonify({
+                "status": "error",
+                "error": "job_id is required"
+            }), 400
+        
+        if not image_data:
+            return jsonify({
+                "status": "error",
+                "error": "image_data is required"
+            }), 400
+        
+        logger.info(f"🎯 Processing job {job_id} with functional handlers")
+        
+        # Process using functional pipeline
+        result = functional_processor.process_invoice_complete_pipeline(
+            job_id=job_id,
+            image_data=image_data
+        )
+        
+        if result.get('status') == 'ERROR':
+            logger.error(f"❌ Functional processing failed: {result.get('error')}")
+            return jsonify(result), 500
+        
+        logger.info(f"✅ Functional processing completed for {job_id}")
+        return jsonify(result), 200
+        
+    except Exception as e:
+        logger.error(f"🚨 Functional processing endpoint error: {e}", exc_info=True)
+        return jsonify({
+            "status": "error",
+            "error": "Functional processing failed",
+            "message": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+
+@app.route('/health-functional', methods=['GET'])
+def health_functional():
+    """Health check for functional processor specifically."""
+    try:
+        health_status = functional_processor.health_check()
+        return jsonify(health_status), 200 if health_status.get('status') == 'healthy' else 503
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "error": str(e),
+            "timestamp": datetime.now().isoformat()
+        }), 500
+        "available_endpoints": ["/health", "/process-task", "/process-functional", "/health-functional", "/stats", "/cleanup"],
         "timestamp": datetime.now().isoformat()
     }), 404
 

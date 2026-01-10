@@ -4,6 +4,7 @@ import { authService } from '../services/auth'
 import { firestoreService, InvoiceProcessingResult, JournalEntryData } from '../services/firestore'
 import { getApiUrl } from '../config/api'
 import { shouldDisplayInTable } from '../config/features'
+import { processingModeService } from '../services/processingModeService'
 
 interface UploadedFile {
   id: string
@@ -149,6 +150,10 @@ export const useMultiUpload = () => {
       // Step 3: Upload file to GCP initial-api (your existing Cloud Run service)
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
+      
+      // Add functional services flag based on processing mode
+      const useFunctionalServices = processingModeService.getMode() === 'functional'
+      formData.append('use_functional_services', useFunctionalServices.toString())
 
       const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',

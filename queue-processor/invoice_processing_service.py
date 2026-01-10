@@ -211,3 +211,67 @@ class InvoiceProcessingService:
                 "error": str(e),
                 "timestamp": datetime.now().isoformat()
             }
+    
+    def process_invoice_functional(self, job_id: str, bucket_path: str, user_context: Dict[str, Any], source: str = 'cloud_tasks_functional') -> Tuple[Dict[str, Any], int]:
+        """
+        Process invoice using functional microservices while maintaining user isolation
+        
+        Args:
+            job_id: Unique job identifier
+            bucket_path: GCS path to the invoice file  
+            user_context: User context including email, UID, and organization info
+            source: Source of the task (for tracking)
+        
+        Returns:
+            Tuple of (response_dict, status_code)
+        """
+        try:
+            # Import functional processing manager
+            from functional_processing_manager import FunctionalProcessingManager
+            
+            # Initialize functional processor
+            functional_processor = FunctionalProcessingManager()
+            
+            self.logger.info(f"🚀 Starting functional processing for job: {job_id}")
+            
+            # Process using functional services
+            result = functional_processor.process_invoice_functional(
+                job_id=job_id,
+                bucket_path=bucket_path,
+                user_context=user_context,
+                source=source
+            )
+            
+            return {
+                "status": "success",
+                "job_id": job_id,
+                "message": "Invoice processed successfully using functional services",
+                "results": result,
+                "processing_mode": "functional_services",
+                "timestamp": datetime.now().isoformat()
+            }, 200
+            
+        except Exception as e:
+            self.logger.error(f"❌ Functional processing failed for job {job_id}: {e}")
+            
+            # Store error in Firestore for frontend display
+            error_result = {
+                "job_id": job_id,
+                "status": "error",
+                "error_message": str(e),
+                "processing_mode": "functional_services",
+                "timestamp": datetime.now().isoformat()
+            }
+            
+            try:
+                self.result_manager.store_result(error_result, user_context)
+            except Exception as store_error:
+                self.logger.error(f"❌ Failed to store error result: {store_error}")
+            
+            return {
+                "status": "error", 
+                "job_id": job_id,
+                "error": str(e),
+                "processing_mode": "functional_services",
+                "timestamp": datetime.now().isoformat()
+            }, 500

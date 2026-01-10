@@ -5,6 +5,7 @@ import { finalSimplifiedFirestoreService } from '../services/final-simplified-fi
 import { archiveService } from '../services/archive'
 import { getApiUrl } from '../config/api'
 import { shouldDisplayInTable } from '../config/features'
+import { processingModeService } from '../services/processingModeService'
 
 // Define interface locally to avoid dependencies
 interface InvoiceProcessingResult {
@@ -227,6 +228,10 @@ export const useRealtimeUpload = () => {
       // Step 3: Upload file to initial-api
       const formData = new FormData()
       formData.append('file', uploadedFile.file)
+      
+      // Add functional services flag based on processing mode
+      const useFunctionalServices = processingModeService.getMode() === 'functional'
+      formData.append('use_functional_services', useFunctionalServices.toString())
 
       const uploadResponse = await fetch(getApiUrl.uploadInvoice(), {
         method: 'POST',

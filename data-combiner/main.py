@@ -1,137 +1,171 @@
 """
-Data Combiner Service - Non-AI Cloud Run
-Combines journal entry chunks from Agent 2 queue processing
-Enhanced with Stage 3 functionality for microservices architecture
+Data Combiner Service - Phase 3
+Restructured to use simple OpenAI handler
+Combines and validates journal entries with AI assistance
 """
+import os
+import sys
 import json
 import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
 from typing import List, Dict, Any
 
+# Add shared directory to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from simple_openai_handler import create_analysis_handler
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+class DataCombinerService:
+    def __init__(self):
+        """Initialize with simple OpenAI handler for final analysis"""
+        self.openai_handler = create_analysis_handler("data-combiner")
+        logger.info("🔧 Data Combiner Service initialized with simple handler")
+        
+        self.validation_prompt = """
+Review and validate these combined journal entries for accuracy and compliance.
+
+Combined data: {combined_data}
+
+Validate:
+1. Double-entry balance (total debits = total credits)
+2. Account code consistency
+3. GST calculation accuracy
+4. Missing or duplicate entries
+5. Compliance with Indian accounting standards
+
+Return JSON format:
+{{
+  "validation_summary": {{
+    "balance_check": true,
+    "gst_accuracy": true,
+    "compliance_score": 95,
+    "issues_found": [],
+    "recommendations": []
+  }},
+  "corrected_entries": [],
+  "final_totals": {{
+    "total_debits": 0,
+    "total_credits": 0,
+    "gst_total": 0
+  }}
+}}
+"""
+    
+    def combine_and_validate_data(self, extracted_data: dict, enriched_data: dict, job_id: str) -> dict:
+        """Combine extracted and enriched data with AI validation"""
+        try:
+            logger.info(f"🔄 Combining data for job: {job_id}")
+            
+            # Combine the data
+            combined_data = {
+                'extracted_invoice_data': extracted_data,
+                'enriched_data': enriched_data,
+                'processing_metadata': {
+                    'combined_at': datetime.utcnow().isoformat(),
+                    'job_id': job_id,
+                    'combiner_version': '2.0.0'
+                }
+            }
+            
+            # AI-powered validation
+            logger.info("🤖 Running AI validation on combined data")
+            validation_result = self.openai_handler.call_api(
+                prompt=self.validation_prompt.format(combined_data=json.dumps(combined_data, indent=2)),
+                context=f"Validation_{job_id}"
+            )
+            
+            validation_summary = {}
+            if validation_result['success']:
+                try:
+                    validation_summary = json.loads(validation_result['content'])
+                except json.JSONDecodeError:
+                    validation_summary = {"validation_summary": {"parse_error": validation_result['content']}}
+            
+            # Final combined result
+            final_result = {
+                'combined_data': combined_data,
+                'ai_validation': validation_summary.get('validation_summary', {}),
+                'processing_stats': {
+                    'validation_tokens': validation_result['tokens_used'] if validation_result['success'] else 0,
+                    'processing_time': datetime.utcnow().isoformat()
+                }
+            }
+            
+            logger.info(f"✅ Data combination completed for {job_id}")
+            
+            return {
+                'status': 'SUCCESS',
+                'job_id': job_id,
+                'final_result': final_result
+            }
+            
+        except Exception as e:
+            logger.error(f"🚨 Error in data combination: {str(e)}")
+            return {
+                'status': 'FAILED',
+                'job_id': job_id,
+                'error': str(e)
+            }
+
+# Initialize service
+combiner_service = DataCombinerService()
+
 @app.route('/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
     return jsonify({
-        'status': 'healthy',
         'service': 'data-combiner',
-        'version': '1.0.0'
-    }), 200
+        'status': 'healthy',
+        'version': '2.0.0',
+        'handler': 'simple_openai_handler',
+        'capabilities': ['data_combination', 'ai_validation', 'compliance_check']
+    })
 
-@app.route('/combine-journal-chunks', methods=['POST'])
-def combine_journal_chunks():
-    """
-    Combine multiple journal entry chunks from Agent 2 queue processing
-    
-    Input: {
-        "job_id": "unique_job_id",
-        "journal_chunks": [
-            [
-                {"account_name": "Purchase", "debit": 1000, "credit": 0, ...},
-                {"account_name": "CGST Input", "debit": 90, "credit": 0, ...}
-            ],
-            [
-                {"account_name": "Purchase", "debit": 2000, "credit": 0, ...},
-                {"account_name": "CGST Input", "debit": 180, "credit": 0, ...}
-            ]
-        ]
-    }
-    
-    Output: {
-        "combined_journal_entries": [...],
-        "totals": {...},
-        "chunk_stats": {...}
-    }
-    """
+@app.route('/combine-invoice-data', methods=['POST'])
+def combine_invoice_data():
+    """Main combination endpoint using simple handler"""
     try:
         data = request.get_json()
         if not data:
-            return jsonify({'error': 'No JSON data provided'}), 400
+            return jsonify({
+                'status': 'error',
+                'error': 'No JSON data provided'
+            }), 400
         
-        job_id = data.get('job_id')
-        journal_chunks = data.get('journal_chunks', [])
+        extracted_data = data.get('extracted_data')
+        enriched_data = data.get('enriched_data') 
+        job_id = data.get('job_id', 'unknown')
         
-        if not job_id:
-            return jsonify({'error': 'job_id is required'}), 400
+        if not extracted_data or not enriched_data:
+            return jsonify({
+                'status': 'error',
+                'error': 'Both extracted_data and enriched_data are required'
+            }), 400
+        
+        logger.info(f"📥 Processing combination request for job: {job_id}")
+        
+        # Combine data through simple handler service
+        result = combiner_service.combine_and_validate_data(extracted_data, enriched_data, job_id)
+        
+        if result['status'] == 'SUCCESS':
+            return jsonify(result), 200
+        else:
+            return jsonify(result), 500
             
-        if not journal_chunks:
-            return jsonify({'error': 'journal_chunks array is required'}), 400
-        
-        logger.info(f"🔄 Combining journal chunks for job {job_id}")
-        logger.info(f"📦 Processing {len(journal_chunks)} chunks")
-        
-        # Combine all journal entries from all chunks
-        combined_entries = []
-        total_debit = 0.0
-        total_credit = 0.0
-        
-        for chunk_idx, chunk in enumerate(journal_chunks):
-            logger.info(f"📋 Processing chunk {chunk_idx + 1}: {len(chunk)} entries")
-            
-            for entry in chunk:
-                combined_entries.append(entry)
-                total_debit += float(entry.get('debit', 0))
-                total_credit += float(entry.get('credit', 0))
-        
-        # Validate balance
-        balance_difference = abs(total_debit - total_credit)
-        is_balanced = balance_difference < 0.01  # Allow for rounding errors
-        
-        logger.info(f"💰 Total Debit: {total_debit}, Total Credit: {total_credit}")
-        logger.info(f"⚖️ Balanced: {is_balanced}")
-        
-        result = {
-            'job_id': job_id,
-            'combined_journal_entries': combined_entries,
-            'totals': {
-                'total_debit': round(total_debit, 2),
-                'total_credit': round(total_credit, 2),
-                'balanced': is_balanced,
-                'difference': round(balance_difference, 2)
-            },
-            'chunk_stats': {
-                'total_chunks_processed': len(journal_chunks),
-                'total_entries': len(combined_entries),
-                'entries_per_chunk': [len(chunk) for chunk in journal_chunks]
-            },
-            'timestamp': '2026-01-08T00:00:00Z'
-        }
-        
-        logger.info(f"✅ Successfully combined {len(combined_entries)} journal entries")
-        return jsonify(result), 200
-        
     except Exception as e:
-        logger.error(f"❌ Error combining journal chunks: {str(e)}")
+        logger.error(f"🚨 Critical error in combination endpoint: {str(e)}")
         return jsonify({
-            'error': 'Internal server error',
-            'details': str(e)
-        }), 500
-
-@app.route('/validate-journal-entries', methods=['POST'])
-def validate_journal_entries():
-    """
-    Validate journal entries for accounting rules
-    """
-    try:
-        data = request.get_json()
-        journal_entries = data.get('journal_entries', [])
-        
-        if not journal_entries:
-            return jsonify({'error': 'journal_entries array is required'}), 400
-        
-        total_debit = sum(float(entry.get('debit', 0)) for entry in journal_entries)
-        total_credit = sum(float(entry.get('credit', 0)) for entry in journal_entries)
-        
-        balance_difference = abs(total_debit - total_credit)
-        is_balanced = balance_difference < 0.01
-        
-        # Check for required fields
-        validation_errors = []
+            'status': 'error',
+            'error': 'Critical system failure',
+            'message': str(e)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 8080))
+    app.run(host='0.0.0.0', port=port, debug=False)
         for i, entry in enumerate(journal_entries):
             if not entry.get('account_name'):
                 validation_errors.append(f"Entry {i+1}: Missing account_name")

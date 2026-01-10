@@ -1,17 +1,18 @@
 """
 Data Extractor Service - Phase 1 (Stages 1A + 1B)
 Specialized Cloud Run service for invoice data extraction only
-Optimized for OCR and data parsing tasks
+Using simple OpenAI handler with runtime prompts
 """
 
 import os
+import sys
 import json
 import logging
 from flask import Flask, request, jsonify
-from openai import OpenAI
-from google.cloud import secretmanager
-import tiktoken
-import time
+
+# Add shared directory to path
+sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
+from simple_openai_handler import create_extraction_handler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,47 +22,36 @@ app = Flask(__name__)
 
 class DataExtractorService:
     def __init__(self):
-        # Initialize OpenAI client with DataAnalyst1 key for extraction
-        self.client = self._initialize_openai_client()
-        self.encoding = tiktoken.encoding_for_model("gpt-4o")
+        """Initialize with simple OpenAI handler"""
+        self.openai_handler = create_extraction_handler("data-extractor")
+        logger.info("🔧 Data Extractor Service initialized with simple handler")
         
-        # Extraction prompts
+        # Define prompts as class variables (can be modified at runtime)
         self.header_prompt = """
-You are a precise data extraction specialist. Extract ONLY header/document information from this invoice image.
+Extract ONLY header/document information from this invoice image.
 
-EXTRACT THESE FIELDS ONLY:
-- Vendor/Supplier details (name, address, GST number)
-- Customer/Bill-to details (name, address, GST number)  
-- Invoice metadata (number, date, due date)
-- Financial totals (subtotal, tax amounts, total amount)
-- Payment terms and conditions
+EXTRACT:
+- Vendor details (name, address, GST)
+- Customer details (name, address, GST)
+- Invoice metadata (number, date, due_date)
+- Financial totals (subtotal, tax, total)
 
-DO NOT EXTRACT LINE ITEMS - Focus only on document header information.
-
-Return JSON format:
+Return JSON:
 {
   "vendor": {"name": "", "address": "", "gst_number": ""},
   "customer": {"name": "", "address": "", "gst_number": ""},
   "invoice_details": {"number": "", "date": "", "due_date": ""},
-  "totals": {"subtotal": 0, "tax_amount": 0, "total_amount": 0},
-  "payment_terms": ""
+  "totals": {"subtotal": 0, "tax_amount": 0, "total_amount": 0}
 }
 """
         
         self.line_items_prompt = """
-You are a precise data extraction specialist. Extract ONLY the line items table from this invoice image.
+Extract ONLY line items from this invoice image.
 
-EXTRACT THESE FIELDS FOR EACH LINE ITEM:
-- Item description/name
-- Quantity
-- Unit price
-- Line total/amount
-- Tax rate (if applicable)
-- HSN/SAC code (if applicable)
+EXTRACT each line item:
+- Description, quantity, unit_price, total, tax_rate, hsn_code
 
-DO NOT EXTRACT HEADER INFORMATION - Focus only on tabular line item data.
-
-Return JSON format:
+Return JSON:
 {
   "line_items": [
     {
@@ -76,98 +66,17 @@ Return JSON format:
 }
 """
 
-    def _initialize_openai_client(self) -> OpenAI:
-        """Initialize OpenAI client with DataAnalyst1 key"""
-        try:
-            # Use DataAnalyst1 key for extraction tasks
-            api_key = "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"
-            
-            client = OpenAI(api_key=api_key, base_url="https://api.openai.com/v1", timeout=300.0, max_retries=3)
-            
-            logger.info("🔑 Data Extractor initialized with DataAnalyst1 key")
-            return client
-            
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize OpenAI client: {str(e)}")
-            raise
-
-    def _count_tokens(self, text: str) -> int:
-        """Count tokens in text"""
-        try:
-            return len(self.encoding.encode(text))
-        except Exception:
-            return len(text) // 4
-
-    def _extract_data(self, prompt: str, image_content: str, stage_name: str) -> dict:
-        """Extract data using OpenAI Vision API"""
-        try:
-            # Token management
-            input_tokens = self._count_tokens(prompt)
-            logger.info(f"📊 {stage_name} - Input tokens: {input_tokens}")
-            
-            if input_tokens > 6000:  # Conservative limit for extraction
-                logger.warning(f"⚠️ {stage_name} - High token count, may truncate")
-            
-            logger.info(f"🤖 Calling OpenAI Vision API for {stage_name}")
-            
-            # Properly format message for OpenAI Vision API
-            response = self.client.chat.completions.create(
-                model="gpt-4o",
-                messages=[{
-                    "role": "user", 
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_content}"
-                            }
-                        }
-                    ]
-                }],
-                temperature=0.1
-            )
-            
-            result_text = response.choices[0].message.content.strip()
-            
-            # Parse JSON response
-            try:
-                result = json.loads(result_text)
-                logger.info(f"✅ {stage_name} extraction completed")
-                return {
-                    'success': True,
-                    'data': result,
-                    'tokens_used': response.usage.total_tokens,
-                    'stage': stage_name
-                }
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ {stage_name} JSON parse error: {str(e)}")
-                return {
-                    'success': False,
-                    'error': f"JSON parse failed: {str(e)}",
-                    'raw_response': result_text,
-                    'stage': stage_name
-                }
-                
-        except Exception as e:
-            logger.error(f"❌ {stage_name} extraction failed: {str(e)}")
-            return {
-                'success': False,
-                'error': str(e),
-                'stage': stage_name
-            }
-
     def extract_invoice_data(self, image_content: str, job_id: str) -> dict:
-        """Extract both header and line items from invoice"""
+        """Extract both header and line items using simple handler"""
         try:
             logger.info(f"🚀 Starting data extraction for job: {job_id}")
             
             # Stage 1A: Extract header data
             logger.info("📋 Stage 1A: Extracting header data")
-            header_result = self._extract_data(
-                self.header_prompt, 
-                image_content, 
-                "Stage_1A_Header"
+            header_result = self.openai_handler.call_api(
+                prompt=self.header_prompt,
+                image_base64=image_content,
+                context=f"Header_{job_id}"
             )
             
             if not header_result['success']:
@@ -178,30 +87,43 @@ Return JSON format:
                     'job_id': job_id
                 }
             
+            # Parse header JSON
+            try:
+                header_data = json.loads(header_result['content'])
+            except json.JSONDecodeError:
+                header_data = {"error": "JSON parse failed", "raw": header_result['content']}
+            
             # Stage 1B: Extract line items
             logger.info("📦 Stage 1B: Extracting line items")
-            line_items_result = self._extract_data(
-                self.line_items_prompt,
-                image_content,
-                "Stage_1B_LineItems"
+            line_items_result = self.openai_handler.call_api(
+                prompt=self.line_items_prompt,
+                image_base64=image_content,
+                context=f"LineItems_{job_id}"
             )
             
             if not line_items_result['success']:
                 return {
                     'status': 'FAILED',
-                    'stage': '1B', 
+                    'stage': '1B',
                     'error': line_items_result['error'],
                     'job_id': job_id
                 }
             
-            # Success - return extracted data
+            # Parse line items JSON
+            try:
+                line_items_data = json.loads(line_items_result['content'])
+                line_items = line_items_data.get('line_items', [])
+            except json.JSONDecodeError:
+                line_items = []
+            
+            # Success response
             extracted_data = {
-                'header_data': header_result['data'],
-                'line_items': line_items_result['data'].get('line_items', [])
+                'header_data': header_data,
+                'line_items': line_items
             }
             
             logger.info(f"✅ Data extraction completed for {job_id}")
-            logger.info(f"📊 Extracted {len(extracted_data['line_items'])} line items")
+            logger.info(f"📊 Extracted {len(line_items)} line items")
             
             return {
                 'status': 'SUCCESS',
@@ -210,7 +132,7 @@ Return JSON format:
                 'extraction_stats': {
                     'header_tokens': header_result['tokens_used'],
                     'line_items_tokens': line_items_result['tokens_used'],
-                    'total_line_items': len(extracted_data['line_items'])
+                    'total_line_items': len(line_items)
                 }
             }
             
@@ -222,7 +144,7 @@ Return JSON format:
                 'error': str(e)
             }
 
-# Initialize service
+# Initialize service with simple handler
 extractor_service = DataExtractorService()
 
 @app.route('/health', methods=['GET'])
@@ -231,13 +153,14 @@ def health_check():
     return jsonify({
         'service': 'data-extractor',
         'status': 'healthy',
-        'version': '1.0.0',
+        'version': '2.0.0',
+        'handler': 'simple_openai_handler',
         'capabilities': ['header_extraction', 'line_items_extraction']
     })
 
 @app.route('/extract-invoice-data', methods=['POST'])
 def extract_invoice_data():
-    """Main extraction endpoint for Stages 1A + 1B"""
+    """Main extraction endpoint using simple handler"""
     try:
         data = request.get_json()
         if not data:
@@ -257,7 +180,7 @@ def extract_invoice_data():
         
         logger.info(f"📥 Processing extraction request for job: {job_id}")
         
-        # Extract data through service
+        # Extract data through simple handler service
         result = extractor_service.extract_invoice_data(image_content, job_id)
         
         if result['status'] == 'SUCCESS':
