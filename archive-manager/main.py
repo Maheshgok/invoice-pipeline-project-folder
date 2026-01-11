@@ -24,14 +24,9 @@ from firebase_admin import auth as firebase_auth, credentials
 # Initialize Flask app
 app = Flask(__name__)
 
-# SECURITY FIX: Restrict CORS to allowed origins only
-allowed_origins = [
-    "https://invoiceparse.netlify.app",
-    "https://profound-babka-8bbaa6.netlify.app", 
-    "http://localhost:3000",
-    "http://localhost:3001"
-]
-CORS(app, origins=allowed_origins, supports_credentials=True)
+# CORS configuration - permissive for frontend access
+allowed_origins = ["*"]  # Allow all origins for now
+CORS(app, origins=allowed_origins, supports_credentials=False)
 
 # Initialize Firebase Admin SDK
 if not firebase_admin._apps:

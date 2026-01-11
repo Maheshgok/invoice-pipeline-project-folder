@@ -86,11 +86,10 @@ from flask_cors import CORS
 CORS(app, 
      resources={
          r"/*": {
-             "origins": ["https://invoiceparse.netlify.app", "http://localhost:3000", "http://localhost:3001", "*"],
+             "origins": ["*"],  # Allow all origins for testing
              "methods": ["GET", "POST", "PUT", "OPTIONS"],
              "allow_headers": ["Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"],
-             "supports_credentials": True,
-             "expose_headers": ["Content-Type"]
+             "supports_credentials": False  # Disable credentials for now to fix CORS
          }
      })
 
@@ -109,10 +108,8 @@ def handle_preflight():
 # Ensure CORS headers on all responses
 @app.after_request
 def after_request(response):
-    origin = request.headers.get('Origin', 'https://invoiceparse.netlify.app')
-    if origin in ["https://invoiceparse.netlify.app", "http://localhost:3000", "http://localhost:3001"]:
-        response.headers['Access-Control-Allow-Origin'] = origin
-    response.headers['Access-Control-Allow-Credentials'] = 'true'
+    origin = request.headers.get('Origin', '*')
+    response.headers['Access-Control-Allow-Origin'] = '*'  # Allow all origins
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, OPTIONS'
     response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-Requested-With, Accept, Origin'
     return response

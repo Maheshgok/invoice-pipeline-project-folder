@@ -4,8 +4,8 @@
  */
 
 export const API_CONFIG = {
-  // Cloud Run Services - Updated with actual deployed URLs
-  INITIAL_API_URL: import.meta.env.VITE_INITIAL_API_URL || 'https://initial-api-812016027146.asia-south1.run.app',
+  // Cloud Run Services - Updated with actual deployed URLs (correct bhcetby62q pattern)
+  INITIAL_API_URL: import.meta.env.VITE_INITIAL_API_URL || 'https://initial-api-bhcetby62q-el.a.run.app',
   ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-bhcetby62q-el.a.run.app',
   QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-bhcetby62q-el.a.run.app',
   

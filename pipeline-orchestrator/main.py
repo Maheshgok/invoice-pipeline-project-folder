@@ -34,6 +34,25 @@ if not firebase_admin._apps:
 
 app = Flask(__name__)
 
+# Configure CORS for potential frontend access
+from flask_cors import CORS
+CORS(app, 
+     resources={
+         r"/*": {
+             "origins": ["*"],
+             "methods": ["GET", "POST", "PUT", "OPTIONS"],
+             "allow_headers": ["Authorization", "Content-Type", "X-Requested-With", "Accept", "Origin"],
+             "supports_credentials": False
+         }
+     })
+
+@app.after_request
+def after_request(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type, X-Requested-With, Accept, Origin'
+    return response
+
 # Initialize GCS client
 storage_client = storage.Client()
 
@@ -89,11 +108,11 @@ def verify_auth_token(auth_header):
 
 class PipelineOrchestrator:
     def __init__(self):
-        # Restructured microservice URLs (v2.0 with simple handlers)
-        self.data_extractor_url = os.getenv('DATA_EXTRACTOR_URL', 'https://data-extractor-812016027146.asia-south1.run.app')
-        self.queue_processor_url = os.getenv('QUEUE_PROCESSOR_URL', 'https://queue-enrichment-processor-812016027146.asia-south1.run.app')  
-        self.data_combiner_url = os.getenv('DATA_COMBINER_URL', 'https://data-combiner-812016027146.asia-south1.run.app')
-        self.field_standardizer_url = os.getenv('FIELD_STANDARDIZER_URL', 'https://field-standardizer-812016027146.asia-south1.run.app')
+        # Restructured microservice URLs (v2.0 with simple handlers) - Updated URLs
+        self.data_extractor_url = os.getenv('DATA_EXTRACTOR_URL', 'https://data-extractor-bhcetby62q-el.a.run.app')
+        self.queue_processor_url = os.getenv('QUEUE_PROCESSOR_URL', 'https://queue-enrichment-processor-bhcetby62q-el.a.run.app')  
+        self.data_combiner_url = os.getenv('DATA_COMBINER_URL', 'https://data-combiner-bhcetby62q-el.a.run.app')
+        self.field_standardizer_url = os.getenv('FIELD_STANDARDIZER_URL', 'https://field-standardizer-bhcetby62q-el.a.run.app')
         
         # Initialize temp storage manager
         self.temp_storage = TempStorageManager()
