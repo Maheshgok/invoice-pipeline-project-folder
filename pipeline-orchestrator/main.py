@@ -81,31 +81,6 @@ def verify_auth_token(auth_header):
         logger.error(f"❌ Token verification failed: {e}")
         raise ValueError(f"Invalid authentication token: {e}")
 
-def verify_auth_token(auth_header):
-    """Verify Firebase ID token"""
-    if not auth_header or not auth_header.startswith('Bearer '):
-        raise ValueError("Missing or invalid authorization token")
-    
-    id_token_str = auth_header.split(' ')[1]
-    
-    try:
-        decoded_token = firebase_auth.verify_id_token(id_token_str)
-        user_email = decoded_token.get('email')
-        user_uid = decoded_token.get('uid')
-        
-        if not user_email or not user_uid:
-            raise ValueError("Invalid token: missing email or UID")
-            
-        return {
-            'email': user_email,
-            'uid': user_uid,
-            'organization_id': decoded_token.get('custom_claims', {}).get('organizationId'),
-            'organization_role': decoded_token.get('custom_claims', {}).get('organizationRole')
-        }
-    except Exception as e:
-        logger.error(f"❌ Token verification failed: {e}")
-        raise ValueError(f"Invalid authentication token: {e}")
-
 class PipelineOrchestrator:
     def __init__(self):
         # Restructured microservice URLs (v2.0 with simple handlers) - Updated URLs
