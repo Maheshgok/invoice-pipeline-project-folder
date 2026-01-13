@@ -9,9 +9,8 @@ import sys
 import json
 import logging
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 
-# Add shared directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from simple_openai_handler import create_extraction_handler
 
 # Configure logging
@@ -19,6 +18,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Configure CORS
+CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 
 class DataExtractorService:
     def __init__(self):
@@ -28,25 +30,82 @@ class DataExtractorService:
         
         # Define prompts as class variables (can be modified at runtime)
         self.header_prompt = """
-Extract ONLY header/document information from this invoice image.
+Extract header/document information from this invoice image and return ONLY valid JSON.
 
-EXTRACT:
-- Vendor details (name, address, GST)
-- Customer details (name, address, GST)
-- Invoice metadata (number, date, due_date)
-- Financial totals (subtotal, tax, total)
+IMPORTANT: Your response must be ONLY valid JSON, no additional text or explanations.
 
-Return JSON:
+Extract:
+- Vendor details (name, address, GST number)
+- Customer details (name, address, GST number)  
+- Invoice metadata (number, date, due date)
+- Financial totals (subtotal, tax amount, total amount)
+
+Return this exact JSON structure:
 {
-  "vendor": {"name": "", "address": "", "gst_number": ""},
-  "customer": {"name": "", "address": "", "gst_number": ""},
-  "invoice_details": {"number": "", "date": "", "due_date": ""},
-  "totals": {"subtotal": 0, "tax_amount": 0, "total_amount": 0}
+  "vendor": {
+    "name": "vendor company name",
+    "address": "complete vendor address",
+    "gst_number": "vendor GST number"
+  },
+  "customer": {
+    "name": "customer company name",
+    "address": "complete customer address", 
+    "gst_number": "customer GST number"
+  },
+  "invoice_details": {
+    "number": "invoice number",
+    "date": "invoice date",
+    "due_date": "due date"
+  },
+  "totals": {
+    "subtotal": 0.00,
+    "tax_amount": 0.00,
+    "total_amount": 0.00
+  }
 }
+
+Respond with ONLY the JSON object above, no other text.
 """
         
         self.line_items_prompt = """
-Extract ONLY line items from this invoice image.
+Extract line items from this invoice image and return ONLY valid JSON.
+
+IMPORTANT: Your response must be ONLY valid JSON, no additional text or explanations.
+
+Extract each line item with:
+- Description/name of product/service
+- HSN/SAC code
+- Quantity
+- Rate/unit price
+- Taxable amount
+- GST percentage
+- GST amount
+- Total amount
+
+Return this exact JSON structure:
+{
+  "line_items": [
+    {
+      "description": "product/service description",
+      "hsn_code": "HSN/SAC code",
+      "quantity": 0,
+      "rate": 0.00,
+      "taxable_amount": 0.00,
+      "gst_percentage": 0.00,
+      "gst_amount": 0.00,
+      "total_amount": 0.00
+    }
+  ],
+  "summary": {
+    "total_items": 0,
+    "total_quantity": 0,
+    "total_taxable_amount": 0.00,
+    "total_gst_amount": 0.00,
+    "grand_total": 0.00
+  }
+}
+
+Respond with ONLY the JSON object above, no other text.
 
 EXTRACT each line item:
 - Description, quantity, unit_price, total, tax_rate, hsn_code
@@ -87,11 +146,29 @@ Return JSON:
                     'job_id': job_id
                 }
             
-            # Parse header JSON
+            # Parse header JSON - strip markdown if present
             try:
-                header_data = json.loads(header_result['content'])
-            except json.JSONDecodeError:
-                header_data = {"error": "JSON parse failed", "raw": header_result['content']}
+                content = header_result['content'].strip()
+                # Remove markdown code blocks if present
+                if content.startswith('```json'):
+                    content = content.replace('```json', '').replace('```', '').strip()
+                elif content.startswith('```'):
+                    content = content.replace('```', '').strip()
+                
+                header_data = json.loads(content)
+                logger.info(f"✅ Stage_1A_Header extraction successful")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Stage_1A_Header JSON parse error: {e}")
+                logger.error(f"📄 Raw OpenAI response: {header_result['content'][:500]}...")
+                # Create fallback structure with raw content
+                header_data = {
+                    "vendor": {"name": "", "address": "", "gst_number": ""},
+                    "customer": {"name": "", "address": "", "gst_number": ""},
+                    "invoice_details": {"number": "", "date": "", "due_date": ""},
+                    "totals": {"subtotal": 0, "tax_amount": 0, "total_amount": 0},
+                    "_raw_content": header_result['content'],
+                    "_parse_error": str(e)
+                }
             
             # Stage 1B: Extract line items
             logger.info("📦 Stage 1B: Extracting line items")
@@ -109,11 +186,21 @@ Return JSON:
                     'job_id': job_id
                 }
             
-            # Parse line items JSON
+            # Parse line items JSON - strip markdown if present
             try:
-                line_items_data = json.loads(line_items_result['content'])
+                content = line_items_result['content'].strip()
+                # Remove markdown code blocks if present
+                if content.startswith('```json'):
+                    content = content.replace('```json', '').replace('```', '').strip()
+                elif content.startswith('```'):
+                    content = content.replace('```', '').strip()
+                    
+                line_items_data = json.loads(content)
                 line_items = line_items_data.get('line_items', [])
-            except json.JSONDecodeError:
+                logger.info(f"✅ Stage_1B_LineItems extraction successful")
+            except json.JSONDecodeError as e:
+                logger.error(f"❌ Stage_1B_LineItems JSON parse error: {e}")
+                logger.error(f"📄 Raw OpenAI response: {line_items_result['content'][:500]}...")
                 line_items = []
             
             # Success response

@@ -15,10 +15,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy shared module first
-COPY ../shared ./shared
-
-# Copy service files
+# Copy service files (including simple_openai_handler.py)
 COPY . .
 
 EXPOSE 8080

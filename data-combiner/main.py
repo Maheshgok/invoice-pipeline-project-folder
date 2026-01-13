@@ -9,11 +9,10 @@ import json
 import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from typing import List, Dict, Any
 from google.cloud import firestore
 
-# Add shared directory to path
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'shared'))
 from simple_openai_handler import create_analysis_handler
 
 logging.basicConfig(level=logging.INFO)
@@ -21,15 +20,27 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
-# Initialize Firestore client
+# Configure CORS
+CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
+
+# Lazy initialization of expensive resources
 project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
-firestore_client = firestore.Client(project=project_id)
+firestore_client = None  # Initialize on first use
+
+def get_firestore_client():
+    """Lazy initialization of Firestore client"""
+    global firestore_client
+    if firestore_client is None:
+        from google.cloud import firestore
+        firestore_client = firestore.Client(project=project_id)
+        logger.info("🔥 Firestore client initialized")
+    return firestore_client
 
 class DataCombinerService:
     def __init__(self):
-        """Initialize with simple OpenAI handler for final analysis"""
+        """Initialize with lazy loading for faster startup"""
         self.openai_handler = create_analysis_handler("data-combiner")
-        logger.info("🔧 Data Combiner Service initialized with simple handler")
+        logger.info("🔧 Data Combiner Service initialized with lazy loading")
         
         self.validation_prompt = """
 Review and validate these combined journal entries for accuracy and compliance.

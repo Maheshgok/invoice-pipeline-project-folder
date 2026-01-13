@@ -4,6 +4,7 @@ import { AuthProvider } from './contexts/AuthContext'
 import { PermissionProvider } from './contexts/PermissionContext'
 import LandingPage from './pages/LandingPage'
 import MultiUploadDashboard from './pages/MultiUploadDashboard'
+import ModernInvoiceProcessingDashboard from './pages/ModernInvoiceProcessingDashboard'
 import Login from './pages/Login'
 import WorkspaceSetup from './pages/WorkspaceSetup'
 import PaymentRenewal from './pages/PaymentRenewal'
@@ -34,6 +35,14 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <MultiUploadDashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              <Route 
+                path="/modern" 
+                element={
+                  <ProtectedRoute>
+                    <ModernInvoiceProcessingDashboard />
                   </ProtectedRoute>
                 } 
               />

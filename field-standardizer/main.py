@@ -8,6 +8,7 @@ import json
 import logging
 from datetime import datetime
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from typing import Dict, Any, List
 from google.cloud import storage, firestore
 
@@ -15,6 +16,9 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+
+# Configure CORS
+CORS(app, resources={r"/*": {"origins": "*", "methods": ["GET", "POST", "OPTIONS"], "allow_headers": ["Content-Type", "Authorization"]}})
 
 # Initialize clients
 project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
@@ -202,7 +206,7 @@ def health_check():
         'timestamp': datetime.now().isoformat()
     })
 
-@app.route('/standardize', methods=['POST'])
+@app.route('/standardize-invoice-data', methods=['POST'])
 def standardize_data():
     """Main standardization endpoint"""
     try:
@@ -213,9 +217,13 @@ def standardize_data():
                 'error': 'No JSON data provided'
             }), 400
         
-        header_data = data.get('header_data', {})
-        line_items = data.get('line_items', [])
+        extracted_data = data.get('extracted_data', {})
+        enriched_data = data.get('enriched_data', {})
         job_id = data.get('job_id', 'unknown')
+        
+        # Extract header and line items from the input structure
+        header_data = extracted_data.get('header_data', {})
+        line_items = extracted_data.get('line_items', [])
         
         logger.info(f"📥 Standardization request for job: {job_id}")
         logger.info(f"📋 Header fields: {len(header_data)}, Line items: {len(line_items)}")
@@ -226,7 +234,13 @@ def standardize_data():
         return jsonify({
             'status': 'SUCCESS',
             'job_id': job_id,
-            'standardized_data': result
+            'standardized_data': {
+                'extracted_data': {
+                    'header_data': result['standardized_header'],
+                    'line_items': result['standardized_line_items']
+                },
+                'enriched_data': enriched_data  # Pass through enriched data
+            }
         }), 200
         
     except Exception as e:
