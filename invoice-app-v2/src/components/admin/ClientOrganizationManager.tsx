@@ -3,13 +3,15 @@ import {
   clientOrganizationService,
   userOrganizationService,
   ClientOrganization,
-  UserOrganization
+  UserOrganization,
+  ChartOfAccountsEntry
 } from '../../services/clientOrganizations'
 import { BUSINESS_TYPES } from '../../services/organizationProfiles'
 import { toast } from 'react-hot-toast'
 import { useAuth } from '../../contexts/AuthContext'
 import { authService } from '../../services/auth'
-import { Pencil, Trash2, X, Save } from 'lucide-react'
+import { Pencil, Trash2, X, Save, BookOpen } from 'lucide-react'
+import ChartOfAccountsManager from './ChartOfAccountsManager'
 
 interface ClientOrganizationManagerProps {
   onClientSelect?: (clientId: string) => void
@@ -40,8 +42,10 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
     business_type: '',
     client_address: '',
     processing_notes: '',
-    capitalization_threshold: 0
+    capitalization_threshold: 0,
+    chart_of_accounts: [] as ChartOfAccountsEntry[]
   })
+  const [showCOAManager, setShowCOAManager] = useState(false)
   
   // Debug authentication and permissions
   useEffect(() => {
@@ -182,8 +186,10 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
       business_type: client.business_type,
       client_address: client.client_address || '',
       processing_notes: client.processing_notes || '',
-      capitalization_threshold: client.capitalization_threshold || 0
+      capitalization_threshold: client.capitalization_threshold || 0,
+      chart_of_accounts: client.chart_of_accounts || []
     })
+    setShowCOAManager(false)
   }
 
   const handleUpdateClient = async () => {
@@ -206,7 +212,8 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
         common_hsn_codes: businessType.common_hsn_codes,
         expense_categories: businessType.expense_categories,
         client_address: editForm.client_address,
-        processing_notes: editForm.processing_notes
+        processing_notes: editForm.processing_notes,
+        chart_of_accounts: editForm.chart_of_accounts
       }
 
       await clientOrganizationService.update(editingClient.id!, updateData)
@@ -219,8 +226,10 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
         business_type: '',
         client_address: '',
         processing_notes: '',
-        capitalization_threshold: 0
+        capitalization_threshold: 0,
+        chart_of_accounts: []
       })
+      setShowCOAManager(false)
       loadData()
     } catch (error) {
       console.error('❌ Error updating client:', error)
@@ -475,7 +484,34 @@ const ClientOrganizationManager: React.FC<ClientOrganizationManagerProps> = ({
                 </div>
               </div>
               
-              <div className="flex justify-end space-x-2">
+              {/* Chart of Accounts Section */}
+              <div className="border-t pt-4 mt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <BookOpen className="w-5 h-5 text-blue-600" />
+                    <h4 className="font-medium text-gray-900">Chart of Accounts</h4>
+                    <span className="text-sm text-gray-500">
+                      ({editForm.chart_of_accounts?.length || 0} accounts)
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowCOAManager(!showCOAManager)}
+                    className="px-3 py-1.5 text-sm bg-blue-50 text-blue-600 rounded hover:bg-blue-100"
+                  >
+                    {showCOAManager ? 'Hide' : 'Manage Accounts'}
+                  </button>
+                </div>
+                
+                {showCOAManager && (
+                  <ChartOfAccountsManager
+                    chartOfAccounts={editForm.chart_of_accounts || []}
+                    onUpdate={(accounts) => setEditForm({...editForm, chart_of_accounts: accounts})}
+                    clientName={editForm.client_name}
+                  />
+                )}
+              </div>
+              
+              <div className="flex justify-end space-x-2 mt-6 pt-4 border-t">
                 <button
                   onClick={() => setEditingClient(null)}
                   className="px-4 py-2 text-gray-700 border border-gray-300 rounded-md hover:bg-gray-50"

@@ -13,6 +13,18 @@ import { db } from '../config/firebase'
 import { authService } from './auth'
 import { BUSINESS_TYPES } from './organizationProfiles'
 
+// Chart of Accounts entry for client-specific account mapping
+export interface ChartOfAccountsEntry {
+  account_code: string        // Account code (e.g., "4001", "5200")
+  account_name: string        // Account name (e.g., "Sales - Products", "Office Supplies")
+  account_type: 'asset' | 'liability' | 'equity' | 'income' | 'expense'
+  parent_code?: string        // Parent account code for hierarchy
+  description?: string        // Short description of when to use this account
+  keywords?: string[]         // Keywords that trigger this account mapping
+  hsn_codes?: string[]        // Associated HSN codes
+  is_active: boolean
+}
+
 // User's own organization (SSO/outsourcing company/holding company)
 export interface UserOrganization {
   id?: string
@@ -49,6 +61,8 @@ export interface ClientOrganization {
   user_uid: string
   // For processing context
   processing_notes?: string
+  // Chart of Accounts for client-specific enrichment
+  chart_of_accounts?: ChartOfAccountsEntry[]
 }
 
 // User Organization Service - for user's own company

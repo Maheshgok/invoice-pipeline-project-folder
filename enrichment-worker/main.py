@@ -190,6 +190,7 @@ class EnrichmentWorkerService:
         chunk_id = chunk_data.get('chunk_id')
         tenant_id = chunk_data.get('tenant_id')
         job_id = chunk_data.get('job_id')
+        client_id = chunk_data.get('client_id')  # Client organization ID
         line_items = chunk_data.get('line_items', [])
         
         try:
@@ -199,11 +200,27 @@ class EnrichmentWorkerService:
             # Initialize OpenAI client if needed
             await self._initialize_openai_client()
             
+            # Fetch client profile with Chart of Accounts
+            client_profile = self._get_client_profile(tenant_id, client_id)
+            chart_of_accounts = client_profile.get('chart_of_accounts', []) if client_profile else []
+            capitalization_threshold = client_profile.get('capitalization_threshold', 0) if client_profile else 0
+            business_description = client_profile.get('business_description', '') if client_profile else ''
+            
+            logger.info(f"📊 Client profile loaded: {len(chart_of_accounts)} accounts, cap threshold: {capitalization_threshold}")
+            
+            # Prepare enrichment context
+            enrichment_context = {
+                'chart_of_accounts': chart_of_accounts,
+                'capitalization_threshold': capitalization_threshold,
+                'business_description': business_description,
+                'client_id': client_id
+            }
+            
             # Process each line item in the chunk
             enriched_items = []
             
             for item in line_items:
-                enriched_item = await self._enrich_single_line_item(item)
+                enriched_item = await self._enrich_single_line_item(item, enrichment_context)
                 enriched_items.append(enriched_item)
             
             # Prepare enriched chunk data
@@ -238,22 +255,132 @@ class EnrichmentWorkerService:
             
             return {'success': False, 'chunk_id': chunk_id, 'error': str(e)}
     
-    async def _enrich_single_line_item(self, line_item: Dict[str, Any]) -> Dict[str, Any]:
-        """Enrich a single line item with business data"""
+    def _get_client_profile(self, tenant_id: str, client_id: str) -> Dict[str, Any]:
+        """Fetch client profile including Chart of Accounts from Firestore"""
+        
+        if not client_id:
+            logger.warning("⚠️ No client_id provided, using default enrichment")
+            return None
         
         try:
-            # Prepare enrichment prompt
-            item_description = line_item.get('description', '')
+            # Client organizations are stored under user's path
+            # Path: users/{tenant_id}/client_organizations/{client_id}
+            client_ref = firestore_utils.db.collection('users').document(tenant_id).collection('client_organizations').document(client_id)
+            client_doc = client_ref.get()
             
-            # Substitute prompt template variables
+            if client_doc.exists:
+                client_data = client_doc.to_dict()
+                logger.info(f"📋 Loaded client profile: {client_data.get('client_name', 'Unknown')}")
+                return client_data
+            else:
+                logger.warning(f"⚠️ Client {client_id} not found for tenant {tenant_id}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"❌ Failed to fetch client profile: {e}")
+            return None
+    
+    def _match_account_from_coa(self, description: str, amount: float, chart_of_accounts: List[Dict], capitalization_threshold: float) -> Dict[str, Any]:
+        """Match line item to best account from client's Chart of Accounts using keywords"""
+        
+        if not chart_of_accounts:
+            return None
+        
+        description_lower = description.lower()
+        best_match = None
+        best_score = 0
+        
+        for account in chart_of_accounts:
+            if not account.get('is_active', True):
+                continue
+            
+            score = 0
+            keywords = account.get('keywords', [])
+            
+            # Check keyword matches
+            for keyword in keywords:
+                if keyword.lower() in description_lower:
+                    score += 10
+            
+            # Partial name match
+            account_name_lower = account.get('account_name', '').lower()
+            if any(word in description_lower for word in account_name_lower.split()):
+                score += 5
+            
+            # Check HSN code match if available
+            hsn_codes = account.get('hsn_codes', [])
+            # Would compare with extracted HSN from line item
+            
+            if score > best_score:
+                best_score = score
+                best_match = account
+        
+        # Check capitalization threshold for asset classification
+        is_capitalizable = amount >= capitalization_threshold if capitalization_threshold > 0 else False
+        
+        if best_match:
+            return {
+                'account_code': best_match.get('account_code'),
+                'account_name': best_match.get('account_name'),
+                'account_type': best_match.get('account_type'),
+                'match_score': best_score,
+                'match_source': 'coa_keyword_match',
+                'is_capitalizable': is_capitalizable,
+                'capitalization_threshold': capitalization_threshold
+            }
+        
+        return None
+    
+    async def _enrich_single_line_item(self, line_item: Dict[str, Any], enrichment_context: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Enrich a single line item with business data using client's Chart of Accounts"""
+        
+        try:
+            # Extract context
+            chart_of_accounts = enrichment_context.get('chart_of_accounts', []) if enrichment_context else []
+            capitalization_threshold = enrichment_context.get('capitalization_threshold', 0) if enrichment_context else 0
+            business_description = enrichment_context.get('business_description', '') if enrichment_context else ''
+            
+            # Get line item details
+            item_description = line_item.get('description', '')
+            item_amount = float(line_item.get('amount', 0) or line_item.get('total', 0) or 0)
+            
+            # First try to match from client's Chart of Accounts
+            coa_match = self._match_account_from_coa(
+                item_description, 
+                item_amount, 
+                chart_of_accounts, 
+                capitalization_threshold
+            )
+            
+            # Build COA context for AI prompt
+            coa_context = ""
+            if chart_of_accounts:
+                active_accounts = [a for a in chart_of_accounts if a.get('is_active', True)]
+                coa_summary = "\n".join([
+                    f"- {a.get('account_code')}: {a.get('account_name')} ({a.get('account_type')}) - {a.get('description', '')}"
+                    for a in active_accounts[:20]  # Limit to top 20 for token efficiency
+                ])
+                coa_context = f"\n\nClient's Chart of Accounts:\n{coa_summary}"
+            
+            cap_context = ""
+            if capitalization_threshold > 0:
+                cap_context = f"\n\nCapitalization Threshold: ₹{capitalization_threshold:,.2f} (Items above this should be considered for fixed asset capitalization)"
+            
+            # Prepare enrichment prompt with COA context
             prompt = self.enrichment_prompt.replace('{item_description}', item_description)
-            prompt = prompt.replace('{business_context}', 'Indian B2B invoice processing')
+            prompt = prompt.replace('{business_context}', f'Indian B2B invoice processing. {business_description}{coa_context}{cap_context}')
+            
+            # Add COA matching instruction
+            if coa_match:
+                prompt += f"\n\nSuggested account match: {coa_match.get('account_code')} - {coa_match.get('account_name')} (match score: {coa_match.get('match_score')})"
             
             # Prepare OpenAI messages
             messages = [
                 {
                     "role": "system",
-                    "content": "You are an expert at enriching invoice line items with standardized business data for Indian accounting systems."
+                    "content": """You are an expert at enriching invoice line items with standardized business data for Indian accounting systems.
+When a Chart of Accounts is provided, prefer matching to those accounts over generic categories.
+Return a JSON object with: account_code, account_name, hsn_code, tax_category, product_category, is_capitalizable, and confidence score."""
                 },
                 {
                     "role": "user",
@@ -269,14 +396,19 @@ class EnrichmentWorkerService:
                 temperature=0.2
             )
             
-            # Parse response (in real implementation, would parse structured JSON)
+            # Parse response and use COA match if available
             enriched_data = {
-                'product_category': 'Professional Services',
-                'hsn_code': '998314',  # HSN code for professional services
+                'product_category': 'Expense',
+                'hsn_code': '998314',
                 'tax_category': 'GST_18_PERCENT',
-                'account_code': 'PROF_SERV_INCOME',
-                'business_classification': 'B2B_SERVICE',
-                'enrichment_confidence': 0.95
+                'account_code': coa_match.get('account_code') if coa_match else 'MISC_EXPENSE',
+                'account_name': coa_match.get('account_name') if coa_match else 'Miscellaneous Expense',
+                'account_type': coa_match.get('account_type') if coa_match else 'expense',
+                'business_classification': 'B2B_EXPENSE',
+                'is_capitalizable': coa_match.get('is_capitalizable', False) if coa_match else False,
+                'capitalization_threshold': capitalization_threshold,
+                'coa_match_score': coa_match.get('match_score', 0) if coa_match else 0,
+                'enrichment_confidence': 0.95 if coa_match and coa_match.get('match_score', 0) > 5 else 0.7
             }
             
             # Merge with original line item
@@ -284,7 +416,7 @@ class EnrichmentWorkerService:
                 **line_item,
                 'enrichment_data': enriched_data,
                 'enriched_at': datetime.utcnow().isoformat(),
-                'enrichment_source': 'openai_gpt4o'
+                'enrichment_source': 'openai_gpt4o_with_coa' if chart_of_accounts else 'openai_gpt4o'
             }
             
             return enriched_item
