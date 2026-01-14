@@ -473,6 +473,8 @@ const MultiUploadDashboard: React.FC = () => {
 
   const getStatusIcon = (status: string) => {
     switch (status) {
+      case 'initializing':
+        return <Clock className="w-4 h-4 text-amber-500 animate-pulse" />
       case 'uploading':
       case 'processing':
         return <Clock className="w-4 h-4 text-blue-500 animate-spin" />
@@ -575,6 +577,23 @@ const MultiUploadDashboard: React.FC = () => {
     if (progress < 30) return 'bg-red-500'
     if (progress < 70) return 'bg-yellow-500'
     return 'bg-green-500'
+  }
+
+  const getStatusText = (status: string, progress: number) => {
+    switch (status) {
+      case 'initializing':
+        return 'Waking up service...'
+      case 'uploading':
+        return 'Uploading...'
+      case 'processing':
+        return 'Processing...'
+      case 'completed':
+        return 'Complete'
+      case 'error':
+        return 'Failed'
+      default:
+        return `${progress}%`
+    }
   }
 
   // Calculate queue statistics using the new batch state
@@ -912,13 +931,13 @@ const MultiUploadDashboard: React.FC = () => {
                     </p>
                     <div className="mt-1 bg-gray-200 rounded-full h-2">
                       <div 
-                        className={`h-2 rounded-full transition-all duration-300 ${getProgressColor(file.progress)}`}
-                        style={{ width: `${file.progress}%` }}
+                        className={`h-2 rounded-full transition-all duration-300 ${file.status === 'initializing' ? 'bg-amber-500 animate-pulse' : getProgressColor(file.progress)}`}
+                        style={{ width: `${Math.max(file.progress, file.status === 'initializing' ? 10 : 0)}%` }}
                       />
                     </div>
                   </div>
-                  <div className="flex-shrink-0 text-sm text-gray-500">
-                    {file.progress}%
+                  <div className={`flex-shrink-0 text-sm ${file.status === 'initializing' ? 'text-amber-600' : 'text-gray-500'}`}>
+                    {getStatusText(file.status, file.progress)}
                   </div>
                   <button
                     onClick={() => removeFile(file.id)}

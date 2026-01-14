@@ -18,7 +18,7 @@ interface InvoiceProcessingResult {
 interface UploadedFile {
   id: string
   file: File
-  status: 'uploading' | 'processing' | 'completed' | 'error' | 'displayed'
+  status: 'initializing' | 'uploading' | 'processing' | 'completed' | 'error' | 'displayed'
   progress: number
   result?: InvoiceProcessingResult
   error?: string
@@ -207,23 +207,34 @@ export const useRealtimeUpload = () => {
         throw new Error('Authentication required')
       }
 
-      updateFileProgress(uploadedFile.id, 'uploading', 20)
+      // Show initializing state (handles cold start delay gracefully)
+      updateFileProgress(uploadedFile.id, 'initializing', 5)
 
-      // Step 2: Health check
+      // Step 2: Health check (may take up to 5s on cold start)
       try {
+        console.log('🔄 Waking up processing service...')
+        const startTime = Date.now()
         const healthCheck = await fetch(getApiUrl.health(), {
           method: 'GET',
           headers: { 'Authorization': `Bearer ${idToken}` }
         })
+        const elapsed = Date.now() - startTime
         
         if (!healthCheck.ok) {
           throw new Error(`Cloud Run service health check failed: ${healthCheck.status}`)
         }
-        console.log('✅ Cloud Run service is healthy')
+        
+        if (elapsed > 2000) {
+          console.log(`✅ Service ready (cold start: ${elapsed}ms)`)
+        } else {
+          console.log('✅ Service ready (warm)')
+        }
       } catch (healthError) {
         console.error('❌ Cloud Run service health check failed:', healthError)
         throw new Error('Cloud Run service is not responding. Please check if the service is running.')
       }
+      
+      updateFileProgress(uploadedFile.id, 'uploading', 20)
 
       // Step 3: Upload file to initial-api (orchestrator handles all processing)
       const formData = new FormData()

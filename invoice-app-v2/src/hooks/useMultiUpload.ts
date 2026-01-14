@@ -9,7 +9,7 @@ import { processingModeService } from '../services/processingModeService'
 interface UploadedFile {
   id: string
   file: File
-  status: 'uploading' | 'processing' | 'completed' | 'error'
+  status: 'initializing' | 'uploading' | 'processing' | 'completed' | 'error'
   progress: number
   result?: InvoiceProcessingResult
   error?: string

@@ -8,7 +8,7 @@ export interface BatchFile {
   id: string
   jobId?: string
   fileName: string
-  status: 'uploading' | 'processing' | 'completed' | 'error' | 'displayed'
+  status: 'initializing' | 'uploading' | 'processing' | 'completed' | 'error' | 'displayed'
   progress: number
   error?: string
   localPreviewUrl?: string
