@@ -1,21 +1,28 @@
 /**
  * Centralized API Configuration
  * Manages all external service URLs and endpoints
+ * 
+ * Project: watch-mail-trial
+ * URL Pattern: https://{service}-812016027146.asia-south1.run.app
  */
 
 export const API_CONFIG = {
-  // Cloud Run Services - Updated with actual deployed URLs (correct bhcetby62q pattern)
-  INITIAL_API_URL: import.meta.env.VITE_INITIAL_API_URL || 'https://initial-api-bhcetby62q-el.a.run.app',
-  ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-bhcetby62q-el.a.run.app',
-  QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-bhcetby62q-el.a.run.app',
+  // Cloud Run Services - watch-mail-trial project (812016027146)
+  INITIAL_API_URL: import.meta.env.VITE_INITIAL_API_URL || 'https://initial-api-812016027146.asia-south1.run.app',
+  ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-812016027146.asia-south1.run.app',
+  QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-812016027146.asia-south1.run.app',
   
   // New Orchestrator Service (status coordination only - job creation is in initial-api)
-  ORCHESTRATOR_URL: import.meta.env.VITE_ORCHESTRATOR_URL || 'https://orchestrator-service-bhcetby62q-el.a.run.app',
+  ORCHESTRATOR_URL: import.meta.env.VITE_ORCHESTRATOR_URL || 'https://orchestrator-service-812016027146.asia-south1.run.app',
   
-  // Legacy Multi-stage Pipeline URLs (may be deprecated)
-  PIPELINE_ORCHESTRATOR_URL: import.meta.env.VITE_PIPELINE_ORCHESTRATOR_URL || 'https://pipeline-orchestrator-bhcetby62q-el.a.run.app',
-  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-v2-bhcetby62q-el.a.run.app',
-  DATA_COMBINER_URL: import.meta.env.VITE_DATA_COMBINER_URL || 'https://data-combiner-bhcetby62q-el.a.run.app',
+  // Pipeline Services
+  DATA_EXTRACTOR_URL: import.meta.env.VITE_DATA_EXTRACTOR_URL || 'https://data-extractor-v2-812016027146.asia-south1.run.app',
+  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-v2-812016027146.asia-south1.run.app',
+  ENRICHMENT_WORKER_URL: import.meta.env.VITE_ENRICHMENT_WORKER_URL || 'https://enrichment-worker-812016027146.asia-south1.run.app',
+  
+  // Legacy URLs (deprecated - kept for backward compatibility)
+  PIPELINE_ORCHESTRATOR_URL: import.meta.env.VITE_PIPELINE_ORCHESTRATOR_URL || 'https://pipeline-orchestrator-812016027146.asia-south1.run.app',
+  DATA_COMBINER_URL: import.meta.env.VITE_DATA_COMBINER_URL || 'https://data-combiner-812016027146.asia-south1.run.app',
   
   // Endpoints
   ENDPOINTS: {

@@ -1,4 +1,5 @@
 // Service client configuration for new tenant-isolated pipeline architecture
+// Project: watch-mail-trial (812016027146)
 
 export interface ServiceEndpoints {
   orchestrator: string
@@ -13,15 +14,15 @@ export interface ServiceEndpoints {
   core?: string
 }
 
-// Environment-based configuration
+// Environment-based configuration - watch-mail-trial project
 export const SERVICE_URLS: ServiceEndpoints = {
-  // New pipeline services - correct bhcetby62q pattern
-  orchestrator: import.meta.env.VITE_ORCHESTRATOR_SERVICE_URL || 'https://orchestrator-service-bhcetby62q-el.a.run.app',
-  dataExtractor: import.meta.env.VITE_DATA_EXTRACTOR_SERVICE_URL || 'https://data-extractor-v2-bhcetby62q-el.a.run.app',
-  chunkDispatcher: import.meta.env.VITE_CHUNK_DISPATCHER_SERVICE_URL || 'https://chunk-dispatcher-bhcetby62q-el.a.run.app',
-  fieldStandardizer: import.meta.env.VITE_FIELD_STANDARDIZER_SERVICE_URL || 'https://field-standardizer-v2-bhcetby62q-el.a.run.app',
-  dataCombiner: import.meta.env.VITE_DATA_COMBINER_SERVICE_URL || 'https://data-combiner-bhcetby62q-el.a.run.app',
-  enrichmentWorker: import.meta.env.VITE_ENRICHMENT_WORKER_URL || 'https://enrichment-worker-bhcetby62q-el.a.run.app',
+  // New pipeline services - 812016027146 pattern (watch-mail-trial)
+  orchestrator: import.meta.env.VITE_ORCHESTRATOR_SERVICE_URL || 'https://orchestrator-service-812016027146.asia-south1.run.app',
+  dataExtractor: import.meta.env.VITE_DATA_EXTRACTOR_SERVICE_URL || 'https://data-extractor-v2-812016027146.asia-south1.run.app',
+  chunkDispatcher: import.meta.env.VITE_CHUNK_DISPATCHER_SERVICE_URL || 'https://chunk-dispatcher-812016027146.asia-south1.run.app',
+  fieldStandardizer: import.meta.env.VITE_FIELD_STANDARDIZER_SERVICE_URL || 'https://field-standardizer-v2-812016027146.asia-south1.run.app',
+  dataCombiner: import.meta.env.VITE_DATA_COMBINER_SERVICE_URL || 'https://data-combiner-812016027146.asia-south1.run.app',
+  enrichmentWorker: import.meta.env.VITE_ENRICHMENT_WORKER_URL || 'https://enrichment-worker-812016027146.asia-south1.run.app',
   
   // Legacy services (optional for gradual migration)
   superadmin: import.meta.env.VITE_SUPERADMIN_SERVICE_URL || undefined,
