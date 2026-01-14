@@ -39,7 +39,7 @@ def get_openai_client() -> OpenAI:
     """Get OpenAI client with API key from Secret Manager"""
     try:
         client = secretmanager.SecretManagerServiceClient()
-        name = f"projects/{PROJECT_ID}/secrets/openai-api-key/versions/latest"
+        name = f"projects/{PROJECT_ID}/secrets/openai-api-key-secret/versions/latest"
         response = client.access_secret_version(request={"name": name})
         api_key = response.payload.data.decode("UTF-8")
         return OpenAI(api_key=api_key)
