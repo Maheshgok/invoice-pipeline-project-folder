@@ -1,19 +1,20 @@
 """
-Enrichment Worker - Async Chunk Processing via Pub/Sub
-Per Approach Doc: 1-2GB, OpenAI Call #2, Parallel processing
+Enrichment Worker - Line Item Enrichment with COA Matching
+Per Approach Doc: 1-2GB, OpenAI Call #2
+After enrichment, triggers field-standardizer-v2 for final processing.
 """
 
 import os
 import json
 import logging
+import requests
+import threading
 from datetime import datetime
 from typing import Dict, Any, List
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google.cloud import firestore, pubsub_v1
-from google.cloud.pubsub_v1 import SubscriberClient
-from google.cloud.pubsub_v1.subscriber.message import Message
+from google.cloud import firestore
 from google.cloud import secretmanager
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
@@ -26,6 +27,12 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 db = firestore.Client()
 PROJECT_ID = os.getenv('PROJECT_ID', 'watch-mail-trial')
+
+# Service URL for pipeline chaining
+FIELD_STANDARDIZER_URL = os.getenv(
+    'FIELD_STANDARDIZER_URL',
+    'https://field-standardizer-v2-812016027146.asia-south1.run.app'
+)
 
 
 def get_openai_client() -> OpenAI:
@@ -141,9 +148,114 @@ def health():
     return jsonify({'status': 'healthy', 'service': 'enrichment-worker'})
 
 
+@app.route('/enrich-job', methods=['POST'])
+def enrich_job():
+    """
+    Process all line items for a job - called by data-extractor-v2
+    After enrichment, triggers field-standardizer-v2
+    """
+    try:
+        data = request.get_json()
+        tenant_id = data.get('tenant_id')
+        job_id = data.get('job_id')
+        client_id = data.get('client_id')
+        line_items = data.get('line_items', [])
+        
+        if not tenant_id or not job_id:
+            return jsonify({'error': 'tenant_id and job_id required'}), 400
+        
+        # Update job status to ENRICHING
+        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+            'status': 'ENRICHING',
+            'updated_at': datetime.utcnow().isoformat()
+        })
+        
+        # Get client profile for COA matching
+        client_profile = get_client_profile(tenant_id, client_id)
+        
+        # Enrich each line item
+        enriched_items = [enrich_line_item(item, client_profile) for item in line_items]
+        
+        # Store enriched data in Firestore
+        enrichment_doc = {
+            'enriched_line_items': enriched_items,
+            'client_id': client_id,
+            'items_count': len(enriched_items),
+            'completed_at': datetime.utcnow().isoformat()
+        }
+        
+        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('enrichment').document('main').set(enrichment_doc)
+        
+        # Update job status to ENRICHED
+        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+            'status': 'ENRICHED',
+            'updated_at': datetime.utcnow().isoformat()
+        })
+        
+        logger.info(f"✅ Enriched job {job_id}: {len(enriched_items)} items")
+        
+        # Trigger field-standardizer for final processing
+        auth_header = request.headers.get('Authorization')
+        
+        def call_field_standardizer():
+            try:
+                # Get headers from extraction
+                extraction_doc = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('extraction').document('main').get()
+                headers_raw = extraction_doc.to_dict().get('headers_raw', {}) if extraction_doc.exists else {}
+                
+                standardizer_payload = {
+                    'tenant_id': tenant_id,
+                    'job_id': job_id,
+                    'headers_raw': headers_raw,
+                    'enriched_line_items': enriched_items
+                }
+                
+                headers = {'Content-Type': 'application/json'}
+                if auth_header:
+                    headers['Authorization'] = auth_header
+                
+                resp = requests.post(
+                    f"{FIELD_STANDARDIZER_URL}/standardize",
+                    json=standardizer_payload,
+                    headers=headers,
+                    timeout=600
+                )
+                
+                if resp.ok:
+                    logger.info(f"✅ Standardization triggered for job {job_id}")
+                else:
+                    logger.error(f"❌ Standardization trigger failed for {job_id}: {resp.status_code}")
+                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                        'status': 'STANDARDIZATION_FAILED',
+                        'error': f"Standardization trigger failed: {resp.status_code}",
+                        'updated_at': datetime.utcnow().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"❌ Failed to trigger standardization for {job_id}: {e}")
+                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                    'status': 'STANDARDIZATION_FAILED',
+                    'error': str(e),
+                    'updated_at': datetime.utcnow().isoformat()
+                })
+        
+        # Call standardizer asynchronously
+        threading.Thread(target=call_field_standardizer, daemon=True).start()
+        
+        return jsonify({
+            'success': True,
+            'job_id': job_id,
+            'items_enriched': len(enriched_items),
+            'standardization_triggered': True
+        })
+        
+    except Exception as e:
+        logger.error(f"❌ Job enrichment failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
 @app.route('/enrich-chunk', methods=['POST'])
 def enrich_chunk():
-    """Process a chunk of line items"""
+    """Process a chunk of line items (legacy endpoint)"""
     try:
         data = request.get_json()
         tenant_id = data.get('tenant_id')

@@ -63,6 +63,7 @@ def standardize_fields():
     Per Approach Doc Section 7.6: OpenAI Call #3
     Input: enriched line items
     Output: standardized fields ready for journal entry
+    Marks job as COMPLETED when done.
     """
     global openai_client
     if not openai_client:
@@ -73,6 +74,10 @@ def standardize_fields():
         data = request.get_json()
         job_id = data.get('job_id')
         
+        # Accept enriched items directly from request or fetch from Firestore
+        enriched_line_items = data.get('enriched_line_items', [])
+        headers_raw = data.get('headers_raw', {})
+        
         if not job_id:
             return jsonify({'error': 'job_id required'}), 400
         
@@ -82,28 +87,35 @@ def standardize_fields():
             'updated_at': datetime.utcnow().isoformat()
         })
         
-        # Get enriched data from all chunks
-        chunks_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('chunks')
-        chunks = chunks_ref.where('status', '==', 'ENRICHED').stream()
+        # If enriched items not passed, fetch from Firestore
+        if not enriched_line_items:
+            # Try enrichment/main first (new format)
+            enrichment_doc = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('enrichment').document('main').get()
+            if enrichment_doc.exists:
+                enriched_line_items = enrichment_doc.to_dict().get('enriched_line_items', [])
+            else:
+                # Fallback to chunks collection (legacy format)
+                chunks_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('chunks')
+                chunks = chunks_ref.where('status', '==', 'ENRICHED').stream()
+                for chunk in chunks:
+                    chunk_data = chunk.to_dict()
+                    items = chunk_data.get('enriched_line_items', [])
+                    enriched_line_items.extend(items)
         
-        all_enriched_items = []
-        for chunk in chunks:
-            chunk_data = chunk.to_dict()
-            enriched_items = chunk_data.get('enriched_line_items', [])
-            all_enriched_items.extend(enriched_items)
+        # If headers not passed, fetch from Firestore
+        if not headers_raw:
+            extraction_doc = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('extraction').document('main').get()
+            if extraction_doc.exists:
+                headers_raw = extraction_doc.to_dict().get('headers_raw', {})
         
-        if not all_enriched_items:
-            # No items to standardize
+        if not enriched_line_items:
+            # No items to standardize - mark as completed
             db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                'status': 'STANDARDIZED',
+                'status': 'COMPLETED',
+                'completed_at': datetime.utcnow().isoformat(),
                 'updated_at': datetime.utcnow().isoformat()
             })
-            return jsonify({'success': True, 'items_standardized': 0})
-        
-        # Get headers from extraction
-        extraction_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('extraction').document('main')
-        extraction_doc = extraction_ref.get()
-        headers = extraction_doc.to_dict().get('headers_raw', {}) if extraction_doc.exists else {}
+            return jsonify({'success': True, 'items_standardized': 0, 'status': 'COMPLETED'})
         
         # Call OpenAI to standardize
         response = openai_client.chat.completions.create(
@@ -127,7 +139,7 @@ Return JSON with:
                 },
                 {
                     "role": "user",
-                    "content": f"Standardize this invoice data:\nHeaders: {json.dumps(headers)}\nLine Items: {json.dumps(all_enriched_items)}"
+                    "content": f"Standardize this invoice data:\nHeaders: {json.dumps(headers_raw)}\nLine Items: {json.dumps(enriched_line_items)}"
                 }
             ],
             max_tokens=4000
@@ -149,31 +161,35 @@ Return JSON with:
             standardized_data = json.loads(json_str)
         except:
             standardized_data = {
-                'invoice_header': headers,
-                'journal_entries': all_enriched_items
+                'invoice_header': headers_raw,
+                'journal_entries': enriched_line_items
             }
+        
+        journal_entries = standardized_data.get('journal_entries', [])
         
         # Store standardized data
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('standardized').document('main').set({
             'invoice_header': standardized_data.get('invoice_header', {}),
-            'journal_entries': standardized_data.get('journal_entries', []),
+            'journal_entries': journal_entries,
             'standardized_at': datetime.utcnow().isoformat(),
             'token_usage': response.usage.total_tokens if response.usage else 0
         })
         
-        # Update job status
+        # Mark job as COMPLETED - this is the final step in the pipeline
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'STANDARDIZED',
-            'journal_entries_count': len(standardized_data.get('journal_entries', [])),
+            'status': 'COMPLETED',
+            'journal_entries_count': len(journal_entries),
+            'completed_at': datetime.utcnow().isoformat(),
             'updated_at': datetime.utcnow().isoformat()
         })
         
-        logger.info(f"✅ Standardized job {job_id}: {len(standardized_data.get('journal_entries', []))} entries")
+        logger.info(f"✅ Completed job {job_id}: {len(journal_entries)} journal entries")
         
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'journal_entries_count': len(standardized_data.get('journal_entries', []))
+            'status': 'COMPLETED',
+            'journal_entries_count': len(journal_entries)
         })
         
     except ValueError as e:

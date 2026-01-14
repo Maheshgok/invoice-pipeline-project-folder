@@ -1,12 +1,15 @@
 """
 Data Extractor V2 - OpenAI Vision Invoice Extraction
 Per Approach Doc: 512MB, OpenAI Call #1
+After extraction, triggers enrichment-worker for next pipeline step.
 """
 
 import os
 import json
 import logging
 import base64
+import requests
+import threading
 from datetime import datetime
 from typing import Dict, Any
 
@@ -24,6 +27,12 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 db = firestore.Client()
 storage_client = storage.Client()
 PROJECT_ID = os.getenv('PROJECT_ID', 'watch-mail-trial')
+
+# Service URLs for pipeline chaining
+ENRICHMENT_WORKER_URL = os.getenv(
+    'ENRICHMENT_WORKER_URL',
+    'https://enrichment-worker-812016027146.asia-south1.run.app'
+)
 
 
 def get_openai_client() -> OpenAI:
@@ -155,12 +164,58 @@ Return JSON with:
             'updated_at': datetime.utcnow().isoformat()
         })
         
-        logger.info(f"✅ Extracted job {job_id}: {len(extracted_data.get('line_items_raw', []))} line items")
+        line_items_count = len(extracted_data.get('line_items_raw', []))
+        logger.info(f"✅ Extracted job {job_id}: {line_items_count} line items")
+        
+        # Trigger enrichment-worker for next pipeline step
+        auth_header = request.headers.get('Authorization')
+        client_id = data.get('client_id')
+        
+        def call_enrichment_worker():
+            try:
+                enrichment_payload = {
+                    'tenant_id': tenant_id,
+                    'job_id': job_id,
+                    'client_id': client_id,
+                    'line_items': extracted_data.get('line_items_raw', [])
+                }
+                
+                headers = {'Content-Type': 'application/json'}
+                if auth_header:
+                    headers['Authorization'] = auth_header
+                
+                resp = requests.post(
+                    f"{ENRICHMENT_WORKER_URL}/enrich-job",
+                    json=enrichment_payload,
+                    headers=headers,
+                    timeout=600
+                )
+                
+                if resp.ok:
+                    logger.info(f"✅ Enrichment triggered for job {job_id}")
+                else:
+                    logger.error(f"❌ Enrichment trigger failed for {job_id}: {resp.status_code}")
+                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                        'status': 'ENRICHMENT_FAILED',
+                        'error': f"Enrichment trigger failed: {resp.status_code}",
+                        'updated_at': datetime.utcnow().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"❌ Failed to trigger enrichment for {job_id}: {e}")
+                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                    'status': 'ENRICHMENT_FAILED',
+                    'error': str(e),
+                    'updated_at': datetime.utcnow().isoformat()
+                })
+        
+        # Call enrichment asynchronously
+        threading.Thread(target=call_enrichment_worker, daemon=True).start()
         
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'line_items_count': len(extracted_data.get('line_items_raw', []))
+            'line_items_count': line_items_count,
+            'enrichment_triggered': True
         })
         
     except ValueError as e:
