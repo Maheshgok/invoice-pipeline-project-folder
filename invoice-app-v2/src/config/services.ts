@@ -6,6 +6,7 @@ export interface ServiceEndpoints {
   chunkDispatcher: string
   fieldStandardizer: string
   dataCombiner: string
+  enrichmentWorker: string
   // Legacy services for backward compatibility
   superadmin?: string
   admin?: string
@@ -14,12 +15,13 @@ export interface ServiceEndpoints {
 
 // Environment-based configuration
 export const SERVICE_URLS: ServiceEndpoints = {
-  // New pipeline services
-  orchestrator: import.meta.env.VITE_ORCHESTRATOR_SERVICE_URL || 'https://orchestrator-service-812016027146.asia-south1.run.app',
-  dataExtractor: import.meta.env.VITE_DATA_EXTRACTOR_SERVICE_URL || 'https://data-extractor-v2-812016027146.asia-south1.run.app',
-  chunkDispatcher: import.meta.env.VITE_CHUNK_DISPATCHER_SERVICE_URL || 'https://chunk-dispatcher-812016027146.asia-south1.run.app',
-  fieldStandardizer: import.meta.env.VITE_FIELD_STANDARDIZER_SERVICE_URL || 'https://field-standardizer-v2-812016027146.asia-south1.run.app',
-  dataCombiner: import.meta.env.VITE_DATA_COMBINER_SERVICE_URL || 'https://data-combiner-v2-812016027146.asia-south1.run.app',
+  // New pipeline services - correct bhcetby62q pattern
+  orchestrator: import.meta.env.VITE_ORCHESTRATOR_SERVICE_URL || 'https://orchestrator-service-bhcetby62q-el.a.run.app',
+  dataExtractor: import.meta.env.VITE_DATA_EXTRACTOR_SERVICE_URL || 'https://data-extractor-v2-bhcetby62q-el.a.run.app',
+  chunkDispatcher: import.meta.env.VITE_CHUNK_DISPATCHER_SERVICE_URL || 'https://chunk-dispatcher-bhcetby62q-el.a.run.app',
+  fieldStandardizer: import.meta.env.VITE_FIELD_STANDARDIZER_SERVICE_URL || 'https://field-standardizer-v2-bhcetby62q-el.a.run.app',
+  dataCombiner: import.meta.env.VITE_DATA_COMBINER_SERVICE_URL || 'https://data-combiner-bhcetby62q-el.a.run.app',
+  enrichmentWorker: import.meta.env.VITE_ENRICHMENT_WORKER_URL || 'https://enrichment-worker-bhcetby62q-el.a.run.app',
   
   // Legacy services (optional for gradual migration)
   superadmin: import.meta.env.VITE_SUPERADMIN_SERVICE_URL || undefined,
@@ -29,30 +31,33 @@ export const SERVICE_URLS: ServiceEndpoints = {
 
 // API endpoint builders for each service
 export const getServiceUrl = {
-  // New Pipeline Services
+  // New Pipeline Services - orchestrator handles status only (job creation is in initial-api)
   orchestrator: {
-    processInvoice: () => `${SERVICE_URLS.orchestrator}/process-invoice`,
     jobStatus: (jobId: string) => `${SERVICE_URLS.orchestrator}/jobs/${jobId}/status`,
-    jobProgress: (jobId: string) => `${SERVICE_URLS.orchestrator}/jobs/${jobId}/progress`,
+    triggerExtraction: (jobId: string) => `${SERVICE_URLS.orchestrator}/jobs/${jobId}/trigger-extraction`,
+    updateStatus: (jobId: string) => `${SERVICE_URLS.orchestrator}/jobs/${jobId}/update-status`,
+    complete: (jobId: string) => `${SERVICE_URLS.orchestrator}/jobs/${jobId}/complete`,
     health: () => `${SERVICE_URLS.orchestrator}/health`
   },
 
   dataExtractor: {
     extract: () => `${SERVICE_URLS.dataExtractor}/extract`,
-    extractionResult: (jobId: string) => `${SERVICE_URLS.dataExtractor}/jobs/${jobId}/extraction-result`,
     health: () => `${SERVICE_URLS.dataExtractor}/health`
   },
 
   chunkDispatcher: {
     dispatch: () => `${SERVICE_URLS.chunkDispatcher}/dispatch`,
-    jobChunks: (jobId: string) => `${SERVICE_URLS.chunkDispatcher}/jobs/${jobId}/chunks`,
     health: () => `${SERVICE_URLS.chunkDispatcher}/health`
   },
 
   fieldStandardizer: {
     standardize: () => `${SERVICE_URLS.fieldStandardizer}/standardize`,
-    standardizedResult: (jobId: string) => `${SERVICE_URLS.fieldStandardizer}/jobs/${jobId}/standardized-result`,
     health: () => `${SERVICE_URLS.fieldStandardizer}/health`
+  },
+  
+  enrichmentWorker: {
+    enrich: () => `${SERVICE_URLS.enrichmentWorker}/enrich-chunk`,
+    health: () => `${SERVICE_URLS.enrichmentWorker}/health`
   },
 
   // Legacy SuperAdmin Service Endpoints (backward compatibility)
@@ -120,37 +125,25 @@ export async function checkServiceHealth() {
 }
 
 // New pipeline processing workflow
+// NOTE: Job creation is handled by initial-api, not orchestrator
 export const processInvoiceWorkflow = {
-  // Step 1: Create job and trigger extraction
-  initiateProcessing: (gcsPath: string, filename: string, fileSize: number) => ({
-    url: getServiceUrl.orchestrator.processInvoice(),
-    payload: {
-      gcs_input_path: gcsPath,
-      original_filename: filename,
-      file_size_bytes: fileSize
-    }
-  }),
+  // Step 1: Check job status (job is created by initial-api)
+  checkJobStatus: (jobId: string) => getServiceUrl.orchestrator.jobStatus(jobId),
   
-  // Step 2: Monitor job progress
-  checkProgress: (jobId: string) => getServiceUrl.orchestrator.jobProgress(jobId),
+  // Step 2: Trigger extraction (called by initial-api after upload)
+  triggerExtraction: (jobId: string) => getServiceUrl.orchestrator.triggerExtraction(jobId),
   
-  // Step 3: Get final status
-  getFinalStatus: (jobId: string) => getServiceUrl.orchestrator.jobStatus(jobId),
+  // Step 3: Update status (called by downstream services)
+  updateStatus: (jobId: string) => getServiceUrl.orchestrator.updateStatus(jobId),
   
-  // Get detailed extraction results
-  getExtractionResult: (jobId: string) => getServiceUrl.dataExtractor.extractionResult(jobId),
-  
-  // Get chunk processing status
-  getChunkStatus: (jobId: string) => getServiceUrl.chunkDispatcher.jobChunks(jobId),
-  
-  // Get standardized results
-  getStandardizedResult: (jobId: string) => getServiceUrl.fieldStandardizer.standardizedResult(jobId)
+  // Step 4: Mark complete
+  completeJob: (jobId: string) => getServiceUrl.orchestrator.complete(jobId)
 }
 
 // Legacy API compatibility (for gradual migration)
 export const getApiUrl = {
   // Map old endpoints to new orchestrator-based workflow
-  signedUrl: (_encodedPath: string) => getServiceUrl.orchestrator.processInvoice(),
+  signedUrl: (_encodedPath: string) => getServiceUrl.orchestrator.jobStatus(''),
   archiveCompleted: () => getServiceUrl.orchestrator.jobStatus(''),  // Generic endpoint
   
   // New service-based endpoints

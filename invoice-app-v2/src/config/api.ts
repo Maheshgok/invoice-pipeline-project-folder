@@ -9,9 +9,12 @@ export const API_CONFIG = {
   ARCHIVE_API_URL: import.meta.env.VITE_ARCHIVE_API_URL || 'https://archive-manager-bhcetby62q-el.a.run.app',
   QUEUE_API_URL: import.meta.env.VITE_QUEUE_API_URL || 'https://queue-processor-bhcetby62q-el.a.run.app',
   
-  // Multi-stage Orchestrated Pipeline
+  // New Orchestrator Service (status coordination only - job creation is in initial-api)
+  ORCHESTRATOR_URL: import.meta.env.VITE_ORCHESTRATOR_URL || 'https://orchestrator-service-bhcetby62q-el.a.run.app',
+  
+  // Legacy Multi-stage Pipeline URLs (may be deprecated)
   PIPELINE_ORCHESTRATOR_URL: import.meta.env.VITE_PIPELINE_ORCHESTRATOR_URL || 'https://pipeline-orchestrator-bhcetby62q-el.a.run.app',
-  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-bhcetby62q-el.a.run.app',
+  FIELD_STANDARDIZER_URL: import.meta.env.VITE_FIELD_STANDARDIZER_URL || 'https://field-standardizer-v2-bhcetby62q-el.a.run.app',
   DATA_COMBINER_URL: import.meta.env.VITE_DATA_COMBINER_URL || 'https://data-combiner-bhcetby62q-el.a.run.app',
   
   // Endpoints
