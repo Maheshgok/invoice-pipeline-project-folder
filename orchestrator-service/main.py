@@ -1,10 +1,12 @@
 """
 Orchestrator Service - Lightweight Job Coordination
 Per Approach Doc: 256MB, no LLM, no heavy dependencies
+
+NOTE: Job creation is handled by initial-api to avoid duplicate job IDs.
+This service only coordinates status updates and triggers downstream services.
 """
 
 import os
-import uuid
 import logging
 from datetime import datetime
 from typing import Dict, Any
@@ -43,52 +45,6 @@ def health():
     return jsonify({'status': 'healthy', 'service': 'orchestrator'})
 
 
-@app.route('/jobs', methods=['POST'])
-def create_job():
-    """
-    Create new processing job
-    Per Approach Doc Section 7.2:
-    - Generate job_id
-    - Initialize Firestore job document
-    - Set initial job status
-    """
-    try:
-        tenant_id = get_tenant_id(request)
-        data = request.get_json() or {}
-        
-        # Generate unique job ID
-        job_id = f"job_{uuid.uuid4().hex[:12]}"
-        
-        # Create job document at: tenants/{tenant_id}/jobs/{job_id}
-        job_doc = {
-            'status': 'CREATED',
-            'created_at': datetime.utcnow().isoformat(),
-            'gcs_input_path': data.get('gcs_input_path'),
-            'original_filename': data.get('original_filename'),
-            'file_size_bytes': data.get('file_size_bytes'),
-            'tenant_id': tenant_id,
-            'user_id': data.get('user_id'),
-            'client_id': data.get('client_id')  # For COA lookup during enrichment
-        }
-        
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).set(job_doc)
-        
-        logger.info(f"✅ Created job {job_id} for tenant {tenant_id}")
-        
-        return jsonify({
-            'success': True,
-            'job_id': job_id,
-            'tenant_id': tenant_id,
-            'status': 'CREATED'
-        })
-        
-    except ValueError as e:
-        return jsonify({'error': str(e)}), 400
-    except Exception as e:
-        logger.error(f"❌ Job creation failed: {e}")
-        return jsonify({'error': 'Job creation failed'}), 500
-
-
 @app.route('/jobs/<job_id>/status', methods=['GET'])
 def get_job_status(job_id: str):
     """Get job status from Firestore"""
@@ -118,16 +74,25 @@ def get_job_status(job_id: str):
 
 @app.route('/jobs/<job_id>/trigger-extraction', methods=['POST'])
 def trigger_extraction(job_id: str):
-    """Update status to EXTRACTING - extraction service polls for this"""
+    """
+    Update status to EXTRACTING and trigger data-extractor-v2
+    Called by initial-api after file upload to GCS
+    """
     try:
         tenant_id = get_tenant_id(request)
+        data = request.get_json() or {}
         
+        # Update job status to EXTRACTING
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
             'status': 'EXTRACTING',
             'updated_at': datetime.utcnow().isoformat()
         })
         
         logger.info(f"🚀 Triggered extraction for job {job_id}")
+        
+        # TODO: Call data-extractor-v2 directly or via PubSub
+        # For now, extraction service can poll for EXTRACTING status jobs
+        
         return jsonify({'success': True, 'status': 'EXTRACTING'})
         
     except Exception as e:
@@ -137,7 +102,7 @@ def trigger_extraction(job_id: str):
 
 @app.route('/jobs/<job_id>/update-status', methods=['POST'])
 def update_status(job_id: str):
-    """Generic status update endpoint"""
+    """Generic status update endpoint for downstream services"""
     try:
         tenant_id = get_tenant_id(request)
         data = request.get_json() or {}
@@ -151,12 +116,23 @@ def update_status(job_id: str):
             'updated_at': datetime.utcnow().isoformat()
         }
         
-        # Optional: add error info if FAILED
+        # Add any additional data passed
+        if data.get('line_items_count'):
+            update_data['line_items_count'] = data.get('line_items_count')
+        if data.get('chunks_total'):
+            update_data['chunks_total'] = data.get('chunks_total')
+        if data.get('chunks_completed'):
+            update_data['chunks_completed'] = data.get('chunks_completed')
+        if data.get('journal_entries_count'):
+            update_data['journal_entries_count'] = data.get('journal_entries_count')
+        
+        # Add error info if FAILED
         if new_status == 'FAILED' and data.get('error'):
             update_data['error'] = data.get('error')
         
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update(update_data)
         
+        logger.info(f"📝 Updated job {job_id} status to {new_status}")
         return jsonify({'success': True, 'status': new_status})
         
     except Exception as e:
@@ -164,15 +140,48 @@ def update_status(job_id: str):
         return jsonify({'error': 'Update failed'}), 500
 
 
+@app.route('/jobs/<job_id>/complete', methods=['POST'])
+def complete_job(job_id: str):
+    """Mark job as completed with final results"""
+    try:
+        tenant_id = get_tenant_id(request)
+        data = request.get_json() or {}
+        
+        update_data = {
+            'status': 'COMPLETED',
+            'completed_at': datetime.utcnow().isoformat(),
+            'updated_at': datetime.utcnow().isoformat()
+        }
+        
+        # Add final counts
+        if data.get('journal_entries_count'):
+            update_data['journal_entries_count'] = data.get('journal_entries_count')
+        if data.get('total_amount'):
+            update_data['total_amount'] = data.get('total_amount')
+        
+        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update(update_data)
+        
+        logger.info(f"✅ Completed job {job_id}")
+        return jsonify({'success': True, 'status': 'COMPLETED'})
+        
+    except Exception as e:
+        logger.error(f"❌ Job completion failed: {e}")
+        return jsonify({'error': 'Completion failed'}), 500
+
+
 def _calculate_progress(job_data: Dict[str, Any]) -> int:
     """Calculate progress percentage based on status"""
     status = job_data.get('status', 'CREATED')
     progress_map = {
         'CREATED': 0,
-        'EXTRACTING': 20,
-        'ENRICHING': 50,
-        'STANDARDIZING': 80,
-        'COMBINING': 90,
+        'UPLOADING': 10,
+        'EXTRACTING': 25,
+        'EXTRACTED': 40,
+        'DISPATCHED': 50,
+        'ENRICHING': 60,
+        'ENRICHED': 75,
+        'STANDARDIZING': 85,
+        'STANDARDIZED': 95,
         'COMPLETED': 100,
         'FAILED': 0
     }
