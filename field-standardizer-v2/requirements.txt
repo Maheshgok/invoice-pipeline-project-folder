@@ -1,7 +1,6 @@
-# Field Standardizer V2 Service Dependencies
-flask>=2.3.0
-flask-cors>=4.0.0
-gunicorn>=21.2.0
-google-cloud-firestore>=2.11.0
-google-cloud-secret-manager>=2.16.0
-firebase-admin>=6.2.0
+flask==3.0.0
+flask-cors==4.0.0
+gunicorn==21.2.0
+google-cloud-firestore==2.14.0
+google-cloud-secret-manager==2.18.0
+openai==1.12.0
