@@ -1,8 +1,22 @@
 /**
  * Processing Mode Service - Switch between legacy and functional processing
+ * 
+ * NOTE: Both modes now route through initial-api → orchestrator pipeline.
+ * The 'functional' mode was previously used for direct microservice calls,
+ * but has been deprecated in favor of the orchestrated approach.
  */
 
-import { functionalInvoiceService, CompletePipelineResult } from './functionalInvoiceService'
+// CompletePipelineResult type kept for backward compatibility
+export interface CompletePipelineResult {
+  job_id: string
+  status: string
+  extracted_data?: any
+  standardized_data?: any
+  enriched_data?: any
+  final_result?: any
+  error?: string
+}
+
 import { getApiUrl } from '../config/api'
 import { authService } from './auth'
 

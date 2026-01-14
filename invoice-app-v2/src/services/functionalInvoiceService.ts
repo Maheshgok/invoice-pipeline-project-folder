@@ -1,7 +1,10 @@
 /**
- * Orchestrated Invoice Processing Service  
- * Integration with the orchestrated multi-stage pipeline for invoice processing
- * Uses: Pipeline Orchestrator -> Field Standardizer -> Data Combiner
+ * @deprecated This service is no longer used. 
+ * All processing now goes through: initial-api → orchestrator → Cloud Tasks pipeline.
+ * Kept for reference only. See processingModeService.ts for the current implementation.
+ * 
+ * DEPRECATED: Orchestrated Invoice Processing Service  
+ * Previously used for direct microservice calls, now replaced by orchestrated pipeline.
  */
 
 import { getApiUrl } from '../config/api'
@@ -35,6 +38,7 @@ export interface CompletePipelineResult {
   error?: string
 }
 
+/** @deprecated Use initial-api upload endpoint instead */
 export class FunctionalInvoiceService {
   
   /**

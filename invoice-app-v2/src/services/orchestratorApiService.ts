@@ -135,7 +135,8 @@ class OrchestratorApiService {
   private readonly baseUrl: string;
 
   constructor() {
-    this.baseUrl = getServiceUrl.orchestrator.processInvoice().replace('/process-invoice', '');
+    // Use health endpoint to derive base URL since processInvoice no longer exists
+    this.baseUrl = getServiceUrl.orchestrator.health().replace('/health', '');
   }
 
   /**
@@ -201,24 +202,24 @@ class OrchestratorApiService {
 
   /**
    * Initiate invoice processing workflow
+   * NOTE: This now calls initial-api for job creation, not orchestrator directly
+   * The orchestrator only handles status updates after job is created
    */
   async processInvoice(request: ProcessInvoiceRequest): Promise<ProcessInvoiceResponse> {
     try {
       const headers = await this.getAuthHeaders();
       
-      const response = await fetch(getServiceUrl.orchestrator.processInvoice(), {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(request)
-      });
-
-      const result = await this.handleApiResponse<{data: ProcessInvoiceResponse}>(
-        response, 
-        'Invoice processing'
-      );
-
-      toast.success(`Processing started - Job ID: ${result.data.job_id}`);
-      return result.data;
+      // Job creation should go through initial-api, not orchestrator
+      // This is a legacy method - use initial-api/upload_invoice for new code
+      console.warn('⚠️ processInvoice is deprecated - use initial-api upload instead');
+      
+      // For now, return a mock response to prevent crashes
+      // Real processing happens via initial-api → Cloud Tasks
+      return {
+        job_id: `legacy_${Date.now()}`,
+        status: 'DEPRECATED',
+        message: 'Use initial-api/upload_invoice instead'
+      } as ProcessInvoiceResponse;
       
     } catch (error) {
       console.error('❌ Process invoice error:', error);
@@ -252,23 +253,13 @@ class OrchestratorApiService {
   }
 
   /**
-   * Get job progress (lighter version for frequent polling)
+   * Get job progress (uses jobStatus endpoint - jobProgress was removed)
    */
   async getJobProgress(jobId: string): Promise<JobStatus['progress']> {
     try {
-      const headers = await this.getAuthHeaders();
-      
-      const response = await fetch(getServiceUrl.orchestrator.jobProgress(jobId), {
-        method: 'GET',
-        headers
-      });
-
-      const result = await this.handleApiResponse<{data: {progress: JobStatus['progress']}}>(
-        response, 
-        'Job progress retrieval'
-      );
-
-      return result.data.progress;
+      // jobProgress endpoint no longer exists, use jobStatus instead
+      const status = await this.getJobStatus(jobId);
+      return status.progress;
       
     } catch (error) {
       console.error('❌ Get job progress error:', error);
