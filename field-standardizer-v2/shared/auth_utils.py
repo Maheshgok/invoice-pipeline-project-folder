@@ -8,9 +8,33 @@ import json
 import logging
 from typing import Dict, Any, Optional, Tuple
 from functools import wraps
-import firebase_admin
-from firebase_admin import auth as firebase_auth, credentials
-from flask import request, jsonify
+
+# Lazy import firebase_admin - only needed for token verification
+firebase_admin = None
+firebase_auth = None
+credentials = None
+
+def _ensure_firebase_loaded():
+    """Lazy load firebase-admin only when needed"""
+    global firebase_admin, firebase_auth, credentials
+    if firebase_admin is None:
+        try:
+            import firebase_admin as fa
+            from firebase_admin import auth as fa_auth, credentials as fa_cred
+            firebase_admin = fa
+            firebase_auth = fa_auth
+            credentials = fa_cred
+        except ImportError:
+            raise ImportError(
+                "firebase-admin is required for token verification. "
+                "Install with: pip install firebase-admin"
+            )
+
+try:
+    from flask import request, jsonify
+except ImportError:
+    request = None
+    jsonify = None
 
 logger = logging.getLogger(__name__)
 
@@ -19,10 +43,15 @@ class AuthUtils:
     
     def __init__(self):
         self.project_id = os.getenv('PROJECT_ID', 'watch-mail-trial')
-        self.initialize_firebase()
+        self._firebase_initialized = False
         
     def initialize_firebase(self):
-        """Initialize Firebase Admin SDK if not already done"""
+        """Initialize Firebase Admin SDK if not already done (lazy initialization)"""
+        if self._firebase_initialized:
+            return
+            
+        _ensure_firebase_loaded()
+        
         if not firebase_admin._apps:
             try:
                 # Use default credentials in Cloud Run environment
@@ -34,6 +63,8 @@ class AuthUtils:
             except Exception as e:
                 logger.error(f"❌ Failed to initialize Firebase Admin: {e}")
                 raise
+        
+        self._firebase_initialized = True
     
     def extract_auth_token(self, auth_header: str) -> str:
         """Extract Bearer token from Authorization header"""
@@ -53,6 +84,9 @@ class AuthUtils:
             'organization_role': str (optional)
         }
         """
+        # Ensure Firebase is initialized before verifying tokens
+        self.initialize_firebase()
+        
         try:
             decoded_token = firebase_auth.verify_id_token(id_token)
             
