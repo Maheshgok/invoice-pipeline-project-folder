@@ -254,8 +254,8 @@ def upload_file():
         logger.info(f"🆔 GENERATED JOB ID: {job_id} for user: {user_email}")
         logger.info(f"🧩 Job ID components: cust={cust_num}, asset={asset_ref}, token={token}")
         
-        # Call data-extractor-v2 directly for processing
-        # Architecture: initial-api → data-extractor-v2 → enrichment-worker → field-standardizer-v2
+        # Call orchestrator to trigger pipeline
+        # Architecture: initial-api → orchestrator → data-extractor-v2 → enrichment-worker → field-standardizer-v2
         try:
             auth_header = request.headers.get('Authorization')
             if not auth_header:
@@ -265,15 +265,17 @@ def upload_file():
             # Extract token from header
             auth_token = auth_header.split(' ')[1] if auth_header.startswith('Bearer ') else auth_header
             
-            # Service URLs for watch-mail-trial project
-            DATA_EXTRACTOR_URL = "https://data-extractor-v2-812016027146.asia-south1.run.app"
+            # Service URL for orchestrator (watch-mail-trial project)
+            ORCHESTRATOR_URL = "https://orchestrator-service-812016027146.asia-south1.run.app"
             
             # Create job document in Firestore first
             tenant_id = user_context['uid']
+            gcs_path = f"gs://{user_bucket_name}/{filename}"
+            
             job_doc = {
                 'status': 'QUEUED',
                 'created_at': datetime.utcnow().isoformat(),
-                'gcs_input_path': f"gs://{user_bucket_name}/{filename}",
+                'gcs_input_path': gcs_path,
                 'original_filename': file.filename,
                 'tenant_id': tenant_id,
                 'user_id': user_context['uid'],
@@ -282,58 +284,57 @@ def upload_file():
             firestore_client.collection('tenants').document(tenant_id).collection('jobs').document(job_id).set(job_doc)
             logger.info(f"📝 Created job document for {job_id}")
             
-            # Prepare payload for data-extractor-v2
-            extractor_payload = {
-                'job_id': job_id,
-                'gcs_input_path': f"gs://{user_bucket_name}/{filename}",
-                'tenant_id': tenant_id,
-                'user_context': user_context
+            # Prepare payload for orchestrator
+            orchestrator_payload = {
+                'gcs_input_path': gcs_path,
+                'client_id': user_context.get('client_organization_id')
             }
             
-            logger.info(f"🔬 Calling data-extractor-v2 directly for job: {job_id}")
+            logger.info(f"🎼 Calling orchestrator for job: {job_id}")
             
-            # Call data-extractor asynchronously (don't wait for response)
+            # Call orchestrator asynchronously (don't wait for response)
             import requests
             import threading
-            def call_data_extractor():
+            def call_orchestrator():
                 try:
                     response = requests.post(
-                        f"{DATA_EXTRACTOR_URL}/extract",
-                        json=extractor_payload,
+                        f"{ORCHESTRATOR_URL}/jobs/{job_id}/trigger-extraction",
+                        json=orchestrator_payload,
                         headers={
                             'Authorization': f'Bearer {auth_token}',
-                            'X-Tenant-ID': tenant_id
+                            'X-Tenant-ID': tenant_id,
+                            'Content-Type': 'application/json'
                         },
-                        timeout=600
+                        timeout=30
                     )
                     if response.ok:
-                        logger.info(f"✅ Data extraction started for job: {job_id}")
+                        logger.info(f"✅ Orchestrator triggered for job: {job_id}")
                     else:
-                        logger.error(f"❌ Data extractor failed for job {job_id}: {response.status_code}")
+                        logger.error(f"❌ Orchestrator failed for job {job_id}: {response.status_code}")
                         # Update job status to FAILED
                         firestore_client.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
                             'status': 'FAILED',
-                            'error': f"Extraction failed: {response.status_code}",
+                            'error': f"Orchestrator failed: {response.status_code}",
                             'updated_at': datetime.utcnow().isoformat()
                         })
                 except Exception as e:
-                    logger.error(f"❌ Data extractor call failed for job {job_id}: {e}")
+                    logger.error(f"❌ Orchestrator call failed for job {job_id}: {e}")
                     firestore_client.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
                         'status': 'FAILED',
                         'error': str(e),
                         'updated_at': datetime.utcnow().isoformat()
                     })
             
-            # Start extraction processing in background
-            threading.Thread(target=call_data_extractor, daemon=True).start()
+            # Start orchestration in background
+            threading.Thread(target=call_orchestrator, daemon=True).start()
             
-            processing_mode = "direct_extraction_pipeline"
-            logger.info(f"✅ File uploaded and data extraction started")
+            processing_mode = "orchestrated_pipeline"
+            logger.info(f"✅ File uploaded and orchestrator triggered")
             
         except Exception as process_error:
-            logger.error(f"Failed to start data extraction: {process_error}")
+            logger.error(f"Failed to trigger orchestrator: {process_error}")
             # Don't fail the upload, just log the error
-            logger.warning(f"Upload succeeded but extraction call failed for job_id: {job_id}")
+            logger.warning(f"Upload succeeded but orchestrator call failed for job_id: {job_id}")
         
         # Return successful upload response
         logger.info(f"File uploaded successfully. Job ID: {job_id}, Bucket path: {user_bucket_name}/{filename}")
@@ -344,10 +345,10 @@ def upload_file():
             "filename": filename,
             "bucket": user_bucket_name,
             "gcsPath": f"gs://{user_bucket_name}/{filename}",
-            "bucket_path": f"{user_bucket_name}/{filename}",  # Add this for reference
-            "extraction_started": True,  # Indicate extraction was triggered
-            "processing_mode": processing_mode,  # Direct extraction pipeline
-            "selected_processing": processing_mode  # Clear indication of processing path
+            "bucket_path": f"{user_bucket_name}/{filename}",
+            "orchestrator_triggered": True,
+            "processing_mode": processing_mode,
+            "selected_processing": processing_mode
         }), 200
         
     except Exception as e:

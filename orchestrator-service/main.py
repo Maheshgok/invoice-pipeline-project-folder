@@ -2,12 +2,13 @@
 Orchestrator Service - Lightweight Job Coordination
 Per Approach Doc: 256MB, no LLM, no heavy dependencies
 
-NOTE: Job creation is handled by initial-api to avoid duplicate job IDs.
-This service only coordinates status updates and triggers downstream services.
+Pipeline: initial-api → orchestrator → data-extractor-v2 → enrichment-worker → field-standardizer-v2
 """
 
 import os
 import logging
+import requests
+import threading
 from datetime import datetime
 from typing import Dict, Any
 
@@ -26,6 +27,12 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 db = firestore.Client()
 
 PROJECT_ID = os.getenv('PROJECT_ID', 'watch-mail-trial')
+
+# Downstream service URL
+DATA_EXTRACTOR_URL = os.getenv(
+    'DATA_EXTRACTOR_URL',
+    'https://data-extractor-v2-812016027146.asia-south1.run.app'
+)
 
 
 def get_tenant_id(req) -> str:
@@ -82,16 +89,66 @@ def trigger_extraction(job_id: str):
         tenant_id = get_tenant_id(request)
         data = request.get_json() or {}
         
+        gcs_input_path = data.get('gcs_input_path')
+        client_id = data.get('client_id')
+        
+        if not gcs_input_path:
+            return jsonify({'error': 'gcs_input_path is required'}), 400
+        
         # Update job status to EXTRACTING
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
             'status': 'EXTRACTING',
             'updated_at': datetime.utcnow().isoformat()
         })
         
-        logger.info(f"🚀 Triggered extraction for job {job_id}")
+        logger.info(f"🚀 Triggering extraction for job {job_id}")
         
-        # TODO: Call data-extractor-v2 directly or via PubSub
-        # For now, extraction service can poll for EXTRACTING status jobs
+        # Get auth header to pass downstream
+        auth_header = request.headers.get('Authorization')
+        
+        # Call data-extractor-v2 asynchronously
+        def call_data_extractor():
+            try:
+                extractor_payload = {
+                    'job_id': job_id,
+                    'gcs_input_path': gcs_input_path,
+                    'tenant_id': tenant_id,
+                    'client_id': client_id
+                }
+                
+                headers = {
+                    'Content-Type': 'application/json',
+                    'X-Tenant-ID': tenant_id
+                }
+                if auth_header:
+                    headers['Authorization'] = auth_header
+                
+                resp = requests.post(
+                    f"{DATA_EXTRACTOR_URL}/extract",
+                    json=extractor_payload,
+                    headers=headers,
+                    timeout=600
+                )
+                
+                if resp.ok:
+                    logger.info(f"✅ Data extractor started for job {job_id}")
+                else:
+                    logger.error(f"❌ Data extractor failed for {job_id}: {resp.status_code}")
+                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                        'status': 'FAILED',
+                        'error': f"Extraction failed: {resp.status_code}",
+                        'updated_at': datetime.utcnow().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"❌ Failed to call data extractor for {job_id}: {e}")
+                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                    'status': 'FAILED',
+                    'error': str(e),
+                    'updated_at': datetime.utcnow().isoformat()
+                })
+        
+        # Start extraction in background thread
+        threading.Thread(target=call_data_extractor, daemon=True).start()
         
         return jsonify({'success': True, 'status': 'EXTRACTING'})
         
