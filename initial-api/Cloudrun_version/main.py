@@ -284,6 +284,19 @@ def upload_file():
             firestore_client.collection('tenants').document(tenant_id).collection('jobs').document(job_id).set(job_doc)
             logger.info(f"📝 Created job document for {job_id}")
             
+            # Also write to users/{uid}/invoice_results for frontend visibility
+            # This allows frontend to show "processing" status immediately
+            user_result_doc = {
+                'id': job_id,
+                'status': 'processing',
+                'original_filename': file.filename,
+                'created_at': datetime.utcnow().isoformat(),
+                'gcs_input_path': gcs_path,
+                'user_email': user_context['email']
+            }
+            firestore_client.collection('users').document(tenant_id).collection('invoice_results').document(job_id).set(user_result_doc)
+            logger.info(f"📝 Created user result for frontend: users/{tenant_id}/invoice_results/{job_id}")
+            
             # Prepare payload for orchestrator
             orchestrator_payload = {
                 'gcs_input_path': gcs_path,

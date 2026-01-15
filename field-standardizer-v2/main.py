@@ -6,6 +6,8 @@ Per Approach Doc: 1GB, OpenAI Call #3
 import os
 import json
 import logging
+import requests
+import threading
 from datetime import datetime
 from typing import Dict, Any, List
 
@@ -22,6 +24,12 @@ CORS(app, resources={r"/*": {"origins": "*"}})
 
 db = firestore.Client()
 PROJECT_ID = os.getenv('PROJECT_ID', 'watch-mail-trial')
+
+# Service URL for data-combiner (final step)
+DATA_COMBINER_URL = os.getenv(
+    'DATA_COMBINER_URL',
+    'https://data-combiner-812016027146.asia-south1.run.app'
+)
 
 
 def get_openai_client() -> OpenAI:
@@ -77,6 +85,12 @@ def standardize_fields():
         # Accept enriched items directly from request or fetch from Firestore
         enriched_line_items = data.get('enriched_line_items', [])
         headers_raw = data.get('headers_raw', {})
+        
+        logger.info(f"🔍 STANDARDIZER DEBUG: Received job {job_id}")
+        logger.info(f"🔍 STANDARDIZER DEBUG: enriched_line_items count: {len(enriched_line_items)}")
+        logger.info(f"🔍 STANDARDIZER DEBUG: headers_raw: {json.dumps(headers_raw, default=str)[:500]}")
+        if enriched_line_items:
+            logger.info(f"🔍 STANDARDIZER DEBUG: First item structure: {json.dumps(enriched_line_items[0], default=str)[:1000]}")
         
         if not job_id:
             return jsonify({'error': 'job_id required'}), 400
@@ -147,6 +161,9 @@ Return JSON with:
         
         response_text = response.choices[0].message.content
         
+        logger.info(f"🔍 STANDARDIZER DEBUG: LLM response length: {len(response_text)}")
+        logger.info(f"🔍 STANDARDIZER DEBUG: LLM raw response: {response_text[:2000]}")
+        
         # Parse response
         try:
             if '```json' in response_text:
@@ -159,7 +176,9 @@ Return JSON with:
                 json_str = response_text
             
             standardized_data = json.loads(json_str)
-        except:
+            logger.info(f"🔍 STANDARDIZER DEBUG: Parsed standardized_data keys: {list(standardized_data.keys())}")
+        except Exception as parse_err:
+            logger.warning(f"⚠️ STANDARDIZER DEBUG: JSON parse failed: {parse_err}, using fallback")
             standardized_data = {
                 'invoice_header': headers_raw,
                 'journal_entries': enriched_line_items
@@ -167,7 +186,11 @@ Return JSON with:
         
         journal_entries = standardized_data.get('journal_entries', [])
         
-        # Store standardized data
+        logger.info(f"🔍 STANDARDIZER DEBUG: journal_entries count: {len(journal_entries)}")
+        if journal_entries:
+            logger.info(f"🔍 STANDARDIZER DEBUG: First journal entry: {json.dumps(journal_entries[0], default=str)[:1000]}")
+        
+        # Store standardized data in job subcollection
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('standardized').document('main').set({
             'invoice_header': standardized_data.get('invoice_header', {}),
             'journal_entries': journal_entries,
@@ -175,21 +198,84 @@ Return JSON with:
             'token_usage': response.usage.total_tokens if response.usage else 0
         })
         
-        # Mark job as COMPLETED - this is the final step in the pipeline
+        # Get original job data for the result document
+        job_doc = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).get()
+        job_data = job_doc.to_dict() if job_doc.exists else {}
+        
+        # Update job status to COMBINING
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'COMPLETED',
-            'journal_entries_count': len(journal_entries),
-            'completed_at': datetime.utcnow().isoformat(),
+            'status': 'COMBINING',
             'updated_at': datetime.utcnow().isoformat()
         })
         
-        logger.info(f"✅ Completed job {job_id}: {len(journal_entries)} journal entries")
+        logger.info(f"✅ Standardized job {job_id}: {len(journal_entries)} entries, calling data-combiner")
+        
+        # Call data-combiner to finalize and write to datastore
+        auth_header = request.headers.get('Authorization')
+        
+        def call_data_combiner():
+            try:
+                combiner_payload = {
+                    'job_id': job_id,
+                    'processed_data': {
+                        'standardized_header': standardized_data.get('invoice_header', {}),
+                        'standardized_journal_entries': journal_entries
+                    },
+                    'user_context': {
+                        'uid': tenant_id,
+                        'email': job_data.get('user_email', ''),
+                        'filename': job_data.get('original_filename', 'unknown')
+                    },
+                    'job_metadata': {
+                        'gcs_input_path': job_data.get('gcs_input_path', ''),
+                        'created_at': job_data.get('created_at', datetime.utcnow().isoformat())
+                    }
+                }
+                
+                headers = {'Content-Type': 'application/json'}
+                if auth_header:
+                    headers['Authorization'] = auth_header
+                
+                resp = requests.post(
+                    f"{DATA_COMBINER_URL}/combine-and-store",
+                    json=combiner_payload,
+                    headers=headers,
+                    timeout=120
+                )
+                
+                if resp.ok:
+                    logger.info(f"✅ Data-combiner completed for job {job_id}")
+                    # Mark job as COMPLETED
+                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                        'status': 'COMPLETED',
+                        'journal_entries_count': len(journal_entries),
+                        'completed_at': datetime.utcnow().isoformat(),
+                        'updated_at': datetime.utcnow().isoformat()
+                    })
+                else:
+                    logger.error(f"❌ Data-combiner failed for {job_id}: {resp.status_code}")
+                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                        'status': 'COMBINER_FAILED',
+                        'error': f"Combiner failed: {resp.status_code}",
+                        'updated_at': datetime.utcnow().isoformat()
+                    })
+            except Exception as e:
+                logger.error(f"❌ Failed to call data-combiner for {job_id}: {e}")
+                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+                    'status': 'COMBINER_FAILED',
+                    'error': str(e),
+                    'updated_at': datetime.utcnow().isoformat()
+                })
+        
+        # Call combiner asynchronously
+        threading.Thread(target=call_data_combiner, daemon=True).start()
         
         return jsonify({
             'success': True,
             'job_id': job_id,
-            'status': 'COMPLETED',
-            'journal_entries_count': len(journal_entries)
+            'status': 'COMBINING',
+            'journal_entries_count': len(journal_entries),
+            'combiner_triggered': True
         })
         
     except ValueError as e:

@@ -17,12 +17,10 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
-# Optimize Python runtime and Google Cloud SDK
+# Optimize Python runtime
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    GOOGLE_CLOUD_PROJECT="" \
-    GOOGLE_APPLICATION_CREDENTIALS="" 
+    PIP_NO_CACHE_DIR=1
 
 # Configure Gunicorn for Cloud Run with startup optimizations
 ENV PORT=8080 \

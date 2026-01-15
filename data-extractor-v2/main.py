@@ -5,18 +5,21 @@ After extraction, triggers enrichment-worker for next pipeline step.
 """
 
 import os
+import io
 import json
 import logging
 import base64
+import mimetypes
 import requests
 import threading
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import firestore, storage, secretmanager
 from openai import OpenAI
+from pdf2image import convert_from_bytes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -49,6 +52,56 @@ def get_openai_client() -> OpenAI:
 
 
 openai_client = None
+
+
+def detect_mime_type(file_content: bytes, filename: str = '') -> str:
+    """Detect MIME type from file content or filename"""
+    # Check magic bytes first
+    if file_content[:4] == b'%PDF':
+        return 'application/pdf'
+    elif file_content[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png'
+    elif file_content[:2] == b'\xff\xd8':
+        return 'image/jpeg'
+    elif file_content[:4] == b'GIF8':
+        return 'image/gif'
+    elif file_content[:4] == b'RIFF' and file_content[8:12] == b'WEBP':
+        return 'image/webp'
+    
+    # Fallback to filename extension
+    if filename:
+        mime_type, _ = mimetypes.guess_type(filename)
+        if mime_type:
+            return mime_type
+    
+    # Default to jpeg for unknown images
+    return 'image/jpeg'
+
+
+def prepare_image_for_openai(file_content: bytes, filename: str = '') -> Tuple[str, str]:
+    """
+    Prepare image content for OpenAI Vision API.
+    Returns (base64_content, mime_type)
+    For PDFs, converts first page to PNG.
+    """
+    mime_type = detect_mime_type(file_content, filename)
+    
+    if mime_type == 'application/pdf':
+        # Convert PDF first page to PNG
+        logger.info("📄 Converting PDF to image for OpenAI Vision")
+        try:
+            images = convert_from_bytes(file_content, first_page=1, last_page=1, dpi=200)
+            if images:
+                img_buffer = io.BytesIO()
+                images[0].save(img_buffer, format='PNG')
+                img_buffer.seek(0)
+                return base64.b64encode(img_buffer.getvalue()).decode('utf-8'), 'image/png'
+        except Exception as e:
+            logger.error(f"PDF conversion failed: {e}")
+            raise ValueError(f"Failed to convert PDF to image: {e}")
+    
+    # For regular images, just encode
+    return base64.b64encode(file_content).decode('utf-8'), mime_type
 
 
 def get_tenant_id(req) -> str:
@@ -100,8 +153,10 @@ def extract_invoice():
         blob = bucket.blob(blob_path)
         file_content = blob.download_as_bytes()
         
-        # Encode for OpenAI Vision
-        base64_content = base64.b64encode(file_content).decode('utf-8')
+        # Prepare image for OpenAI Vision (handles PDF conversion)
+        filename = blob_path.split('/')[-1] if blob_path else ''
+        base64_content, mime_type = prepare_image_for_openai(file_content, filename)
+        logger.info(f"📷 Prepared image for OpenAI: {mime_type}")
         
         # Call OpenAI Vision API
         response = openai_client.chat.completions.create(
@@ -118,7 +173,7 @@ Return JSON with:
                     "role": "user",
                     "content": [
                         {"type": "text", "text": "Extract all data from this invoice:"},
-                        {"type": "image_url", "image_url": {"url": f"data:application/pdf;base64,{base64_content}"}}
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_content}"}}
                     ]
                 }
             ],

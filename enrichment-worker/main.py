@@ -121,20 +121,69 @@ def enrich_line_item(item: Dict, client_profile: Dict) -> Dict:
         response = openai_client.chat.completions.create(
             model="gpt-4o",
             messages=[
-                {"role": "system", "content": "You are an invoice line item classifier for Indian accounting. Return JSON with: hsn_code, tax_category, product_category."},
-                {"role": "user", "content": f"Classify: {description}.{coa_context}"}
+                {"role": "system", "content": """You are an invoice line item classifier for Indian accounting.
+For each line item, provide classification AND balanced journal entry with debit/credit.
+
+Return JSON with:
+- hsn_code: HSN/SAC code (4-8 digits)
+- tax_category: GST rate (e.g. GST_18_PERCENT, GST_5_PERCENT)
+- product_category: Service, Goods, or specific category
+- account_code: GL account code if available
+- account_name: GL account name
+- journal_entry: {
+    "entries": [
+      {"account": "Expense Account", "debit": amount, "credit": 0},
+      {"account": "CGST Input", "debit": cgst_amount, "credit": 0},
+      {"account": "SGST Input", "debit": sgst_amount, "credit": 0},
+      {"account": "Vendor Payable", "debit": 0, "credit": total_with_tax}
+    ]
+  }
+Ensure total debits = total credits for balanced entry."""},
+                {"role": "user", "content": f"Classify and create balanced journal entry for: {description}, Amount: {amount}.{coa_context}"}
             ],
-            max_tokens=200,
+            max_tokens=500,
             temperature=0.2
         )
         
+        # Parse OpenAI response
+        response_text = response.choices[0].message.content
+        try:
+            if '```json' in response_text:
+                json_str = response_text.split('```json')[1].split('```')[0]
+            elif '{' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                json_str = response_text[start:end]
+            else:
+                json_str = response_text
+            ai_result = json.loads(json_str)
+        except:
+            ai_result = {}
+        
         enrichment = {
-            'hsn_code': '998314',
-            'tax_category': 'GST_18_PERCENT',
-            'product_category': 'Service',
+            'hsn_code': ai_result.get('hsn_code', '998314'),
+            'tax_category': ai_result.get('tax_category', 'GST_18_PERCENT'),
+            'product_category': ai_result.get('product_category', 'Service'),
+            'account_code': ai_result.get('account_code') or (coa_match.get('account_code') if coa_match else None),
+            'account_name': ai_result.get('account_name') or (coa_match.get('account_name') if coa_match else None),
+            'journal_entry': ai_result.get('journal_entry', {}),
             **(coa_match if coa_match else {}),
             'enriched_at': datetime.utcnow().isoformat()
         }
+        
+        # Calculate and add is_balanced flag for the journal entry
+        journal_entry = enrichment.get('journal_entry', {})
+        entries = journal_entry.get('entries', [])
+        total_debit = sum(float(e.get('debit', 0) or 0) for e in entries)
+        total_credit = sum(float(e.get('credit', 0) or 0) for e in entries)
+        is_balanced = abs(total_debit - total_credit) < 0.01
+        
+        enrichment['is_balanced'] = is_balanced
+        enrichment['total_debit'] = round(total_debit, 2)
+        enrichment['total_credit'] = round(total_credit, 2)
+        
+        if not is_balanced:
+            logger.warning(f"⚠️ Unbalanced entry for '{description}': debit={total_debit}, credit={total_credit}")
         
         return {**item, 'enrichment_data': enrichment}
         
@@ -175,6 +224,18 @@ def enrich_job():
         
         # Enrich each line item
         enriched_items = [enrich_line_item(item, client_profile) for item in line_items]
+        
+        # Debug logging
+        logger.info(f"🔍 ENRICHMENT DEBUG: Enriched {len(enriched_items)} items for job {job_id}")
+        for idx, item in enumerate(enriched_items):
+            logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} keys: {list(item.keys())}")
+            enrichment_data = item.get('enrichment_data', {})
+            if enrichment_data:
+                logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} enrichment_data keys: {list(enrichment_data.keys())}")
+                journal_entry = enrichment_data.get('journal_entry', {})
+                entries = journal_entry.get('entries', [])
+                logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} has {len(entries)} journal entries")
+                logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} is_balanced={enrichment_data.get('is_balanced')}, total_debit={enrichment_data.get('total_debit')}, total_credit={enrichment_data.get('total_credit')}")
         
         # Store enriched data in Firestore
         enrichment_doc = {

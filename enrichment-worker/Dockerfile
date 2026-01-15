@@ -3,10 +3,10 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements_simple.txt requirements.txt
+COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main_simple.py main.py
+COPY main.py .
 
 ENV PORT=8080
 ENV PYTHONUNBUFFERED=1

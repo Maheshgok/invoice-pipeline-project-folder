@@ -1032,10 +1032,6 @@ const MultiUploadDashboard: React.FC = () => {
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Item Details</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Qty</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Unit Price ₹</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">CGST ₹</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">SGST ₹</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">IGST ₹</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Total GST ₹</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Balanced</th>
                   </tr>
                 </thead>
@@ -1354,57 +1350,7 @@ const MultiUploadDashboard: React.FC = () => {
                         {entry.unitPrice ? `₹${entry.unitPrice.toFixed(2)}` : '-'}
                       </td>
                       
-                      {/* CGST Amount */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                        ₹{(entry.cgstAmount || 0).toFixed(2)}
-                      </td>
-                      
-                      {/* SGST Amount */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                        ₹{(entry.sgstAmount || 0).toFixed(2)}
-                      </td>
-                      
-                      {/* IGST Amount */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                        ₹{(entry.igstAmount || 0).toFixed(2)}
-                      </td>
-                      
-                      {/* Total GST Amount */}
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 text-right">
-                        {editingCell === `${entry.id}-gstAmount` ? (
-                          <div className="flex items-center space-x-2">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={editValue}
-                              onChange={(e) => setEditValue(e.target.value)}
-                              className="border rounded px-2 py-1 text-sm w-20"
-                              autoFocus
-                            />
-                            <button
-                              onClick={() => handleCellSave(entry.id, 'gstAmount')}
-                              className="text-green-600 hover:text-green-800"
-                            >
-                              <CheckCircle className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={handleCellCancel}
-                              className="text-gray-500 hover:text-gray-700"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div 
-                            className="cursor-pointer hover:bg-blue-50 rounded px-2 py-1 text-right"
-                            onClick={() => handleCellEdit(entry.id, 'gstAmount', entry.gstAmount || 0)}
-                          >
-                            ₹{(entry.gstAmount || 0).toFixed(2)}
-                          </div>
-                        )}
-                      </td>
-                      
-                      {/* Balanced Status */}
+                      {/* Balanced Status - GST columns removed since GST shown as separate journal lines */}
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
                         <div className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                           entry.isBalanced === true ? 'bg-green-100 text-green-800' : 

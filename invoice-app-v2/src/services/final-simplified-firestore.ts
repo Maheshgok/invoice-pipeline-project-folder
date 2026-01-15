@@ -44,8 +44,16 @@ export class FinalSimplifiedFirestoreService {
             jobId: data.job_id || doc.id,
             userEmail: data.user_email || '',
             createdAt: data.created_at || data.updated_at || new Date(),
-            // CORRECT: Data is in 'result' field based on your Firestore structure
-            extractedData: data.result
+            // Support both old (data.result) and new (direct fields) structure
+            extractedData: data.result || {
+              journal_entries: data.journal_entries || [],
+              invoice_details: data.invoice_header || data.invoice_details || {},
+              vendor_details: data.vendor_details || {
+                name: data.invoice_header?.vendor_name || '',
+                gstin: data.invoice_header?.vendor_gstin || ''
+              },
+              balance_validation: data.balance_validation || {}
+            }
           }
         })
         
@@ -97,11 +105,12 @@ export class FinalSimplifiedFirestoreService {
             description: entry.narration || entry.item_description || '',
             narration: entry.narration || '',
             reference: entry.reference_number || data.invoice_details?.invoice_number || '',
-            // DIRECT HSN from backend - this is the key fix!
+            // HSN from backend
             hsnCode: entry.hsn_code || '',
             itemDescription: entry.item_description || '',
             quantity: entry.quantity || 0,
             unitPrice: entry.unit_price || 0,
+            // GST data still available for exports, just not displayed in table
             gstAmount: entry.gst_amount || 0,
             cgstAmount: entry.cgst_amount || 0,
             sgstAmount: entry.sgst_amount || 0,
@@ -118,7 +127,7 @@ export class FinalSimplifiedFirestoreService {
           console.log(`✅ Mapped entry ${entryIndex}:`, {
             id: mappedEntry.id,
             accountName: mappedEntry.accountName,
-            hsnCode: mappedEntry.hsnCode // This should be "85176290"!
+            hsnCode: mappedEntry.hsnCode
           })
           
           entries.push(mappedEntry)
