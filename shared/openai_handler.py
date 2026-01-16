@@ -58,12 +58,10 @@ class OpenAIHandler:
         logger.info(f"🤖 OpenAI Handler initialized for service: {service_name}")
     
     def _get_api_key(self) -> str:
-        """Get OpenAI API key from environment or hardcoded fallback"""
+        """Get OpenAI API key from environment variable (required)"""
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
-            # Fallback to hardcoded key (DataAnalyst1)
-            api_key = "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"
-            logger.info("🔑 Using fallback DataAnalyst1 API key")
+            raise ValueError("OPENAI_API_KEY environment variable is required. Set it in Cloud Run or local .env file.")
         return api_key
     
     def _initialize_client(self) -> OpenAI:

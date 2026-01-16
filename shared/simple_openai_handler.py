@@ -45,11 +45,10 @@ class SimpleOpenAIHandler:
         logger.info(f"🤖 OpenAI Handler initialized: {service_name}, model: {config.model}")
     
     def _get_api_key(self) -> str:
-        """Get OpenAI API key"""
+        """Get OpenAI API key from environment variable (required)"""
         api_key = os.getenv('OPENAI_API_KEY')
         if not api_key:
-            # Fallback to DataAnalyst1 key
-            api_key = "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"
+            raise ValueError("OPENAI_API_KEY environment variable is required. Set it in Cloud Run or local .env file.")
         return api_key
     
     def _initialize_client(self) -> OpenAI:
