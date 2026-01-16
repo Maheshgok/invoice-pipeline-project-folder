@@ -97,6 +97,20 @@ def match_account_from_coa(description: str, amount: float, coa: List[Dict], cap
     return {}
 
 
+def parse_amount(value) -> float:
+    """Parse amount string handling commas, currency symbols, etc."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    # Remove commas, currency symbols, spaces
+    cleaned = str(value).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip()
+    try:
+        return float(cleaned) if cleaned else 0.0
+    except ValueError:
+        return 0.0
+
+
 def enrich_line_item(item: Dict, client_profile: Dict) -> Dict:
     """Enrich single line item with OpenAI + COA matching"""
     global openai_client
@@ -104,7 +118,7 @@ def enrich_line_item(item: Dict, client_profile: Dict) -> Dict:
         openai_client = get_openai_client()
     
     description = item.get('description', '')
-    amount = float(item.get('amount', 0) or item.get('total', 0) or 0)
+    amount = parse_amount(item.get('amount') or item.get('total') or 0)
     
     # Try COA match first
     coa = client_profile.get('chart_of_accounts', [])

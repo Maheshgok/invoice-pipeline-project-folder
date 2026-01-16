@@ -33,6 +33,19 @@ def get_firestore_client():
     return firestore_client
 
 
+def parse_amount(value) -> float:
+    """Parse amount string handling commas, currency symbols, etc."""
+    if value is None:
+        return 0.0
+    if isinstance(value, (int, float)):
+        return float(value)
+    # Remove commas, currency symbols, spaces
+    cleaned = str(value).replace(',', '').replace('₹', '').replace('$', '').replace(' ', '').strip()
+    try:
+        return float(cleaned) if cleaned else 0.0
+    except ValueError:
+        return 0.0
+
 def validate_accounting_balance(journal_entries: List[Dict]) -> Dict[str, Any]:
     """Validate that all journal entries are balanced (debits = credits)"""
     try:
@@ -45,27 +58,27 @@ def validate_accounting_balance(journal_entries: List[Dict]) -> Dict[str, Any]:
             if enrichment_data:
                 # Use pre-calculated totals from enrichment-worker
                 if 'total_debit' in enrichment_data and 'total_credit' in enrichment_data:
-                    total_debit += float(enrichment_data.get('total_debit', 0) or 0)
-                    total_credit += float(enrichment_data.get('total_credit', 0) or 0)
+                    total_debit += parse_amount(enrichment_data.get('total_debit', 0))
+                    total_credit += parse_amount(enrichment_data.get('total_credit', 0))
                     continue
                 
                 # Or drill into journal_entry.entries
                 journal_entry = enrichment_data.get('journal_entry', {})
                 if 'entries' in journal_entry:
                     for line in journal_entry.get('entries', []):
-                        total_debit += float(line.get('debit', 0) or 0)
-                        total_credit += float(line.get('credit', 0) or 0)
+                        total_debit += parse_amount(line.get('debit', 0))
+                        total_credit += parse_amount(line.get('credit', 0))
                     continue
             
             # Fallback: Handle flat entries directly on the entry
             if 'entries' in entry:
                 for line in entry.get('entries', []):
-                    total_debit += float(line.get('debit', 0) or 0)
-                    total_credit += float(line.get('credit', 0) or 0)
+                    total_debit += parse_amount(line.get('debit', 0))
+                    total_credit += parse_amount(line.get('credit', 0))
             else:
                 # Simple flat format
-                total_debit += float(entry.get('debit', 0) or 0)
-                total_credit += float(entry.get('credit', 0) or 0)
+                total_debit += parse_amount(entry.get('debit', 0))
+                total_credit += parse_amount(entry.get('credit', 0))
         
         is_balanced = abs(total_debit - total_credit) < 0.01  # Allow for rounding
         
@@ -127,9 +140,9 @@ def flatten_journal_entries_for_frontend(raw_entries: List[Dict], header_data: D
                     'vendor_name': header_data.get('vendor_name', ''),
                     'account_name': entry.get('account_name', ''),
                     'account_code': entry.get('account_code', ''),
-                    'account_type': 'Expense' if float(entry.get('debit', 0) or 0) > 0 else 'Liability',
-                    'debit_amount': float(entry.get('debit', 0) or 0),
-                    'credit_amount': float(entry.get('credit', 0) or 0),
+                    'account_type': 'Expense' if parse_amount(entry.get('debit', 0)) > 0 else 'Liability',
+                    'debit_amount': parse_amount(entry.get('debit', 0)),
+                    'credit_amount': parse_amount(entry.get('credit', 0)),
                     'narration': entry.get('description', entry.get('narration', '')),
                     'item_description': entry.get('description', entry.get('item_description', '')),
                     'hsn_code': entry.get('hsn_code', ''),
@@ -139,10 +152,10 @@ def flatten_journal_entries_for_frontend(raw_entries: List[Dict], header_data: D
                     'sgst_amount': 0,
                     'igst_amount': 0,
                     'is_gst_applicable': False,
-                    'quantity': float(entry.get('quantity', 0) or 0),
-                    'unit_price': float(entry.get('unit_price', 0) or 0),
-                    'taxable_amount': float(entry.get('amount', 0) or 0),
-                    'line_total': float(entry.get('amount', 0) or 0),
+                    'quantity': parse_amount(entry.get('quantity', 0)),
+                    'unit_price': parse_amount(entry.get('unit_price', 0)),
+                    'taxable_amount': parse_amount(entry.get('amount', 0)),
+                    'line_total': parse_amount(entry.get('amount', 0)),
                     'entry_balanced': True,
                     'place_of_supply': ''
                 }
@@ -160,8 +173,8 @@ def flatten_journal_entries_for_frontend(raw_entries: List[Dict], header_data: D
                     'account_name': enrichment_data.get('account_name', entry.get('description', '')),
                     'account_code': enrichment_data.get('account_code', ''),
                     'account_type': 'Expense',
-                    'debit_amount': float(enrichment_data.get('total_debit', 0) or 0),
-                    'credit_amount': float(enrichment_data.get('total_credit', 0) or 0),
+                    'debit_amount': parse_amount(enrichment_data.get('total_debit', 0)),
+                    'credit_amount': parse_amount(enrichment_data.get('total_credit', 0)),
                     'narration': entry.get('description', ''),
                     'item_description': entry.get('description', ''),
                     'hsn_code': entry.get('hsn_code') or enrichment_data.get('hsn_code', ''),
@@ -171,10 +184,10 @@ def flatten_journal_entries_for_frontend(raw_entries: List[Dict], header_data: D
                     'sgst_amount': 0,
                     'igst_amount': 0,
                     'is_gst_applicable': enrichment_data.get('tax_category', '').startswith('GST') if enrichment_data.get('tax_category') else False,
-                    'quantity': float(entry.get('quantity', 0) or 0),
-                    'unit_price': float(entry.get('unit_price', 0) or 0),
-                    'taxable_amount': float(entry.get('amount', 0) or 0),
-                    'line_total': float(entry.get('amount', 0) or 0),
+                    'quantity': parse_amount(entry.get('quantity', 0)),
+                    'unit_price': parse_amount(entry.get('unit_price', 0)),
+                    'taxable_amount': parse_amount(entry.get('amount', 0)),
+                    'line_total': parse_amount(entry.get('amount', 0)),
                     'entry_balanced': enrichment_data.get('is_balanced', True),
                     'place_of_supply': ''
                 }
@@ -197,11 +210,11 @@ def flatten_journal_entries_for_frontend(raw_entries: List[Dict], header_data: D
                 # Account info - frontend expects these exact names
                 'account_name': line.get('account', enrichment_data.get('account_name', '')),
                 'account_code': enrichment_data.get('account_code', ''),
-                'account_type': 'Expense' if float(line.get('debit', 0) or 0) > 0 else 'Liability',
+                'account_type': 'Expense' if parse_amount(line.get('debit', 0)) > 0 else 'Liability',
                 
                 # Amounts - frontend expects debit_amount/credit_amount (not debit/credit)
-                'debit_amount': float(line.get('debit', 0) or 0),
-                'credit_amount': float(line.get('credit', 0) or 0),
+                'debit_amount': parse_amount(line.get('debit', 0)),
+                'credit_amount': parse_amount(line.get('credit', 0)),
                 
                 # Description fields - use line description or original entry description
                 'narration': line.get('description', entry.get('description', '')),
@@ -217,10 +230,10 @@ def flatten_journal_entries_for_frontend(raw_entries: List[Dict], header_data: D
                 'is_gst_applicable': enrichment_data.get('tax_category', '').startswith('GST') if enrichment_data.get('tax_category') else False,
                 
                 # Quantity/pricing (only for main expense line, not GST lines)
-                'quantity': float(entry.get('quantity', 0) or 0) if line_idx == 0 else 0,
-                'unit_price': float(entry.get('unit_price', 0) or 0) if line_idx == 0 else 0,
-                'taxable_amount': float(entry.get('amount', 0) or 0) if line_idx == 0 else 0,
-                'line_total': float(entry.get('amount', 0) or 0) if line_idx == 0 else 0,
+                'quantity': parse_amount(entry.get('quantity', 0)) if line_idx == 0 else 0,
+                'unit_price': parse_amount(entry.get('unit_price', 0)) if line_idx == 0 else 0,
+                'taxable_amount': parse_amount(entry.get('amount', 0)) if line_idx == 0 else 0,
+                'line_total': parse_amount(entry.get('amount', 0)) if line_idx == 0 else 0,
                 
                 # Balance indicator
                 'entry_balanced': enrichment_data.get('is_balanced', True),
