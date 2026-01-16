@@ -9,7 +9,6 @@ import {
   getDocs, 
   query, 
   where, 
-  orderBy,
   limit
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
@@ -51,10 +50,10 @@ class SessionRecoveryService {
       const userCollectionPath = userService.getUserDataPath('invoice_results')
       
       // One-time fetch - NOT a listener
+      // Note: No orderBy to avoid requiring a composite index
       const recoveryQuery = query(
         collection(db, userCollectionPath),
         where('userUID', '==', user.uid),
-        orderBy('created_at', 'desc'),
         limit(100) // Reasonable limit for recovery
       )
 
