@@ -157,8 +157,15 @@ def upload_file():
                 "message": "Please complete workspace setup in onboarding before uploading files",
                 "action": "redirect_to_onboarding"
             }), 403
+        
+        # IMPORTANT: Get organizationId from user profile if not in token claims
+        # This ensures backend writes to organization path when user has an org
+        user_profile = doc.to_dict()
+        if not user_context.get('organization_id') and user_profile.get('organizationId'):
+            user_context['organization_id'] = user_profile.get('organizationId')
+            logger.info(f"📍 Got organizationId from profile: {user_context['organization_id']}")
             
-        logger.info(f"✅ Workspace validated for user: {user_email}")
+        logger.info(f"✅ Workspace validated for user: {user_email} (org: {user_context.get('organization_id', 'None')})")
     except ValueError as e:
         logger.error(f"Authentication failed: {e}")
         return jsonify({"error": "Invalid authentication token", "details": str(e)}), 401

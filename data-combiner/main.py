@@ -366,15 +366,27 @@ def combine_and_store_data():
             }
         }
         
-        # Store to users/{uid}/invoice_results/{job_id}
-        db.collection('users').document(user_uid).collection('invoice_results').document(job_id).set(invoice_result)
-        logger.info(f"💾 Stored result to users/{user_uid}/invoice_results/{job_id}")
+        # Determine storage path based on organization membership
+        # Priority: organization path if user has organization_id, else user path
+        organization_id = user_context.get('organization_id')
+        
+        if organization_id:
+            # Store to organizations/{orgId}/invoice_results/{job_id}
+            storage_path = f"organizations/{organization_id}/invoice_results/{job_id}"
+            invoice_result['organizationId'] = organization_id  # Add org reference to document
+            db.collection('organizations').document(organization_id).collection('invoice_results').document(job_id).set(invoice_result)
+            logger.info(f"💾 Stored result to {storage_path} (org path)")
+        else:
+            # Fallback: Store to users/{uid}/invoice_results/{job_id}
+            storage_path = f"users/{user_uid}/invoice_results/{job_id}"
+            db.collection('users').document(user_uid).collection('invoice_results').document(job_id).set(invoice_result)
+            logger.info(f"💾 Stored result to {storage_path} (user path)")
         
         storage_result = {
             'stored': True,
             'document_id': job_id,
             'storage_timestamp': datetime.now().isoformat(),
-            'storage_location': f"users/{user_uid}/invoice_results/{job_id}",
+            'storage_location': storage_path,
             'document_size_bytes': len(json.dumps(invoice_result))
         }
         
