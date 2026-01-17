@@ -125,11 +125,22 @@ def enrich_line_item(item: Dict, client_profile: Dict) -> Dict:
     cap_threshold = client_profile.get('capitalization_threshold', 0)
     coa_match = match_account_from_coa(description, amount, coa, cap_threshold)
     
-    # Build context for OpenAI
+    # Build context for OpenAI - include business profile for better classification
+    business_context = ""
+    if client_profile.get('business_description'):
+        business_context = f" Business: {client_profile.get('business_description')}."
+    if client_profile.get('industry'):
+        business_context += f" Industry: {client_profile.get('industry')}."
+    
     coa_context = ""
     if coa:
         coa_summary = ", ".join([f"{a['account_code']}:{a['account_name']}" for a in coa[:10] if a.get('is_active')])
         coa_context = f" Available accounts: {coa_summary}"
+    
+    # Include capitalization threshold in context if set
+    cap_context = ""
+    if cap_threshold > 0:
+        cap_context = f" Capitalization threshold: ₹{cap_threshold:,.0f}."
     
     try:
         response = openai_client.chat.completions.create(
@@ -153,7 +164,7 @@ Return JSON with:
     ]
   }
 Ensure total debits = total credits for balanced entry."""},
-                {"role": "user", "content": f"Classify and create balanced journal entry for: {description}, Amount: {amount}.{coa_context}"}
+                {"role": "user", "content": f"Classify and create balanced journal entry for: {description}, Amount: ₹{amount:,.2f}.{business_context}{cap_context}{coa_context}"}
             ],
             max_tokens=500,
             temperature=0.2
