@@ -9,28 +9,35 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
-import { userService } from './userService'
+import { collectionPathResolver } from './collectionPathResolver'
 
 /**
  * FINAL SIMPLIFIED: Uses existing perfect journal entries from backend
+ * Uses collectionPathResolver for consistent path resolution (organization vs user-isolated)
  */
 export class FinalSimplifiedFirestoreService {
   private unsubscribers: Array<() => void> = []
 
-  listenToUserResults(onUpdate: (entries: any[]) => void, onError: (error: Error) => void) {
+  async listenToUserResults(onUpdate: (entries: any[]) => void, onError: (error: Error) => void) {
     const user = authService.getCurrentUser()
     if (!user?.uid) {
       onError(new Error('User not authenticated'))
       return
     }
 
-    console.log('🔥 FINAL SIMPLIFIED: Setting up listener for UID:', user.uid)
+    try {
+      // Use collectionPathResolver for consistent path resolution
+      const pathResult = await collectionPathResolver.resolveCollectionPaths()
+      const collectionPath = pathResult.paths.active
+      
+      console.log('🔥 FINAL SIMPLIFIED: Setting up listener for UID:', user.uid)
+      console.log('🔥 FINAL SIMPLIFIED: Collection path:', collectionPath)
 
-    const userQuery = query(
-      collection(db, userService.getUserDataPath('invoice_results')),
-      where('userUID', '==', user.uid),
-      limit(50)
-    )
+      const userQuery = query(
+        collection(db, collectionPath),
+        where('userUID', '==', user.uid),
+        limit(50)
+      )
 
     const unsubscribe = onSnapshot(
       userQuery,
@@ -64,6 +71,11 @@ export class FinalSimplifiedFirestoreService {
     )
 
     this.unsubscribers.push(unsubscribe)
+    
+    } catch (error) {
+      console.error('🔥 FINAL SIMPLIFIED: Error setting up listener:', error)
+      onError(error instanceof Error ? error : new Error('Failed to setup listener'))
+    }
   }
 
   /**

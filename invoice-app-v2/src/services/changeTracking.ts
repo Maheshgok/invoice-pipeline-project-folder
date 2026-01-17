@@ -1,7 +1,7 @@
 import { doc, updateDoc, Timestamp, increment, arrayUnion } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
-import { userService } from './userService'
+import { collectionPathResolver } from './collectionPathResolver'
 
 export interface UserChange {
   field_path: string
@@ -75,8 +75,9 @@ class ChangeTrackingService {
         } : undefined
       }
 
-      // Get user's collection path
-      const collectionPath = userService.getUserDataPath('invoice_results')
+      // Get collection path using resolver for consistent paths
+      const pathResult = await collectionPathResolver.resolveCollectionPaths()
+      const collectionPath = pathResult.paths.active
       const docRef = doc(db, collectionPath, invoiceId)
 
       // Update the document with the change tracking
@@ -116,8 +117,9 @@ class ChangeTrackingService {
         user_email: user.email || ''
       }))
 
-      // Get user's collection path
-      const collectionPath = userService.getUserDataPath('invoice_results')
+      // Get collection path using resolver for consistent paths
+      const pathResult = await collectionPathResolver.resolveCollectionPaths()
+      const collectionPath = pathResult.paths.active
       const docRef = doc(db, collectionPath, invoiceId)
 
       // Update with batch changes

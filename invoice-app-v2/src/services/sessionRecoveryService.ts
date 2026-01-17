@@ -13,7 +13,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '../config/firebase'
 import { authService } from './auth'
-import { userService } from './userService'
+import { collectionPathResolver } from './collectionPathResolver'
 import type { JournalEntry } from './firestore-sync-manager'
 
 export interface RecoveredSession {
@@ -47,12 +47,15 @@ class SessionRecoveryService {
     try {
       console.log('🔄 Session recovery: Checking for unarchived results for UID:', user.uid)
       
-      const userCollectionPath = userService.getUserDataPath('invoice_results')
+      // Use collectionPathResolver for consistent path resolution
+      const pathResult = await collectionPathResolver.resolveCollectionPaths()
+      const collectionPath = pathResult.paths.active
+      console.log('🔄 Session recovery: Using collection path:', collectionPath)
       
       // One-time fetch - NOT a listener
       // Note: No orderBy to avoid requiring a composite index
       const recoveryQuery = query(
-        collection(db, userCollectionPath),
+        collection(db, collectionPath),
         where('userUID', '==', user.uid),
         limit(100) // Reasonable limit for recovery
       )
