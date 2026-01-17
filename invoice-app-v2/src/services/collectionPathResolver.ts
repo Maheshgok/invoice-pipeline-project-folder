@@ -76,10 +76,27 @@ class CollectionPathResolver {
       let fallbackPaths: CollectionPaths[] = []
       let explanation: string
 
-      // Resolution priority: Organization → User-isolated → Legacy
+      // IMPORTANT: Backend (data-combiner) writes to users/{uid}/invoice_results
+      // So we MUST use user-isolated paths as primary, regardless of organizationId
+      // Organization path is kept as fallback for future multi-user org features
+      
+      // Primary: User-isolated collection (matches backend storage)
+      primaryPaths = {
+        active: `users/${user.uid}/invoice_results`,
+        archive: `users/${user.uid}/invoice_results_archive`,
+        type: CollectionType.USER_ISOLATED,
+        context: {
+          userId: user.uid,
+          organizationId: userProfile.organizationId,
+          userEmail: user.email || ''
+        }
+      }
+      
+      explanation = `User-isolated collection for user: ${user.uid}`
+      
+      // Add organization path as fallback (for future org-wide data)
       if (userProfile.organizationId) {
-        // Organization-based collection
-        primaryPaths = {
+        fallbackPaths.push({
           active: `organizations/${userProfile.organizationId}/invoice_results`,
           archive: `organizations/${userProfile.organizationId}/invoice_results_archive`,
           type: CollectionType.ORGANIZATION,
@@ -88,34 +105,7 @@ class CollectionPathResolver {
             organizationId: userProfile.organizationId,
             userEmail: user.email || ''
           }
-        }
-        
-        // Add user-isolated as fallback
-        fallbackPaths.push({
-          active: `users/${user.uid}/invoice_results`,
-          archive: `users/${user.uid}/invoice_results_archive`,
-          type: CollectionType.USER_ISOLATED,
-          context: {
-            userId: user.uid,
-            userEmail: user.email || ''
-          }
         })
-        
-        explanation = `Organization-based collection for org: ${userProfile.organizationId}`
-        
-      } else {
-        // User-isolated collection
-        primaryPaths = {
-          active: `users/${user.uid}/invoice_results`,
-          archive: `users/${user.uid}/invoice_results_archive`,
-          type: CollectionType.USER_ISOLATED,
-          context: {
-            userId: user.uid,
-            userEmail: user.email || ''
-          }
-        }
-        
-        explanation = `User-isolated collection for user: ${user.uid}`
       }
 
       // Always add legacy as final fallback

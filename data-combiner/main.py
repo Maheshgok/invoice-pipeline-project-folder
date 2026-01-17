@@ -366,21 +366,19 @@ def combine_and_store_data():
             }
         }
         
-        # Determine storage path based on organization membership
-        # Priority: organization path if user has organization_id, else user path
+        # ALWAYS store to user-isolated path: users/{uid}/invoice_results/{job_id}
+        # This matches the frontend listener which uses collectionPathResolver
+        # Organization context is stored in the document for future org-wide features
         organization_id = user_context.get('organization_id')
         
+        storage_path = f"users/{user_uid}/invoice_results/{job_id}"
+        
+        # Add organization reference to document if available (for future queries)
         if organization_id:
-            # Store to organizations/{orgId}/invoice_results/{job_id}
-            storage_path = f"organizations/{organization_id}/invoice_results/{job_id}"
-            invoice_result['organizationId'] = organization_id  # Add org reference to document
-            db.collection('organizations').document(organization_id).collection('invoice_results').document(job_id).set(invoice_result)
-            logger.info(f"💾 Stored result to {storage_path} (org path)")
-        else:
-            # Fallback: Store to users/{uid}/invoice_results/{job_id}
-            storage_path = f"users/{user_uid}/invoice_results/{job_id}"
-            db.collection('users').document(user_uid).collection('invoice_results').document(job_id).set(invoice_result)
-            logger.info(f"💾 Stored result to {storage_path} (user path)")
+            invoice_result['organizationId'] = organization_id
+            
+        db.collection('users').document(user_uid).collection('invoice_results').document(job_id).set(invoice_result)
+        logger.info(f"💾 Stored result to {storage_path}")
         
         storage_result = {
             'stored': True,
