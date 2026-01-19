@@ -248,6 +248,57 @@ class SafeFailHandler:
         
         return True, "Job has sufficient data for completion"
 
+    @staticmethod
+    def retry_with_backoff(
+        extraction_func,
+        job_id: str,
+        max_retries: int = 3,
+        retry_delays: list = None
+    ) -> Tuple[bool, any, Optional[str]]:
+        """
+        Retry a function with exponential backoff IN-PROCESS.
+        No need for Cloud Scheduler or job state updates.
+        
+        Args:
+            extraction_func: Function to call (no args)
+            job_id: Job ID for logging
+            max_retries: Number of retries (default 3)
+            retry_delays: Delays between retries in seconds (default [5, 15, 45])
+        
+        Returns:
+            (success: bool, result: any, error_msg: str or None)
+        """
+        if retry_delays is None:
+            retry_delays = SafeFailHandler.RETRY_DELAYS
+        
+        last_error = None
+        
+        for attempt in range(max_retries + 1):  # +1 includes initial attempt
+            try:
+                logger.info(f"🔄 Extraction attempt {attempt + 1}/{max_retries + 1} for job {job_id}")
+                result = extraction_func()
+                
+                if result and result.get('success'):
+                    logger.info(f"✅ Extraction succeeded on attempt {attempt + 1} for job {job_id}")
+                    return True, result, None
+                
+                last_error = result.get('error', 'Unknown error') if result else 'Empty result'
+                logger.warning(f"⚠️ Extraction returned result but not marked success: {last_error}")
+                
+            except Exception as e:
+                last_error = str(e)
+                logger.error(f"❌ Extraction attempt {attempt + 1} failed: {last_error}")
+            
+            # If not the last attempt, wait before retrying
+            if attempt < max_retries:
+                wait_seconds = retry_delays[attempt] if attempt < len(retry_delays) else retry_delays[-1]
+                logger.info(f"⏳ Waiting {wait_seconds}s before retry #{attempt + 2} for job {job_id}")
+                time.sleep(wait_seconds)
+        
+        # All retries exhausted
+        logger.error(f"❌ All {max_retries + 1} extraction attempts failed for job {job_id}: {last_error}")
+        return False, None, last_error
+
 
 class PipelineCircuitBreaker:
     """
