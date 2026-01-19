@@ -284,44 +284,50 @@ def enrich_job():
         logger.info(f"✅ Enriched job {job_id}: {len(enriched_items)} items")
         
         # ⚠️ SAFE FAIL CHECK: At FULL INVOICE level
-        # If no items were enriched but items were extracted, this is a soft error
+        # If no items were enriched but items were extracted, this is a soft error (retryable)
         if len(enriched_items) == 0 and len(line_items) > 0:
-            logger.warning(f"⚠️ SOFT ERROR: No items enriched for job {job_id} (had {len(line_items)} extracted) - checking retry policy")
+            logger.warning(f"⚠️ SOFT ERROR: No items enriched for job {job_id} (had {len(line_items)} extracted) - attempting retry with backoff")
             
-            job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
-            job_doc = job_ref.get()
-            job_data = job_doc.to_dict() if job_doc.exists else {}
+            # Define enrichment retry function
+            def retry_enrichment():
+                try:
+                    retry_enriched = []
+                    for item in line_items:
+                        enriched = enrich_item(item, job_data.get('invoice_header', {}))
+                        if enriched:
+                            retry_enriched.append(enriched)
+                    
+                    retry_count = len(retry_enriched)
+                    logger.info(f"🔄 Retry enrichment result: {retry_count} items")
+                    
+                    return {
+                        'success': retry_count > 0,
+                        'data': retry_enriched,
+                        'items_count': retry_count
+                    }
+                except Exception as e:
+                    logger.error(f"❌ Retry enrichment failed: {e}")
+                    return {'success': False, 'error': str(e)}
             
-            should_retry, reason = SafeFailHandler.should_retry(
-                job_data,
-                ErrorType.EXTRACTION_EMPTY,
-                job_data.get('retry_count', 0)
+            # Retry with exponential backoff (5s, 15s, 45s)
+            success, result, error = SafeFailHandler.retry_with_backoff(
+                extraction_func=retry_enrichment,
+                job_id=job_id,
+                max_retries=3
             )
             
-            if should_retry:
-                logger.info(f"🔄 RETRYING: {reason}")
-                retry_update = SafeFailHandler.build_retry_update(
-                    ErrorType.EXTRACTION_EMPTY,
-                    f"No items enriched from {len(line_items)} extracted items - will retry",
-                    job_data.get('retry_count', 0)
-                )
-                # Reset to EXTRACTING for re-processing
-                retry_update['status'] = 'RETRYING'
-                job_ref.update(retry_update)
-                
-                return jsonify({
-                    'success': False,
-                    'job_id': job_id,
-                    'items_count': 0,
-                    'status': 'RETRYING',
-                    'reason': reason
-                }), 202
+            if success and result and result.get('data'):
+                # Use retried data
+                enriched_items = result['data']
+                logger.info(f"✅ Retry successful: using {result['items_count']} enriched items from retry")
             else:
-                logger.error(f"❌ HARD FAIL: {reason}")
+                # All retries failed - mark as ERROR
+                logger.error(f"❌ HARD FAIL: All retries exhausted for job {job_id}")
+                job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
                 error_update = SafeFailHandler.build_error_update(
                     ErrorType.EXTRACTION_EMPTY,
-                    f"No items enriched from {len(line_items)} extracted - max retries exceeded",
-                    job_data.get('retry_count', 0)
+                    f"No items enriched after 3 retries from {len(line_items)} extracted items: {error}",
+                    retry_count=3
                 )
                 job_ref.update(error_update)
                 
@@ -330,7 +336,7 @@ def enrich_job():
                     'job_id': job_id,
                     'items_count': 0,
                     'status': 'ERROR',
-                    'reason': reason
+                    'error': f"Enrichment failed: {error}"
                 }), 400
         
         # Update job status to ENRICHED with reset retry count on success

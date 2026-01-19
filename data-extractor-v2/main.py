@@ -224,44 +224,67 @@ Return JSON with:
         line_items_count = len(extracted_data.get('line_items_raw', []))
         logger.info(f"✅ Extracted job {job_id}: {line_items_count} line items")
         
-        # ⚠️ SAFE FAIL CHECK: Zero items is a soft error (retryable)
+        # ⚠️ SAFE FAIL CHECK: Zero items is a soft error (retryable with in-process backoff)
         if line_items_count == 0:
-            logger.warning(f"⚠️ SOFT ERROR: Zero items extracted for job {job_id} - checking retry policy")
+            logger.warning(f"⚠️ SOFT ERROR: Zero items extracted for job {job_id} - attempting retry with backoff")
             
-            job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
-            job_doc = job_ref.get()
-            job_data = job_doc.to_dict() if job_doc.exists else {}
+            # Define the extraction function for retry
+            def retry_extraction():
+                try:
+                    # Re-download and re-process image
+                    response = openai_client.vision.analyze_image(
+                        model="gpt-4o-mini",
+                        image_url=presigned_url,
+                        prompt=extraction_prompt
+                    )
+                    response_text = response.choices[0].message.content
+                    
+                    try:
+                        if '```json' in response_text:
+                            json_str = response_text.split('```json')[1].split('```')[0]
+                        elif '{' in response_text:
+                            start = response_text.find('{')
+                            end = response_text.rfind('}') + 1
+                            json_str = response_text[start:end]
+                        else:
+                            json_str = response_text
+                        
+                        retry_data = json.loads(json_str)
+                    except:
+                        retry_data = {'headers_raw': {'raw_text': response_text}, 'line_items_raw': []}
+                    
+                    retry_items = len(retry_data.get('line_items_raw', []))
+                    logger.info(f"🔄 Retry extraction result: {retry_items} items")
+                    
+                    return {
+                        'success': retry_items > 0,
+                        'data': retry_data,
+                        'items_count': retry_items
+                    }
+                except Exception as e:
+                    logger.error(f"❌ Retry extraction failed: {e}")
+                    return {'success': False, 'error': str(e)}
             
-            # Check if should retry
-            should_retry, reason = SafeFailHandler.should_retry(
-                job_data, 
-                ErrorType.ZERO_ITEMS,
-                job_data.get('retry_count', 0)
+            # Retry with exponential backoff (5s, 15s, 45s)
+            success, result, error = SafeFailHandler.retry_with_backoff(
+                extraction_func=retry_extraction,
+                job_id=job_id,
+                max_retries=3
             )
             
-            if should_retry:
-                logger.info(f"🔄 RETRYING: {reason}")
-                retry_update = SafeFailHandler.build_retry_update(
-                    ErrorType.ZERO_ITEMS,
-                    "No line items extracted - will retry",
-                    job_data.get('retry_count', 0)
-                )
-                job_ref.update(retry_update)
-                
-                return jsonify({
-                    'success': False,
-                    'job_id': job_id,
-                    'line_items_count': 0,
-                    'status': 'RETRYING',
-                    'reason': reason
-                }), 202  # 202 Accepted (will be retried)
+            if success and result and result.get('data'):
+                # Use retried data
+                extracted_data = result['data']
+                line_items_count = result['items_count']
+                logger.info(f"✅ Retry successful: using {line_items_count} items from retry")
             else:
-                # Max retries exceeded
-                logger.error(f"❌ HARD FAIL: {reason}")
+                # All retries failed - mark as ERROR
+                logger.error(f"❌ HARD FAIL: All retries exhausted for job {job_id}")
+                job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
                 error_update = SafeFailHandler.build_error_update(
                     ErrorType.ZERO_ITEMS,
-                    "No line items extracted - max retries exceeded",
-                    job_data.get('retry_count', 0)
+                    f"No line items extracted after 3 retries: {error}",
+                    retry_count=3
                 )
                 job_ref.update(error_update)
                 
@@ -270,7 +293,7 @@ Return JSON with:
                     'job_id': job_id,
                     'line_items_count': 0,
                     'status': 'ERROR',
-                    'reason': reason
+                    'error': f"Extraction failed: {error}"
                 }), 400
         
         # Update job status for successful extraction
