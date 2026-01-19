@@ -105,6 +105,83 @@ const userQuery = query(
 )
 ```
 
+### 6. ✅ ALWAYS Handle Job Failures at FULL INVOICE Level (Not Per Line Item)
+```python
+# GOOD - Job success is determined by entire invoice, not individual items
+if len(line_items) == 0:
+    # Soft error: retry
+    should_retry, reason = SafeFailHandler.should_retry(job_data, ErrorType.ZERO_ITEMS)
+    if should_retry:
+        job_ref.update({'status': 'RETRYING', 'retry_count': retry_count + 1, ...})
+    else:
+        job_ref.update({'status': 'ERROR', 'error_type': ErrorType.ZERO_ITEMS, ...})
+        
+# BAD - Don't mark as success just because some items processed
+if any(item.get('amount') for item in items):
+    job_ref.update({'status': 'COMPLETED'})  # ❌ WRONG - what about other items?
+```
+**Why**: Invoice processing must be atomic - either entire invoice succeeds or fails. Partial success is indeterminate. See [SAFE_FAIL_MECHANISM.md](SAFE_FAIL_MECHANISM.md).
+
+---
+
+## Critical Rules - NEVER Break These
+
+### 1. ❌ NEVER Auto-Archive on Tab Switch/Page Hide
+```typescript
+// BAD - Caused major data loss bug
+window.addEventListener('pagehide', () => {
+  archiveCompletedResults() // ❌ NEVER DO THIS
+})
+
+// GOOD - Archive only on explicit user action
+downloadCSV() → archiveCompletedResults() // ✅ User clicked download
+logout() → archiveCompletedResults() // ✅ User explicitly logged out
+```
+**Why**: Users switch tabs frequently. Auto-archiving moved ALL their data to archive, showing a blank screen when they returned.
+
+### 2. ❌ NEVER Use `orderBy` Without a Composite Index
+```typescript
+// BAD - Will fail with "The query requires an index" error
+query(collection, where('userUID', '==', uid), orderBy('created_at', 'desc'))
+
+// GOOD - Either create index or skip orderBy for simple queries
+query(collection, where('userUID', '==', uid), limit(100))
+```
+**Why**: Firestore requires composite indexes for queries with both `where` and `orderBy` on different fields.
+
+### 3. ❌ NEVER Store Secrets in Code
+```python
+# BAD
+OPENAI_API_KEY = "sk-xxxx"  # ❌ Will block git push
+
+# GOOD - Use Secret Manager
+from google.cloud import secretmanager
+client = secretmanager.SecretManagerServiceClient()
+response = client.access_secret_version(name=f"projects/{PROJECT_ID}/secrets/openai-api-key-secret/versions/latest")
+api_key = response.payload.data.decode("UTF-8")
+```
+
+### 4. ✅ ALWAYS Use User-Isolated Paths
+```typescript
+// BAD
+collection(db, 'invoice_results')  // ❌ No user isolation
+
+// GOOD
+collection(db, `users/${user.uid}/invoice_results`)  // ✅ User-isolated
+// OR use the helper
+userService.getUserDataPath('invoice_results')  // ✅ Returns 'users/{uid}/invoice_results'
+```
+
+### 5. ✅ ALWAYS Double-Verify User in Queries
+```typescript
+// Security rule says user can only read their own data, but add where clause too
+const userQuery = query(
+  collection(db, userService.getUserDataPath('invoice_results')),
+  where('userUID', '==', user.uid),  // ✅ Double verification
+  limit(50)
+)
+```
+
 ---
 
 ## Common Mistakes to Avoid

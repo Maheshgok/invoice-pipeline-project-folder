@@ -11,6 +11,7 @@ Multi-tenant invoice processing system with AI-powered OCR, real-time Firestore 
 2. **❌ NEVER use `orderBy` without composite index** - Will fail at runtime
 3. **✅ ALWAYS use user-isolated paths**: `users/{uid}/collection_name`
 4. **✅ ALWAYS verify auth** on backend endpoints
+5. **✅ ALWAYS handle job failures at FULL INVOICE level** - Not per line item (see SAFE_FAIL_MECHANISM.md)
 
 ## Active Pipeline
 ```
@@ -59,7 +60,16 @@ useEffect(() => {
 - 📋 Data/entries
 - ✅ Success
 - ❌ Error
-- 🔄 In progress
+- 🔄 Retry/In progress
+- 🟡 Circuit half-open
+- 🔴 Circuit open
+
+## Safe Fail Mechanism
+Jobs are marked as RETRYING or ERROR based on error classification:
+- **RETRYING** (soft errors): Zero items, unreadable content → Max 3 retries
+- **ERROR** (hard errors): Invalid filetype, server errors → Terminal failure
+
+See [.github/SAFE_FAIL_MECHANISM.md](SAFE_FAIL_MECHANISM.md) for detailed implementation.
 
 ## Quick Reference
 

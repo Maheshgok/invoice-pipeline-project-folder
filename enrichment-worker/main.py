@@ -2,6 +2,10 @@
 Enrichment Worker - Line Item Enrichment with COA Matching
 Per Approach Doc: 1-2GB, OpenAI Call #2
 After enrichment, triggers field-standardizer-v2 for final processing.
+
+Implements safe fail handler:
+- Zero enriched items + extracted items → RETRYING (soft error)
+- Hard errors → ERROR (terminal)
 """
 
 import os
@@ -18,6 +22,11 @@ from google.cloud import firestore
 from google.cloud import secretmanager
 from openai import OpenAI
 from concurrent.futures import ThreadPoolExecutor
+
+# Import safe fail handler
+import sys
+sys.path.insert(0, '/workspace/shared')
+from safe_fail_handler import SafeFailHandler, ErrorType
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -272,13 +281,64 @@ def enrich_job():
         
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('enrichment').document('main').set(enrichment_doc)
         
-        # Update job status to ENRICHED
+        logger.info(f"✅ Enriched job {job_id}: {len(enriched_items)} items")
+        
+        # ⚠️ SAFE FAIL CHECK: At FULL INVOICE level
+        # If no items were enriched but items were extracted, this is a soft error
+        if len(enriched_items) == 0 and len(line_items) > 0:
+            logger.warning(f"⚠️ SOFT ERROR: No items enriched for job {job_id} (had {len(line_items)} extracted) - checking retry policy")
+            
+            job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
+            job_doc = job_ref.get()
+            job_data = job_doc.to_dict() if job_doc.exists else {}
+            
+            should_retry, reason = SafeFailHandler.should_retry(
+                job_data,
+                ErrorType.EXTRACTION_EMPTY,
+                job_data.get('retry_count', 0)
+            )
+            
+            if should_retry:
+                logger.info(f"🔄 RETRYING: {reason}")
+                retry_update = SafeFailHandler.build_retry_update(
+                    ErrorType.EXTRACTION_EMPTY,
+                    f"No items enriched from {len(line_items)} extracted items - will retry",
+                    job_data.get('retry_count', 0)
+                )
+                # Reset to EXTRACTING for re-processing
+                retry_update['status'] = 'RETRYING'
+                job_ref.update(retry_update)
+                
+                return jsonify({
+                    'success': False,
+                    'job_id': job_id,
+                    'items_count': 0,
+                    'status': 'RETRYING',
+                    'reason': reason
+                }), 202
+            else:
+                logger.error(f"❌ HARD FAIL: {reason}")
+                error_update = SafeFailHandler.build_error_update(
+                    ErrorType.EXTRACTION_EMPTY,
+                    f"No items enriched from {len(line_items)} extracted - max retries exceeded",
+                    job_data.get('retry_count', 0)
+                )
+                job_ref.update(error_update)
+                
+                return jsonify({
+                    'success': False,
+                    'job_id': job_id,
+                    'items_count': 0,
+                    'status': 'ERROR',
+                    'reason': reason
+                }), 400
+        
+        # Update job status to ENRICHED with reset retry count on success
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
             'status': 'ENRICHED',
+            'retry_count': 0,  # Reset retry count on successful enrichment
             'updated_at': datetime.utcnow().isoformat()
         })
-        
-        logger.info(f"✅ Enriched job {job_id}: {len(enriched_items)} items")
         
         # Trigger field-standardizer for final processing
         auth_header = request.headers.get('Authorization')

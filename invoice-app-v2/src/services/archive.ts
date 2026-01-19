@@ -219,7 +219,16 @@ class ArchiveService {
       const logLimit = Math.min(allResults.length, 5)
       for (let i = 0; i < logLimit; i++) {
         const result = allResults[i]
-        console.log(`📄 Will archive document ${i + 1}: ${result.fileName || result.id} (status: ${result.status})`)
+        console.log(`📄 Will archive document ${i + 1}:`, {
+          id: result.id,
+          fileName: result.fileName,
+          status: result.status,
+          jobId: result.jobId,
+          created_at: result.created_at,
+          hasExtractedData: !!result.extractedData,
+          hasLineItems: !!(result.extractedData?.line_items),
+          lineItemCount: result.extractedData?.line_items?.length || 0
+        })
       }
       if (allResults.length > logLimit) {
         console.log(`📄 ... and ${allResults.length - logLimit} more documents`)

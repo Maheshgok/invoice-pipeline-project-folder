@@ -1,11 +1,12 @@
-import React, { useState } from 'react'
-import { Settings, Users, Shield, CreditCard, Home, Package, Database } from 'lucide-react'
+import React, { useState, useEffect } from 'react'
+import { Settings, Users, Shield, CreditCard, Home, Package, Database, RefreshCw } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { SuperAdminSettings } from './SuperAdminSettings'
 import UserManagement from './UserManagement'
 import PackageManagement from './PackageManagement'
 import { useAuth } from '../../contexts/AuthContext'
 import { packageService } from '../../services/packageService'
+import { userService } from '../../services/userService'
 import toast from 'react-hot-toast'
 
 interface AdminDashboardProps {}
@@ -167,32 +168,117 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = () => {
   )
 }
 
-// Placeholder components for other tabs
-const PaymentOverview: React.FC = () => (
-  <div className="bg-white rounded-lg border border-gray-200 p-8">
-    <h2 className="text-xl font-semibold text-gray-900 mb-4">Payment Analytics</h2>
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      <div className="bg-green-50 p-6 rounded-lg">
-        <h3 className="text-lg font-medium text-green-800">Total Revenue</h3>
-        <p className="text-3xl font-bold text-green-900 mt-2">₹45,000</p>
-        <p className="text-green-600 text-sm mt-1">This month</p>
+// Payment Overview with real data from Firestore
+const PaymentOverview: React.FC = () => {
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    activeSubscriptions: 0,
+    pendingPayments: 0,
+    expiringSoon: 0,
+    todayApprovals: 0,
+    totalUsers: 0
+  })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    loadStats()
+  }, [])
+
+  const loadStats = async () => {
+    setLoading(true)
+    try {
+      const dashStats = await userService.getAdminDashboardStats()
+      setStats(dashStats)
+    } catch (error) {
+      console.error('Error loading stats:', error)
+      toast.error('Failed to load payment analytics')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-white rounded-lg border border-gray-200 p-8">
+        <div className="flex items-center justify-center py-12">
+          <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
+          <span className="ml-3 text-gray-600">Loading analytics...</span>
+        </div>
       </div>
-      <div className="bg-blue-50 p-6 rounded-lg">
-        <h3 className="text-lg font-medium text-blue-800">Active Subscriptions</h3>
-        <p className="text-3xl font-bold text-blue-900 mt-2">12</p>
-        <p className="text-blue-600 text-sm mt-1">Paying users</p>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 p-8">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold text-gray-900">Payment Analytics</h2>
+        <button
+          onClick={loadStats}
+          className="flex items-center gap-2 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Refresh
+        </button>
       </div>
-      <div className="bg-amber-50 p-6 rounded-lg">
-        <h3 className="text-lg font-medium text-amber-800">Pending Renewals</h3>
-        <p className="text-3xl font-bold text-amber-900 mt-2">3</p>
-        <p className="text-amber-600 text-sm mt-1">Expire this week</p>
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-green-50 p-6 rounded-lg">
+          <h3 className="text-lg font-medium text-green-800">Total Revenue</h3>
+          <p className="text-3xl font-bold text-green-900 mt-2">₹{stats.totalRevenue.toLocaleString('en-IN')}</p>
+          <p className="text-green-600 text-sm mt-1">Lifetime</p>
+        </div>
+        <div className="bg-blue-50 p-6 rounded-lg">
+          <h3 className="text-lg font-medium text-blue-800">Active Subscriptions</h3>
+          <p className="text-3xl font-bold text-blue-900 mt-2">{stats.activeSubscriptions}</p>
+          <p className="text-blue-600 text-sm mt-1">Paying users</p>
+        </div>
+        <div className="bg-orange-50 p-6 rounded-lg">
+          <h3 className="text-lg font-medium text-orange-800">Pending Verification</h3>
+          <p className="text-3xl font-bold text-orange-900 mt-2">{stats.pendingPayments}</p>
+          <p className="text-orange-600 text-sm mt-1">Awaiting approval</p>
+        </div>
+        <div className="bg-amber-50 p-6 rounded-lg">
+          <h3 className="text-lg font-medium text-amber-800">Expiring Soon</h3>
+          <p className="text-3xl font-bold text-amber-900 mt-2">{stats.expiringSoon}</p>
+          <p className="text-amber-600 text-sm mt-1">Within 7 days</p>
+        </div>
+      </div>
+      <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="bg-gray-50 p-6 rounded-lg">
+          <h3 className="text-lg font-medium text-gray-800">User Statistics</h3>
+          <div className="mt-4 space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Total Registered Users</span>
+              <span className="font-medium">{stats.totalUsers}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Active Subscriptions</span>
+              <span className="font-medium text-green-600">{stats.activeSubscriptions}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Conversion Rate</span>
+              <span className="font-medium">
+                {stats.totalUsers > 0 ? ((stats.activeSubscriptions / stats.totalUsers) * 100).toFixed(1) : 0}%
+              </span>
+            </div>
+          </div>
+        </div>
+        <div className="bg-gray-50 p-6 rounded-lg">
+          <h3 className="text-lg font-medium text-gray-800">Today's Activity</h3>
+          <div className="mt-4 space-y-3">
+            <div className="flex justify-between">
+              <span className="text-gray-600">Payments Approved</span>
+              <span className="font-medium text-green-600">{stats.todayApprovals}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Pending Actions</span>
+              <span className="font-medium text-orange-600">{stats.pendingPayments}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <div className="mt-8">
-      <p className="text-gray-500">Detailed payment analytics coming soon...</p>
-    </div>
-  </div>
-)
+  )
+}
 
 const SystemReports: React.FC = () => (
   <div className="bg-white rounded-lg border border-gray-200 p-8">

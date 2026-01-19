@@ -1,15 +1,17 @@
 /**
  * Super Admin User Approval Management Component
+ * Handles payment verification and user approval flow
  */
 
 import React, { useState, useEffect } from 'react'
-import { Check, X, Clock, Search, Filter, Eye, Mail, AlertCircle } from 'lucide-react'
+import { Check, X, Clock, Search, Filter, Eye, Mail, AlertCircle, RefreshCw } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { userService, type UserProfile } from '../../services/userService'
 import { pricingService, type PricingPlan } from '../../services/pricingService'
 import toast from 'react-hot-toast'
 
 interface PendingUser extends UserProfile {
+  id: string
   planName?: string
   planAmount?: number
   requestedAt?: Date
@@ -18,41 +20,54 @@ interface PendingUser extends UserProfile {
 const SuperAdminUserApproval: React.FC = () => {
   const { userProfile } = useAuth()
   const [pendingUsers, setPendingUsers] = useState<PendingUser[]>([])
+  const [paidUsers, setPaidUsers] = useState<PendingUser[]>([])
   const [rejectedUsers, setRejectedUsers] = useState<PendingUser[]>([])
   const [loading, setLoading] = useState(true)
+  const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'pending' | 'rejected' | 'all'>('pending')
-  // const [selectedUser, setSelectedUser] = useState<PendingUser | null>(null)
+  const [filterStatus, setFilterStatus] = useState<'pending' | 'paid' | 'rejected' | 'all'>('paid')
   const [plans, setPlans] = useState<PricingPlan[]>([])
+  const [stats, setStats] = useState({
+    pendingPayments: 0,
+    todayApprovals: 0,
+    activeSubscriptions: 0
+  })
 
   // Check if user is super admin
   const isSuperAdmin = userProfile?.role === 'super_admin'
 
   useEffect(() => {
     if (isSuperAdmin) {
-      loadPendingUsers()
-      loadPricingPlans()
+      loadAllData()
     }
   }, [isSuperAdmin])
 
+  const loadAllData = async () => {
+    setLoading(true)
+    await Promise.all([
+      loadPendingUsers(),
+      loadPricingPlans(),
+      loadDashboardStats()
+    ])
+    setLoading(false)
+  }
+
   const loadPendingUsers = async () => {
     try {
-      setLoading(true)
-      // Mock data for demonstration - replace with actual userService methods when implemented
-      const pending: PendingUser[] = []
-      const rejected: PendingUser[] = []
+      // Load users with 'paid' status (submitted payment, awaiting verification)
+      const paidUsersData = await userService.getUsersByPaymentStatus('paid')
+      setPaidUsers(paidUsersData as PendingUser[])
       
-      // TODO: Implement getUsersByApprovalStatus in userService
-      // const pending = await userService.getUsersByApprovalStatus('pending')
-      // const rejected = await userService.getUsersByApprovalStatus('rejected')
+      // Load users with 'pending' status (started but not submitted)
+      const pendingUsersData = await userService.getUsersByPaymentStatus('pending')
+      setPendingUsers(pendingUsersData as PendingUser[])
       
-      setPendingUsers(pending as PendingUser[])
-      setRejectedUsers(rejected as PendingUser[])
+      // Load rejected users
+      const rejectedUsersData = await userService.getUsersByPaymentStatus('rejected')
+      setRejectedUsers(rejectedUsersData as PendingUser[])
     } catch (error) {
-      console.error('Error loading pending users:', error)
-      toast.error('Failed to load pending users')
-    } finally {
-      setLoading(false)
+      console.error('Error loading users:', error)
+      toast.error('Failed to load users')
     }
   }
 
@@ -65,45 +80,51 @@ const SuperAdminUserApproval: React.FC = () => {
     }
   }
 
+  const loadDashboardStats = async () => {
+    try {
+      const dashStats = await userService.getAdminDashboardStats()
+      setStats({
+        pendingPayments: dashStats.pendingPayments,
+        todayApprovals: dashStats.todayApprovals,
+        activeSubscriptions: dashStats.activeSubscriptions
+      })
+    } catch (error) {
+      console.error('Error loading dashboard stats:', error)
+    }
+  }
+
   const approveUser = async (userId: string, userEmail: string) => {
     try {
-      // TODO: Implement updateUserApprovalStatus in userService
-      // await userService.updateUserApprovalStatus(userId, 'approved')
-      console.log('Approving user:', userId, userEmail)
-      toast.success(`User ${userEmail} approved successfully`)
-      loadPendingUsers()
+      setActionLoading(userId)
       
-      // Send approval email
-      await sendApprovalEmail(userEmail, 'approved')
-    } catch (error) {
+      // Default to 30 days subscription
+      await userService.approveUserPayment(userId, 30)
+      
+      toast.success(`User ${userEmail} approved successfully!`)
+      await loadAllData()
+    } catch (error: any) {
       console.error('Error approving user:', error)
-      toast.error('Failed to approve user')
+      toast.error(error.message || 'Failed to approve user')
+    } finally {
+      setActionLoading(null)
     }
   }
 
-  const rejectUser = async (userId: string, userEmail: string, reason?: string) => {
+  const rejectUser = async (userId: string, userEmail: string) => {
+    const reason = prompt('Enter rejection reason (optional):')
+    
     try {
-      // TODO: Implement updateUserApprovalStatus in userService
-      // await userService.updateUserApprovalStatus(userId, 'rejected', reason)
-      console.log('Rejecting user:', userId, userEmail, reason)
-      toast.success(`User ${userEmail} rejected`)
-      loadPendingUsers()
+      setActionLoading(userId)
       
-      // Send rejection email
-      await sendApprovalEmail(userEmail, 'rejected', reason)
-    } catch (error) {
+      await userService.rejectUserPayment(userId, reason || undefined)
+      
+      toast.success(`User ${userEmail} payment rejected`)
+      await loadAllData()
+    } catch (error: any) {
       console.error('Error rejecting user:', error)
-      toast.error('Failed to reject user')
-    }
-  }
-
-  const sendApprovalEmail = async (userEmail: string, status: 'approved' | 'rejected', reason?: string) => {
-    try {
-      // This would integrate with your email service
-      console.log(`Sending ${status} email to ${userEmail}`, { reason })
-      // await emailService.sendApprovalNotification(userEmail, status, reason)
-    } catch (error) {
-      console.error('Error sending approval email:', error)
+      toast.error(error.message || 'Failed to reject user')
+    } finally {
+      setActionLoading(null)
     }
   }
 
@@ -112,19 +133,34 @@ const SuperAdminUserApproval: React.FC = () => {
     return plans.find(plan => plan.id === planId)
   }
 
-  const filteredUsers = (() => {
-    const users = filterStatus === 'rejected' ? rejectedUsers : 
-                 filterStatus === 'all' ? [...pendingUsers, ...rejectedUsers] :
-                 pendingUsers
+  const getDisplayUsers = () => {
+    let users: PendingUser[] = []
+    
+    switch (filterStatus) {
+      case 'paid':
+        users = paidUsers
+        break
+      case 'pending':
+        users = pendingUsers
+        break
+      case 'rejected':
+        users = rejectedUsers
+        break
+      case 'all':
+        users = [...paidUsers, ...pendingUsers, ...rejectedUsers]
+        break
+    }
     
     if (!searchTerm) return users
     
     return users.filter(user => 
-      user.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.displayName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.organizationId?.toLowerCase().includes(searchTerm.toLowerCase())
     )
-  })()
+  }
+
+  const filteredUsers = getDisplayUsers()
 
   if (!isSuperAdmin) {
     return (
@@ -152,13 +188,23 @@ const SuperAdminUserApproval: React.FC = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <div className="bg-white p-6 rounded-lg shadow">
+            <div className="flex items-center">
+              <Clock className="w-8 h-8 text-orange-500 mr-3" />
+              <div>
+                <h3 className="text-lg font-semibold text-gray-900">{paidUsers.length}</h3>
+                <p className="text-gray-600">Awaiting Verification</p>
+              </div>
+            </div>
+          </div>
+          
           <div className="bg-white p-6 rounded-lg shadow">
             <div className="flex items-center">
               <Clock className="w-8 h-8 text-yellow-500 mr-3" />
               <div>
                 <h3 className="text-lg font-semibold text-gray-900">{pendingUsers.length}</h3>
-                <p className="text-gray-600">Pending Approval</p>
+                <p className="text-gray-600">Incomplete Payment</p>
               </div>
             </div>
           </div>
@@ -177,7 +223,7 @@ const SuperAdminUserApproval: React.FC = () => {
             <div className="flex items-center">
               <Check className="w-8 h-8 text-green-500 mr-3" />
               <div>
-                <h3 className="text-lg font-semibold text-gray-900">-</h3>
+                <h3 className="text-lg font-semibold text-gray-900">{stats.todayApprovals}</h3>
                 <p className="text-gray-600">Approved Today</p>
               </div>
             </div>
@@ -206,16 +252,18 @@ const SuperAdminUserApproval: React.FC = () => {
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value as any)}
               >
-                <option value="pending">Pending</option>
+                <option value="paid">Awaiting Verification</option>
+                <option value="pending">Incomplete</option>
                 <option value="rejected">Rejected</option>
                 <option value="all">All</option>
               </select>
               
               <button
-                onClick={loadPendingUsers}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2"
+                onClick={() => loadAllData()}
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition flex items-center gap-2 disabled:opacity-50"
               >
-                <Filter className="w-4 h-4" />
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
             </div>
@@ -286,11 +334,14 @@ const SuperAdminUserApproval: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap">
                           <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                            user.approvalStatus === 'pending' ? 'bg-yellow-100 text-yellow-800' :
-                            user.approvalStatus === 'approved' ? 'bg-green-100 text-green-800' :
-                            'bg-red-100 text-red-800'
+                            user.paymentStatus?.status === 'paid' ? 'bg-orange-100 text-orange-800' :
+                            user.paymentStatus?.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                            user.paymentStatus?.status === 'active' ? 'bg-green-100 text-green-800' :
+                            user.paymentStatus?.status === 'rejected' ? 'bg-red-100 text-red-800' :
+                            'bg-gray-100 text-gray-800'
                           }`}>
-                            {user.approvalStatus || 'pending'}
+                            {user.paymentStatus?.status === 'paid' ? 'Awaiting Verification' :
+                             user.paymentStatus?.status || 'pending'}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -298,18 +349,24 @@ const SuperAdminUserApproval: React.FC = () => {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                           <div className="flex gap-2">
-                            {user.approvalStatus === 'pending' && (
+                            {user.paymentStatus?.status === 'paid' && (
                               <>
                                 <button
-                                  onClick={() => approveUser(user.uid, user.email)}
-                                  className="text-green-600 hover:text-green-900 flex items-center gap-1"
+                                  onClick={() => approveUser(user.id, user.email || '')}
+                                  disabled={actionLoading === user.id}
+                                  className="text-green-600 hover:text-green-900 flex items-center gap-1 disabled:opacity-50"
                                 >
-                                  <Check className="w-4 h-4" />
+                                  {actionLoading === user.id ? (
+                                    <RefreshCw className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Check className="w-4 h-4" />
+                                  )}
                                   Approve
                                 </button>
                                 <button
-                                  onClick={() => rejectUser(user.uid, user.email)}
-                                  className="text-red-600 hover:text-red-900 flex items-center gap-1"
+                                  onClick={() => rejectUser(user.id, user.email || '')}
+                                  disabled={actionLoading === user.id}
+                                  className="text-red-600 hover:text-red-900 flex items-center gap-1 disabled:opacity-50"
                                 >
                                   <X className="w-4 h-4" />
                                   Reject
@@ -317,19 +374,21 @@ const SuperAdminUserApproval: React.FC = () => {
                               </>
                             )}
                             <button
-                              onClick={() => console.log('View user:', user.uid)}
+                              onClick={() => console.log('View user:', user.id)}
                               className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
                             >
                               <Eye className="w-4 h-4" />
                               View
                             </button>
-                            <button
-                              onClick={() => window.open(`mailto:${user.email}`)}
-                              className="text-gray-600 hover:text-gray-900 flex items-center gap-1"
-                            >
-                              <Mail className="w-4 h-4" />
-                              Email
-                            </button>
+                            {user.email && (
+                              <button
+                                onClick={() => window.open(`mailto:${user.email}`)}
+                                className="text-gray-600 hover:text-gray-900 flex items-center gap-1"
+                              >
+                                <Mail className="w-4 h-4" />
+                                Email
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>

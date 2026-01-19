@@ -2,6 +2,10 @@
 Data Extractor V2 - OpenAI Vision Invoice Extraction
 Per Approach Doc: 512MB, OpenAI Call #1
 After extraction, triggers enrichment-worker for next pipeline step.
+
+Implements safe fail handler:
+- Zero items → RETRYING (soft error)
+- Hard errors → ERROR (terminal)
 """
 
 import os
@@ -20,6 +24,11 @@ from flask_cors import CORS
 from google.cloud import firestore, storage, secretmanager
 from openai import OpenAI
 from pdf2image import convert_from_bytes
+
+# Import safe fail handler
+import sys
+sys.path.insert(0, '/workspace/shared')
+from safe_fail_handler import SafeFailHandler, ErrorType
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -212,15 +221,65 @@ Return JSON with:
         
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('extraction').document('main').set(extraction_doc)
         
-        # Update job status
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'EXTRACTED',
-            'line_items_count': len(extracted_data.get('line_items_raw', [])),
-            'updated_at': datetime.utcnow().isoformat()
-        })
-        
         line_items_count = len(extracted_data.get('line_items_raw', []))
         logger.info(f"✅ Extracted job {job_id}: {line_items_count} line items")
+        
+        # ⚠️ SAFE FAIL CHECK: Zero items is a soft error (retryable)
+        if line_items_count == 0:
+            logger.warning(f"⚠️ SOFT ERROR: Zero items extracted for job {job_id} - checking retry policy")
+            
+            job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
+            job_doc = job_ref.get()
+            job_data = job_doc.to_dict() if job_doc.exists else {}
+            
+            # Check if should retry
+            should_retry, reason = SafeFailHandler.should_retry(
+                job_data, 
+                ErrorType.ZERO_ITEMS,
+                job_data.get('retry_count', 0)
+            )
+            
+            if should_retry:
+                logger.info(f"🔄 RETRYING: {reason}")
+                retry_update = SafeFailHandler.build_retry_update(
+                    ErrorType.ZERO_ITEMS,
+                    "No line items extracted - will retry",
+                    job_data.get('retry_count', 0)
+                )
+                job_ref.update(retry_update)
+                
+                return jsonify({
+                    'success': False,
+                    'job_id': job_id,
+                    'line_items_count': 0,
+                    'status': 'RETRYING',
+                    'reason': reason
+                }), 202  # 202 Accepted (will be retried)
+            else:
+                # Max retries exceeded
+                logger.error(f"❌ HARD FAIL: {reason}")
+                error_update = SafeFailHandler.build_error_update(
+                    ErrorType.ZERO_ITEMS,
+                    "No line items extracted - max retries exceeded",
+                    job_data.get('retry_count', 0)
+                )
+                job_ref.update(error_update)
+                
+                return jsonify({
+                    'success': False,
+                    'job_id': job_id,
+                    'line_items_count': 0,
+                    'status': 'ERROR',
+                    'reason': reason
+                }), 400
+        
+        # Update job status for successful extraction
+        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
+            'status': 'EXTRACTED',
+            'line_items_count': line_items_count,
+            'retry_count': 0,  # Reset retry count on success
+            'updated_at': datetime.utcnow().isoformat()
+        })
         
         # Trigger enrichment-worker for next pipeline step
         auth_header = request.headers.get('Authorization')

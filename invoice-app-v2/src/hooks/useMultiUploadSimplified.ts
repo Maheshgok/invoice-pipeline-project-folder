@@ -367,14 +367,14 @@ export const useMultiUploadSimplified = (options: UseMultiUploadOptions = {}) =>
       
       // Archive completed results BEFORE download (critical for cleanup)
       try {
-        console.log('📦 Archiving completed results before download...')
+        console.log('📦 [TRIGGER: DOWNLOAD_CSV] Archiving completed results before download...')
         const result = await archiveService.archiveCompletedResultsHybrid()
         if (result.archived_count > 0) {
-          console.log(`✅ Archived ${result.archived_count} completed results before download`)
+          console.log(`✅ [TRIGGER: DOWNLOAD_CSV] Archived ${result.archived_count} completed results before download`)
           toast.success(`📦 Archived ${result.archived_count} results before download`)
         }
       } catch (archiveError) {
-        console.error('❌ Archive before download failed:', archiveError)
+        console.error('❌ [TRIGGER: DOWNLOAD_CSV] Archive before download failed:', archiveError)
         // Continue with download even if archive fails, but warn user
         toast.error('Archive before download failed, but proceeding with download')
       }
@@ -437,9 +437,11 @@ export const useMultiUploadSimplified = (options: UseMultiUploadOptions = {}) =>
   // Mark all as displayed
   // Archive completed results
   const archiveCompletedResults = useCallback(async () => {
-    try {      // Update session activity for archive operation
+    try {
+      console.log('📦 [TRIGGER: MANUAL_ARCHIVE_BUTTON] Starting archive...')
+      // Update session activity for archive operation
       sessionSecurityService.updateActivity()
-            const result = await archiveService.archiveCompletedResultsHybrid()
+      const result = await archiveService.archiveCompletedResultsHybrid()
       
       if (result.archived_count > 0) {
         toast.success(`📦 Archived ${result.archived_count} completed results`)

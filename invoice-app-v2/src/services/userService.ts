@@ -1904,6 +1904,231 @@ export class UserService {
       console.error('❌ Error cleaning up expired sessions:', error)
     }
   }
+
+  /**
+   * Get users by payment/approval status (for admin approval flow)
+   */
+  async getUsersByPaymentStatus(status: 'pending' | 'paid' | 'verified' | 'rejected'): Promise<Array<UserProfile & { id: string }>> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can view users by status')
+      }
+
+      const usersRef = collection(db, 'users')
+      const q = query(usersRef, where('paymentStatus.status', '==', status))
+      const snapshot = await getDocs(q)
+      
+      return snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data() as UserProfile
+      }))
+    } catch (error) {
+      console.error('❌ Error fetching users by status:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Approve user payment (super admin only)
+   */
+  async approveUserPayment(userUid: string, subscriptionDays: number = 30): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can approve payments')
+      }
+
+      const userRef = doc(db, 'users', userUid)
+      const expiresAt = new Date()
+      expiresAt.setDate(expiresAt.getDate() + subscriptionDays)
+
+      await updateDoc(userRef, {
+        'paymentStatus.status': 'verified',
+        'paymentStatus.verifiedAt': serverTimestamp(),
+        'paymentStatus.verifiedBy': currentUser.uid,
+        'paymentStatus.expiresAt': Timestamp.fromDate(expiresAt),
+        'paymentStatus.subscriptionDays': subscriptionDays,
+        isActive: true,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User payment approved:', userUid)
+    } catch (error) {
+      console.error('❌ Error approving user payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Reject user payment (super admin only)
+   */
+  async rejectUserPayment(userUid: string, reason?: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can reject payments')
+      }
+
+      const userRef = doc(db, 'users', userUid)
+      await updateDoc(userRef, {
+        'paymentStatus.status': 'rejected',
+        'paymentStatus.rejectedAt': serverTimestamp(),
+        'paymentStatus.rejectedBy': currentUser.uid,
+        'paymentStatus.rejectionReason': reason || 'Payment verification failed',
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User payment rejected:', userUid)
+    } catch (error) {
+      console.error('❌ Error rejecting user payment:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get admin dashboard statistics
+   */
+  async getAdminDashboardStats(): Promise<{
+    totalUsers: number
+    activeSubscriptions: number
+    pendingPayments: number
+    expiringSoon: number
+    totalRevenue: number
+    todayApprovals: number
+  }> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can view dashboard stats')
+      }
+
+      const usersRef = collection(db, 'users')
+      const allUsersSnapshot = await getDocs(usersRef)
+      
+      let activeSubscriptions = 0
+      let pendingPayments = 0
+      let expiringSoon = 0
+      let totalRevenue = 0
+      let todayApprovals = 0
+      
+      const now = new Date()
+      const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+      const weekFromNow = new Date()
+      weekFromNow.setDate(weekFromNow.getDate() + 7)
+
+      allUsersSnapshot.docs.forEach(doc => {
+        const user = doc.data() as UserProfile
+        const paymentStatus = user.paymentStatus
+
+        if (paymentStatus) {
+          // Count pending
+          if (paymentStatus.status === 'pending' || paymentStatus.status === 'paid') {
+            pendingPayments++
+          }
+          
+          // Count active subscriptions
+          if (paymentStatus.status === 'verified' && paymentStatus.expiresAt) {
+            const expiresAt = paymentStatus.expiresAt.toDate ? paymentStatus.expiresAt.toDate() : new Date(paymentStatus.expiresAt)
+            if (expiresAt > now) {
+              activeSubscriptions++
+              
+              // Check if expiring soon (within 7 days)
+              if (expiresAt <= weekFromNow) {
+                expiringSoon++
+              }
+            }
+          }
+          
+          // Sum revenue from verified payments
+          if (paymentStatus.status === 'verified' && paymentStatus.amount) {
+            totalRevenue += paymentStatus.amount
+          }
+          
+          // Count today's approvals
+          if (paymentStatus.verifiedAt) {
+            const verifiedAt = paymentStatus.verifiedAt.toDate ? paymentStatus.verifiedAt.toDate() : new Date(paymentStatus.verifiedAt)
+            if (verifiedAt >= todayStart) {
+              todayApprovals++
+            }
+          }
+        }
+      })
+
+      return {
+        totalUsers: allUsersSnapshot.size,
+        activeSubscriptions,
+        pendingPayments,
+        expiringSoon,
+        totalRevenue,
+        todayApprovals
+      }
+    } catch (error) {
+      console.error('❌ Error fetching admin dashboard stats:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Initialize user workspace (GCS bucket creation trigger)
+   */
+  async initializeUserWorkspace(): Promise<{ workspaceId: string; initialized: boolean }> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('User not authenticated')
+
+      const userRef = doc(db, 'users', currentUser.uid)
+      const userDoc = await getDoc(userRef)
+      
+      if (!userDoc.exists()) {
+        throw new Error('User profile not found')
+      }
+
+      const userData = userDoc.data() as UserProfile
+      
+      // Check if already initialized
+      if (userData.workspace_initialized) {
+        return {
+          workspaceId: userData.workspaceId || currentUser.uid,
+          initialized: true
+        }
+      }
+
+      // Generate workspace ID (use first 8 chars of UID for bucket naming)
+      const workspaceId = currentUser.uid.substring(0, 8).toLowerCase()
+
+      // Update user profile to mark workspace as initialized
+      // The actual GCS bucket creation happens on first upload via initial-api
+      await updateDoc(userRef, {
+        workspace_initialized: true,
+        workspaceId: workspaceId,
+        workspace_initialized_at: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ Workspace initialized:', workspaceId)
+
+      return {
+        workspaceId,
+        initialized: true
+      }
+    } catch (error) {
+      console.error('❌ Error initializing workspace:', error)
+      throw error
+    }
+  }
 }
 
 export const userService = new UserService()

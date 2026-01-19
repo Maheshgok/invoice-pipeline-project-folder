@@ -18,11 +18,11 @@ import { collectionPathResolver } from './collectionPathResolver'
 export class FinalSimplifiedFirestoreService {
   private unsubscribers: Array<() => void> = []
 
-  async listenToUserResults(onUpdate: (entries: any[]) => void, onError: (error: Error) => void) {
+  async listenToUserResults(onUpdate: (entries: any[]) => void, onError: (error: Error) => void): Promise<() => void> {
     const user = authService.getCurrentUser()
     if (!user?.uid) {
       onError(new Error('User not authenticated'))
-      return
+      return () => {} // Return empty function if no user
     }
 
     try {
@@ -71,10 +71,12 @@ export class FinalSimplifiedFirestoreService {
     )
 
     this.unsubscribers.push(unsubscribe)
+    return unsubscribe // Return the unsubscribe function
     
     } catch (error) {
       console.error('🔥 FINAL SIMPLIFIED: Error setting up listener:', error)
       onError(error instanceof Error ? error : new Error('Failed to setup listener'))
+      return () => {} // Return empty function on error
     }
   }
 

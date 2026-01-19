@@ -5,6 +5,7 @@
 
 import { authService } from './auth'
 import { getApiUrl } from '../config/api'
+import { userService } from './userService'
 
 export interface WorkspaceStatus {
   initialized: boolean
@@ -86,6 +87,15 @@ class WorkspaceService {
 
       if (!response.ok) {
         throw new Error(data.error || `Workspace initialization failed: ${response.status}`)
+      }
+
+      // Also update Firestore to mark workspace as initialized
+      try {
+        await userService.initializeUserWorkspace()
+        console.log('✅ Workspace status saved to Firestore')
+      } catch (firestoreError) {
+        console.warn('⚠️ Failed to save workspace status to Firestore:', firestoreError)
+        // Continue anyway since the main workspace was created
       }
 
       return {

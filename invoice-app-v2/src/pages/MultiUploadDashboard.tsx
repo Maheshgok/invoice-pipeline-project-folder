@@ -270,8 +270,10 @@ const MultiUploadDashboard: React.FC = () => {
         toast.error('Failed to initialize services')
       })
     
-    // Setup final-simplified-firestore listeners directly  
-    const unsubscribe = finalSimplifiedFirestoreService.listenToUserResults(
+    // Setup final-simplified-firestore listeners directly
+    let unsubscribe: (() => void) | null = null
+    
+    finalSimplifiedFirestoreService.listenToUserResults(
       (results) => {
         console.log('📡 Received results from final-simplified-firestore:', results.length)
         setSmartListenerResults(results as ProcessingResult[])
@@ -280,11 +282,15 @@ const MultiUploadDashboard: React.FC = () => {
         console.error('❌ Final-simplified-firestore error:', error)
         toast.error(`Listener error: ${error.message}`)
       }
-    )
+    ).then((unsub) => {
+      unsubscribe = unsub
+    })
     
     return () => {
       centralizedServiceManager.cleanup()
-      unsubscribe() // Cleanup the real-time listener
+      if (unsubscribe) {
+        unsubscribe() // Cleanup the real-time listener
+      }
     }
   }, [])
 
@@ -323,11 +329,15 @@ const MultiUploadDashboard: React.FC = () => {
     // Always archive completed results before logout
     if (batchState.completedFiles > 0 || journalEntries.length > 0) {
       try {
-        console.log('📦 Archiving data before manual logout')
+        console.log('📦 [TRIGGER: LOGOUT] Archiving data before manual logout')
+        console.log('📊 [TRIGGER: LOGOUT] Current state:', {
+          completedFiles: batchState.completedFiles,
+          journalEntriesCount: journalEntries.length
+        })
         await archiveCompletedResults()
-        console.log('✅ Archive before logout completed')
+        console.log('✅ [TRIGGER: LOGOUT] Archive before logout completed')
       } catch (error) {
-        console.error('❌ Archive before logout failed:', error)
+        console.error('❌ [TRIGGER: LOGOUT] Archive before logout failed:', error)
         // Continue with logout even if archive fails
       }
     }
