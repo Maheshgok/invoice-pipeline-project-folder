@@ -386,29 +386,74 @@ def enrich_job():
                 if auth_header:
                     headers['Authorization'] = auth_header
                 
-                resp = requests.post(
-                    f"{FIELD_STANDARDIZER_URL}/standardize",
-                    json=standardizer_payload,
-                    headers=headers,
-                    timeout=600
+                # Retry logic for network/SSL errors (max 3 attempts with exponential backoff)
+                max_retries = 3
+                retry_delays = [2, 5, 10]  # seconds
+                last_error = None
+                
+                for attempt in range(max_retries):
+                    try:
+                        logger.info(f"🔄 Triggering standardization for {job_id} (attempt {attempt + 1}/{max_retries})")
+                        resp = requests.post(
+                            f"{FIELD_STANDARDIZER_URL}/standardize",
+                            json=standardizer_payload,
+                            headers=headers,
+                            timeout=600
+                        )
+                        
+                        if resp.ok:
+                            logger.info(f"✅ Standardization triggered for job {job_id}")
+                            return  # Success, exit function
+                        else:
+                            logger.error(f"❌ Standardization trigger failed for {job_id}: {resp.status_code}")
+                            if resp.status_code >= 500:  # Server errors are retryable
+                                last_error = f"Server error: {resp.status_code}"
+                                if attempt < max_retries - 1:
+                                    time.sleep(retry_delays[attempt])
+                                    continue
+                            # 4xx errors are not retryable
+                            update_job_status(
+                                tenant_id,
+                                job_id,
+                                ui_status='failed',
+                                pipeline_status='FAILED',
+                                extra={
+                                    'failure_reason': f"Standardization trigger failed: {resp.status_code}",
+                                    'failed_at': datetime.utcnow().isoformat()
+                                }
+                            )
+                            return
+                            
+                    except (requests.exceptions.SSLError, 
+                            requests.exceptions.ConnectionError,
+                            requests.exceptions.Timeout) as network_err:
+                        last_error = str(network_err)
+                        logger.warning(f"⚠️ Network error on attempt {attempt + 1}/{max_retries}: {network_err}")
+                        if attempt < max_retries - 1:
+                            time.sleep(retry_delays[attempt])
+                            continue
+                        # Max retries exceeded
+                        logger.error(f"❌ Max retries exceeded for {job_id} - network errors")
+                        break
+                    except Exception as other_err:
+                        last_error = str(other_err)
+                        logger.error(f"❌ Unexpected error triggering standardization: {other_err}")
+                        break
+                
+                # If we get here, all retries failed
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'failure_reason': f"Standardization trigger failed after {max_retries} attempts: {last_error}",
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
                 )
                 
-                if resp.ok:
-                    logger.info(f"✅ Standardization triggered for job {job_id}")
-                else:
-                    logger.error(f"❌ Standardization trigger failed for {job_id}: {resp.status_code}")
-                    update_job_status(
-                        tenant_id,
-                        job_id,
-                        ui_status='failed',
-                        pipeline_status='FAILED',
-                        extra={
-                            'failure_reason': f"Standardization trigger failed: {resp.status_code}",
-                            'failed_at': datetime.utcnow().isoformat()
-                        }
-                    )
             except Exception as e:
-                logger.error(f"❌ Failed to trigger standardization for {job_id}: {e}")
+                logger.error(f"❌ Unexpected error in standardization trigger: {e}")
                 update_job_status(
                     tenant_id,
                     job_id,
