@@ -250,7 +250,8 @@ def extract_invoice():
                 retry_count=0
             )
             error_update['status'] = 'FAILED'
-            error_update['failure_reason'] = 'Initial extraction API call failed'
+            error_update['failure_reason'] = 'Initial extraction failed'
+            
             update_job_status(
                 tenant_id,
                 job_id,
@@ -303,6 +304,7 @@ def extract_invoice():
                 )
                 error_update['status'] = 'FAILED'
                 error_update['failure_reason'] = 'No items extracted after 3 retries'
+                
                 update_job_status(
                     tenant_id,
                     job_id,
