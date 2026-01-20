@@ -91,6 +91,19 @@ def get_tenant_id(req) -> str:
     return tenant_id
 
 
+def update_job_status(tenant_id: str, job_id: str, ui_status: str, pipeline_status: str = None, extra: Dict[str, Any] = None):
+    """Write UI-friendly status plus optional pipeline status to Firestore."""
+    update_data = {
+        'status': ui_status,
+        'updated_at': datetime.utcnow().isoformat()
+    }
+    if pipeline_status:
+        update_data['pipeline_status'] = pipeline_status
+    if extra:
+        update_data.update(extra)
+    db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).update(update_data)
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy', 'service': 'orchestrator'})
@@ -102,7 +115,7 @@ def get_job_status(job_id: str):
     try:
         tenant_id = get_tenant_id(request)
         
-        doc = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).get()
+        doc = db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).get()
         
         if not doc.exists:
             return jsonify({'error': 'Job not found'}), 404
@@ -146,13 +159,17 @@ def trigger_extraction(job_id: str):
         # Detect file type and get appropriate extractor
         extractor_url, extractor_type, file_ext = detect_file_type_and_extractor(gcs_input_path)
         
-        # Update job status to EXTRACTING with extractor info
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'EXTRACTING',
-            'extractor_type': extractor_type,
-            'file_extension': file_ext,
-            'updated_at': datetime.utcnow().isoformat()
-        })
+        # Update job status to processing/EXTRACTING (write to user-isolated path for frontend)
+        update_job_status(
+            tenant_id,
+            job_id,
+            ui_status='processing',
+            pipeline_status='EXTRACTING',
+            extra={
+                'extractor_type': extractor_type,
+                'file_extension': file_ext
+            }
+        )
         
         logger.info(f"🚀 Triggering extraction for job {job_id} using {extractor_type}")
         
@@ -187,18 +204,28 @@ def trigger_extraction(job_id: str):
                     logger.info(f"✅ Extractor ({extractor_type}) started for job {job_id}")
                 else:
                     logger.error(f"❌ Extractor ({extractor_type}) failed for {job_id}: {resp.status_code}")
-                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                        'status': 'FAILED',
-                        'error': f"Extraction failed ({extractor_type}): {resp.status_code}",
-                        'updated_at': datetime.utcnow().isoformat()
-                    })
+                    update_job_status(
+                        tenant_id,
+                        job_id,
+                        ui_status='failed',
+                        pipeline_status='FAILED',
+                        extra={
+                            'failure_reason': f"Extraction failed ({extractor_type}): {resp.status_code}",
+                            'failed_at': datetime.utcnow().isoformat()
+                        }
+                    )
             except Exception as e:
                 logger.error(f"❌ Failed to call extractor ({extractor_type}) for {job_id}: {e}")
-                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                    'status': 'FAILED',
-                    'error': str(e),
-                    'updated_at': datetime.utcnow().isoformat()
-                })
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'failure_reason': str(e),
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
         
         # Start extraction in background thread
         threading.Thread(target=call_extractor, daemon=True).start()
@@ -243,9 +270,9 @@ def update_status(job_id: str):
         
         # Add error info if FAILED
         if new_status == 'FAILED' and data.get('error'):
-            update_data['error'] = data.get('error')
+            update_data['failure_reason'] = data.get('error')
         
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update(update_data)
+        db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).update(update_data)
         
         logger.info(f"📝 Updated job {job_id} status to {new_status}")
         return jsonify({'success': True, 'status': new_status})
@@ -274,7 +301,7 @@ def complete_job(job_id: str):
         if data.get('total_amount'):
             update_data['total_amount'] = data.get('total_amount')
         
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update(update_data)
+        db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).update(update_data)
         
         logger.info(f"✅ Completed job {job_id}")
         return jsonify({'success': True, 'status': 'COMPLETED'})
@@ -315,7 +342,7 @@ def retry_job(job_id: str):
         tenant_id = get_tenant_id(request)
         data = request.get_json() or {}
         
-        job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
+        job_ref = db.collection('users').document(tenant_id).collection('invoice_results').document(job_id)
         job_doc = job_ref.get()
         
         if not job_doc.exists:
@@ -344,21 +371,28 @@ def retry_job(job_id: str):
         gcs_input_path = job_data.get('gcs_input_path')
         if not gcs_input_path:
             logger.error(f"❌ Cannot retry: No gcs_input_path found for job {job_id}")
-            job_ref.update({
-                'status': 'ERROR',
-                'error_message': 'Cannot retry: gcs_input_path not found',
-                'updated_at': datetime.utcnow().isoformat()
-            })
+            update_job_status(
+                tenant_id,
+                job_id,
+                ui_status='failed',
+                pipeline_status='FAILED',
+                extra={
+                    'failure_reason': 'Cannot retry: gcs_input_path not found',
+                    'failed_at': datetime.utcnow().isoformat()
+                }
+            )
             return jsonify({'error': 'Cannot retry: gcs_input_path not found'}), 400
         
         # Determine file type and get appropriate extractor
         extractor_url, extractor_type, file_ext = detect_file_type_and_extractor(gcs_input_path)
         
-        # Update job status back to EXTRACTING
-        job_ref.update({
-            'status': 'EXTRACTING',
-            'updated_at': datetime.utcnow().isoformat()
-        })
+        # Update job status back to processing/EXTRACTING
+        update_job_status(
+            tenant_id,
+            job_id,
+            ui_status='processing',
+            pipeline_status='EXTRACTING'
+        )
         
         logger.info(f"🚀 Triggering retry extraction for job {job_id} using {extractor_type}")
         
@@ -395,18 +429,28 @@ def retry_job(job_id: str):
                     logger.info(f"✅ Extractor ({extractor_type}) retry started for job {job_id}")
                 else:
                     logger.error(f"❌ Extractor ({extractor_type}) retry failed for {job_id}: {resp.status_code}")
-                    job_ref.update({
-                        'status': 'ERROR',
-                        'error_message': f"Extraction retry failed: {resp.status_code}",
-                        'updated_at': datetime.utcnow().isoformat()
-                    })
+                    update_job_status(
+                        tenant_id,
+                        job_id,
+                        ui_status='failed',
+                        pipeline_status='FAILED',
+                        extra={
+                            'failure_reason': f"Extraction retry failed: {resp.status_code}",
+                            'failed_at': datetime.utcnow().isoformat()
+                        }
+                    )
             except Exception as e:
                 logger.error(f"❌ Failed to call extractor retry for {job_id}: {e}")
-                job_ref.update({
-                    'status': 'ERROR',
-                    'error_message': str(e),
-                    'updated_at': datetime.utcnow().isoformat()
-                })
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'failure_reason': str(e),
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
         
         # Start extraction in background thread
         threading.Thread(target=call_extractor_retry, daemon=True).start()
@@ -423,42 +467,11 @@ def retry_job(job_id: str):
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/process-retries', methods=['POST'])
-def process_retries():
-    """
-    Cloud Scheduler endpoint - processes retrying jobs.
-    Returns immediately to avoid timeout.
-    """
-    try:
-        logger.info("🔍 Processing retries...")
-        
-        # Return immediate success to Cloud Scheduler
-        def process_in_background():
-            try:
-                jobs_processed = 0
-                
-                # For now, just log that we're processing
-                # Collection group queries require composite index - skip for now
-                # Instead, we'll rely on manual retry endpoint
-                logger.info("🔍 Retry processor running (collection group query requires index)")
-                logger.info(f"✅ Processed {jobs_processed} retries")
-            except Exception as e:
-                logger.error(f"❌ Background retry processing failed: {e}")
-        
-        # Start background thread with short timeout
-        thread = threading.Thread(target=process_in_background)
-        thread.daemon = True
-        thread.start()
-        
-        # Return immediate success to Cloud Scheduler
-        return jsonify({
-            'success': True,
-            'message': 'Retry processing acknowledged'
-        }), 200
-        
-    except Exception as e:
-        logger.error(f"❌ Error in process_retries: {e}")
-        return jsonify({'error': str(e)}), 500
+# NOTE: Retry mechanism is now handled IN-PROCESS by each service
+# - data-extractor-v2 and enrichment-worker handle their own retries with exponential backoff (5s, 15s, 45s)
+# - No Cloud Scheduler needed - retries happen immediately within the service call
+# - Jobs marked as ERROR after max retries are terminal and won't be retried
+# - See SAFE_FAIL_MECHANISM.md for details
 
 
 if __name__ == '__main__':

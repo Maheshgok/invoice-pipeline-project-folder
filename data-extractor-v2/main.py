@@ -124,9 +124,79 @@ def get_tenant_id(req) -> str:
     return tenant_id
 
 
+def update_job_status(tenant_id: str, job_id: str, ui_status: str, pipeline_status: str = None, extra: Dict[str, Any] = None):
+    """Write UI-friendly status plus optional pipeline status to Firestore."""
+    update_data = {
+        'status': ui_status,
+        'updated_at': datetime.utcnow().isoformat()
+    }
+    if pipeline_status:
+        update_data['pipeline_status'] = pipeline_status
+    if extra:
+        update_data.update(extra)
+    db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).update(update_data)
+
+
 @app.route('/health', methods=['GET'])
 def health():
     return jsonify({'status': 'healthy', 'service': 'data-extractor-v2'})
+
+
+def run_extraction(base64_content: str, mime_type: str, model: str = "gpt-4o") -> Tuple[bool, Dict, int]:
+    """
+    Reusable extraction logic - called both initially and during retries.
+    Returns (success, extracted_data, line_items_count)
+    """
+    extraction_prompt = """You are an invoice data extraction expert. Extract all data from the invoice.
+Return JSON with:
+- headers_raw: {invoice_number, invoice_date, vendor_name, vendor_gstin, buyer_name, buyer_gstin, total_amount, tax_amount}
+- line_items_raw: [{description, quantity, unit_price, amount, hsn_code, tax_rate}]"""
+    
+    try:
+        response = openai_client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": extraction_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "Extract all data from this invoice:"},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_content}"}}
+                    ]
+                }
+            ],
+            max_tokens=4000
+        )
+        
+        response_text = response.choices[0].message.content
+        
+        # Parse JSON from response
+        try:
+            if '```json' in response_text:
+                json_str = response_text.split('```json')[1].split('```')[0]
+            elif '{' in response_text:
+                start = response_text.find('{')
+                end = response_text.rfind('}') + 1
+                json_str = response_text[start:end]
+            else:
+                json_str = response_text
+            
+            extracted_data = json.loads(json_str)
+        except:
+            extracted_data = {
+                'headers_raw': {'raw_text': response_text},
+                'line_items_raw': []
+            }
+        
+        line_items_count = len(extracted_data.get('line_items_raw', []))
+        return (True, extracted_data, line_items_count)
+    
+    except Exception as e:
+        logger.error(f"❌ Extraction call failed: {e}")
+        return (False, {}, 0)
 
 
 @app.route('/extract', methods=['POST'])
@@ -149,11 +219,13 @@ def extract_invoice():
         if not job_id or not gcs_path:
             return jsonify({'error': 'job_id and gcs_input_path required'}), 400
         
-        # Update job status to EXTRACTING
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'EXTRACTING',
-            'updated_at': datetime.utcnow().isoformat()
-        })
+        # Update job status to processing
+        update_job_status(
+            tenant_id,
+            job_id,
+            ui_status='processing',
+            pipeline_status='EXTRACTING'
+        )
         
         # Download file from GCS
         bucket_name = gcs_path.split('/')[2]
@@ -167,142 +239,90 @@ def extract_invoice():
         base64_content, mime_type = prepare_image_for_openai(file_content, filename)
         logger.info(f"📷 Prepared image for OpenAI: {mime_type}")
         
-        # Call OpenAI Vision API
-        response = openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {
-                    "role": "system",
-                    "content": """You are an invoice data extraction expert. Extract all data from the invoice.
-Return JSON with:
-- headers_raw: {invoice_number, invoice_date, vendor_name, vendor_gstin, buyer_name, buyer_gstin, total_amount, tax_amount}
-- line_items_raw: [{description, quantity, unit_price, amount, hsn_code, tax_rate}]"""
-                },
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": "Extract all data from this invoice:"},
-                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_content}"}}
-                    ]
-                }
-            ],
-            max_tokens=4000
-        )
+        # Initial extraction with full model
+        success, extracted_data, line_items_count = run_extraction(base64_content, mime_type, model="gpt-4o")
         
-        # Parse response
-        response_text = response.choices[0].message.content
+        if not success:
+            logger.error(f"❌ Initial extraction failed for job {job_id}")
+            error_update = SafeFailHandler.build_error_update(
+                ErrorType.EXTRACTION_EMPTY,
+                "Initial extraction API call failed",
+                retry_count=0
+            )
+            error_update['status'] = 'FAILED'
+            error_update['failure_reason'] = 'Initial extraction API call failed'
+            update_job_status(
+                tenant_id,
+                job_id,
+                ui_status='failed',
+                pipeline_status='FAILED',
+                extra=error_update
+            )
+            return jsonify({'error': 'Extraction failed', 'job_id': job_id}), 500
         
-        # Try to extract JSON from response
-        try:
-            # Look for JSON in response
-            if '```json' in response_text:
-                json_str = response_text.split('```json')[1].split('```')[0]
-            elif '{' in response_text:
-                start = response_text.find('{')
-                end = response_text.rfind('}') + 1
-                json_str = response_text[start:end]
-            else:
-                json_str = response_text
-            
-            extracted_data = json.loads(json_str)
-        except:
-            extracted_data = {
-                'headers_raw': {'raw_text': response_text},
-                'line_items_raw': []
-            }
+        logger.info(f"✅ Initial extraction: {line_items_count} line items found")
         
-        # Store extraction at: tenants/{tenant_id}/jobs/{job_id}/extraction/main
+        # Store extraction
         extraction_doc = {
             'headers_raw': extracted_data.get('headers_raw', {}),
             'line_items_raw': extracted_data.get('line_items_raw', []),
             'extracted_at': datetime.utcnow().isoformat(),
-            'token_usage': response.usage.total_tokens if response.usage else 0
+            'model_used': 'gpt-4o'
         }
+        db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).collection('extraction').document('main').set(extraction_doc)
         
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('extraction').document('main').set(extraction_doc)
-        
-        line_items_count = len(extracted_data.get('line_items_raw', []))
-        logger.info(f"✅ Extracted job {job_id}: {line_items_count} line items")
-        
-        # ⚠️ SAFE FAIL CHECK: Zero items is a soft error (retryable with in-process backoff)
+        # ⚠️ SOFT ERROR CHECK: Zero items → retry with backoff using cheaper model
         if line_items_count == 0:
-            logger.warning(f"⚠️ SOFT ERROR: Zero items extracted for job {job_id} - attempting retry with backoff")
+            logger.warning(f"⚠️ SOFT ERROR: Zero items extracted - attempting retry with backoff")
             
-            # Define the extraction function for retry
-            def retry_extraction():
-                try:
-                    # Re-download and re-process image
-                    response = openai_client.vision.analyze_image(
-                        model="gpt-4o-mini",
-                        image_url=presigned_url,
-                        prompt=extraction_prompt
-                    )
-                    response_text = response.choices[0].message.content
-                    
-                    try:
-                        if '```json' in response_text:
-                            json_str = response_text.split('```json')[1].split('```')[0]
-                        elif '{' in response_text:
-                            start = response_text.find('{')
-                            end = response_text.rfind('}') + 1
-                            json_str = response_text[start:end]
-                        else:
-                            json_str = response_text
-                        
-                        retry_data = json.loads(json_str)
-                    except:
-                        retry_data = {'headers_raw': {'raw_text': response_text}, 'line_items_raw': []}
-                    
-                    retry_items = len(retry_data.get('line_items_raw', []))
-                    logger.info(f"🔄 Retry extraction result: {retry_items} items")
-                    
-                    return {
-                        'success': retry_items > 0,
-                        'data': retry_data,
-                        'items_count': retry_items
-                    }
-                except Exception as e:
-                    logger.error(f"❌ Retry extraction failed: {e}")
-                    return {'success': False, 'error': str(e)}
+            # Define reusable extraction function that uses gpt-4o-mini for cost savings
+            def retry_extraction_func():
+                success, data, count = run_extraction(base64_content, mime_type, model="gpt-4o-mini")
+                if success and count > 0:
+                    return {'success': True, 'data': data, 'items_count': count}
+                return {'success': False, 'error': 'No items found on retry'}
             
             # Retry with exponential backoff (5s, 15s, 45s)
             success, result, error = SafeFailHandler.retry_with_backoff(
-                extraction_func=retry_extraction,
+                extraction_func=retry_extraction_func,
                 job_id=job_id,
                 max_retries=3
             )
             
             if success and result and result.get('data'):
-                # Use retried data
                 extracted_data = result['data']
                 line_items_count = result['items_count']
-                logger.info(f"✅ Retry successful: using {line_items_count} items from retry")
+                logger.info(f"✅ Retry successful: {line_items_count} items recovered")
             else:
-                # All retries failed - mark as ERROR
-                logger.error(f"❌ HARD FAIL: All retries exhausted for job {job_id}")
-                job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
+                # Max retries exhausted
+                logger.error(f"❌ HARD FAIL: All retries exhausted")
                 error_update = SafeFailHandler.build_error_update(
                     ErrorType.ZERO_ITEMS,
-                    f"No line items extracted after 3 retries: {error}",
+                    "No items extracted after 3 retries",
                     retry_count=3
                 )
-                job_ref.update(error_update)
-                
-                return jsonify({
-                    'success': False,
-                    'job_id': job_id,
-                    'line_items_count': 0,
-                    'status': 'ERROR',
-                    'error': f"Extraction failed: {error}"
-                }), 400
+                error_update['status'] = 'FAILED'
+                error_update['failure_reason'] = 'No items extracted after 3 retries'
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra=error_update
+                )
+                return jsonify({'error': 'Extraction failed after retries', 'job_id': job_id}), 400
         
-        # Update job status for successful extraction
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'EXTRACTED',
-            'line_items_count': line_items_count,
-            'retry_count': 0,  # Reset retry count on success
-            'updated_at': datetime.utcnow().isoformat()
-        })
+        # Update job status for successful extraction (still processing next stages)
+        update_job_status(
+            tenant_id,
+            job_id,
+            ui_status='processing',
+            pipeline_status='EXTRACTED',
+            extra={
+                'line_items_count': line_items_count,
+                'retry_count': 0
+            }
+        )
         
         # Trigger enrichment-worker for next pipeline step
         auth_header = request.headers.get('Authorization')
@@ -332,18 +352,28 @@ Return JSON with:
                     logger.info(f"✅ Enrichment triggered for job {job_id}")
                 else:
                     logger.error(f"❌ Enrichment trigger failed for {job_id}: {resp.status_code}")
-                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                        'status': 'ENRICHMENT_FAILED',
-                        'error': f"Enrichment trigger failed: {resp.status_code}",
-                        'updated_at': datetime.utcnow().isoformat()
-                    })
+                    update_job_status(
+                        tenant_id,
+                        job_id,
+                        ui_status='failed',
+                        pipeline_status='FAILED',
+                        extra={
+                            'failure_reason': f"Enrichment trigger failed: {resp.status_code}",
+                            'failed_at': datetime.utcnow().isoformat()
+                        }
+                    )
             except Exception as e:
                 logger.error(f"❌ Failed to trigger enrichment for {job_id}: {e}")
-                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                    'status': 'ENRICHMENT_FAILED',
-                    'error': str(e),
-                    'updated_at': datetime.utcnow().isoformat()
-                })
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'failure_reason': str(e),
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
         
         # Call enrichment asynchronously
         threading.Thread(target=call_enrichment_worker, daemon=True).start()
@@ -356,9 +386,47 @@ Return JSON with:
         })
         
     except ValueError as e:
+        # Update Firestore with error before returning
+        try:
+            tenant_id = get_tenant_id(request)
+            data = request.get_json() or {}
+            job_id = data.get('job_id')
+            if tenant_id and job_id:
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'error_type': 'invalid_request',
+                        'failure_reason': str(e),
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
+        except:
+            pass  # Don't fail the error response if Firestore update fails
         return jsonify({'error': str(e)}), 400
     except Exception as e:
         logger.error(f"❌ Extraction failed: {e}")
+        # Update Firestore with error before returning
+        try:
+            tenant_id = get_tenant_id(request)
+            data = request.get_json() or {}
+            job_id = data.get('job_id')
+            if tenant_id and job_id:
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'error_type': 'server_error',
+                        'failure_reason': str(e)[:500],
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
+        except:
+            pass  # Don't fail the error response if Firestore update fails
         return jsonify({'error': str(e)}), 500
 
 

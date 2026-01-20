@@ -63,6 +63,19 @@ openai_client = None
 executor = ThreadPoolExecutor(max_workers=5)
 
 
+def update_job_status(tenant_id: str, job_id: str, ui_status: str, pipeline_status: str = None, extra: Dict[str, Any] = None):
+    """Write UI-friendly status plus optional pipeline status to Firestore."""
+    update_data = {
+        'status': ui_status,
+        'updated_at': datetime.utcnow().isoformat()
+    }
+    if pipeline_status:
+        update_data['pipeline_status'] = pipeline_status
+    if extra:
+        update_data.update(extra)
+    db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).update(update_data)
+
+
 def get_client_profile(tenant_id: str, client_id: str) -> Dict[str, Any]:
     """Fetch client profile with Chart of Accounts"""
     if not client_id:
@@ -231,12 +244,30 @@ def health():
     return jsonify({'status': 'healthy', 'service': 'enrichment-worker'})
 
 
+def run_enrichment(line_items: List[Dict], client_profile: Dict) -> tuple:
+    """
+    Reusable enrichment logic - called both initially and during retries.
+    Returns (success, enriched_items, count)
+    """
+    try:
+        enriched_items = [enrich_line_item(item, client_profile) for item in line_items]
+        count = len(enriched_items)
+        return (True, enriched_items, count)
+    except Exception as e:
+        logger.error(f"❌ Enrichment call failed: {e}")
+        return (False, [], 0)
+
+
 @app.route('/enrich-job', methods=['POST'])
 def enrich_job():
     """
     Process all line items for a job - called by data-extractor-v2
     After enrichment, triggers field-standardizer-v2
     """
+    global openai_client
+    if not openai_client:
+        openai_client = get_openai_client()
+    
     try:
         data = request.get_json()
         tenant_id = data.get('tenant_id')
@@ -247,104 +278,93 @@ def enrich_job():
         if not tenant_id or not job_id:
             return jsonify({'error': 'tenant_id and job_id required'}), 400
         
-        # Update job status to ENRICHING
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'ENRICHING',
-            'updated_at': datetime.utcnow().isoformat()
-        })
+        # Update job status to processing/ENRICHING (write to user-isolated path for frontend)
+        update_job_status(
+            tenant_id,
+            job_id,
+            ui_status='processing',
+            pipeline_status='ENRICHING'
+        )
         
         # Get client profile for COA matching
         client_profile = get_client_profile(tenant_id, client_id)
         
-        # Enrich each line item
-        enriched_items = [enrich_line_item(item, client_profile) for item in line_items]
+        # Initial enrichment
+        success, enriched_items, count = run_enrichment(line_items, client_profile)
         
-        # Debug logging
-        logger.info(f"🔍 ENRICHMENT DEBUG: Enriched {len(enriched_items)} items for job {job_id}")
-        for idx, item in enumerate(enriched_items):
-            logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} keys: {list(item.keys())}")
-            enrichment_data = item.get('enrichment_data', {})
-            if enrichment_data:
-                logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} enrichment_data keys: {list(enrichment_data.keys())}")
-                journal_entry = enrichment_data.get('journal_entry', {})
-                entries = journal_entry.get('entries', [])
-                logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} has {len(entries)} journal entries")
-                logger.info(f"🔍 ENRICHMENT DEBUG: Item {idx} is_balanced={enrichment_data.get('is_balanced')}, total_debit={enrichment_data.get('total_debit')}, total_credit={enrichment_data.get('total_credit')}")
+        if not success:
+            logger.error(f"❌ Initial enrichment failed for job {job_id}")
+            update_job_status(
+                tenant_id,
+                job_id,
+                ui_status='failed',
+                pipeline_status='FAILED',
+                extra={
+                    'failure_reason': 'Initial enrichment call failed',
+                    'error_type': 'enrichment_failed',
+                    'failed_at': datetime.utcnow().isoformat()
+                }
+            )
+            return jsonify({'error': 'Enrichment failed', 'job_id': job_id}), 500
+        
+        logger.info(f"✅ Initial enrichment: {count} items enriched")
         
         # Store enriched data in Firestore
         enrichment_doc = {
             'enriched_line_items': enriched_items,
             'client_id': client_id,
-            'items_count': len(enriched_items),
+            'items_count': count,
             'completed_at': datetime.utcnow().isoformat()
         }
         
         db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).collection('enrichment').document('main').set(enrichment_doc)
         
-        logger.info(f"✅ Enriched job {job_id}: {len(enriched_items)} items")
-        
-        # ⚠️ SAFE FAIL CHECK: At FULL INVOICE level
-        # If no items were enriched but items were extracted, this is a soft error (retryable)
-        if len(enriched_items) == 0 and len(line_items) > 0:
-            logger.warning(f"⚠️ SOFT ERROR: No items enriched for job {job_id} (had {len(line_items)} extracted) - attempting retry with backoff")
+        # ⚠️ SOFT ERROR CHECK: If no items enriched but items were extracted → retry with backoff
+        if count == 0 and len(line_items) > 0:
+            logger.warning(f"⚠️ SOFT ERROR: No items enriched from {len(line_items)} extracted - attempting retry with backoff")
             
-            # Define enrichment retry function
-            def retry_enrichment():
-                try:
-                    retry_enriched = []
-                    for item in line_items:
-                        enriched = enrich_item(item, job_data.get('invoice_header', {}))
-                        if enriched:
-                            retry_enriched.append(enriched)
-                    
-                    retry_count = len(retry_enriched)
-                    logger.info(f"🔄 Retry enrichment result: {retry_count} items")
-                    
-                    return {
-                        'success': retry_count > 0,
-                        'data': retry_enriched,
-                        'items_count': retry_count
-                    }
-                except Exception as e:
-                    logger.error(f"❌ Retry enrichment failed: {e}")
-                    return {'success': False, 'error': str(e)}
+            # Define reusable enrichment function for retry
+            def retry_enrichment_func():
+                success, data, items_count = run_enrichment(line_items, client_profile)
+                if success and items_count > 0:
+                    return {'success': True, 'data': data, 'items_count': items_count}
+                return {'success': False, 'error': 'No items enriched on retry'}
             
             # Retry with exponential backoff (5s, 15s, 45s)
             success, result, error = SafeFailHandler.retry_with_backoff(
-                extraction_func=retry_enrichment,
+                extraction_func=retry_enrichment_func,
                 job_id=job_id,
                 max_retries=3
             )
             
             if success and result and result.get('data'):
-                # Use retried data
                 enriched_items = result['data']
-                logger.info(f"✅ Retry successful: using {result['items_count']} enriched items from retry")
+                count = result['items_count']
+                logger.info(f"✅ Retry successful: {count} items recovered")
             else:
-                # All retries failed - mark as ERROR
-                logger.error(f"❌ HARD FAIL: All retries exhausted for job {job_id}")
-                job_ref = db.collection('tenants').document(tenant_id).collection('jobs').document(job_id)
-                error_update = SafeFailHandler.build_error_update(
-                    ErrorType.EXTRACTION_EMPTY,
-                    f"No items enriched after 3 retries from {len(line_items)} extracted items: {error}",
-                    retry_count=3
+                # Max retries exhausted
+                logger.error(f"❌ HARD FAIL: All retries exhausted")
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'failure_reason': f"No items enriched after 3 retries from {len(line_items)} extracted items",
+                        'error_type': 'zero_enriched_items',
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
                 )
-                job_ref.update(error_update)
-                
-                return jsonify({
-                    'success': False,
-                    'job_id': job_id,
-                    'items_count': 0,
-                    'status': 'ERROR',
-                    'error': f"Enrichment failed: {error}"
-                }), 400
+                return jsonify({'error': 'Enrichment failed after retries', 'job_id': job_id}), 400
         
-        # Update job status to ENRICHED with reset retry count on success
-        db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-            'status': 'ENRICHED',
-            'retry_count': 0,  # Reset retry count on successful enrichment
-            'updated_at': datetime.utcnow().isoformat()
-        })
+        # Update job status to processing/ENRICHED with reset retry count on success
+        update_job_status(
+            tenant_id,
+            job_id,
+            ui_status='processing',
+            pipeline_status='ENRICHED',
+            extra={'retry_count': 0}
+        )
         
         # Trigger field-standardizer for final processing
         auth_header = request.headers.get('Authorization')
@@ -377,18 +397,28 @@ def enrich_job():
                     logger.info(f"✅ Standardization triggered for job {job_id}")
                 else:
                     logger.error(f"❌ Standardization trigger failed for {job_id}: {resp.status_code}")
-                    db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                        'status': 'STANDARDIZATION_FAILED',
-                        'error': f"Standardization trigger failed: {resp.status_code}",
-                        'updated_at': datetime.utcnow().isoformat()
-                    })
+                    update_job_status(
+                        tenant_id,
+                        job_id,
+                        ui_status='failed',
+                        pipeline_status='FAILED',
+                        extra={
+                            'failure_reason': f"Standardization trigger failed: {resp.status_code}",
+                            'failed_at': datetime.utcnow().isoformat()
+                        }
+                    )
             except Exception as e:
                 logger.error(f"❌ Failed to trigger standardization for {job_id}: {e}")
-                db.collection('tenants').document(tenant_id).collection('jobs').document(job_id).update({
-                    'status': 'STANDARDIZATION_FAILED',
-                    'error': str(e),
-                    'updated_at': datetime.utcnow().isoformat()
-                })
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'failure_reason': str(e),
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
         
         # Call standardizer asynchronously
         threading.Thread(target=call_field_standardizer, daemon=True).start()
@@ -402,6 +432,25 @@ def enrich_job():
         
     except Exception as e:
         logger.error(f"❌ Job enrichment failed: {e}")
+        # Update Firestore with error before returning
+        try:
+            data = request.get_json() or {}
+            tenant_id = data.get('tenant_id')
+            job_id = data.get('job_id')
+            if tenant_id and job_id:
+                update_job_status(
+                    tenant_id,
+                    job_id,
+                    ui_status='failed',
+                    pipeline_status='FAILED',
+                    extra={
+                        'error_type': 'enrichment_exception',
+                        'failure_reason': str(e)[:500],
+                        'failed_at': datetime.utcnow().isoformat()
+                    }
+                )
+        except:
+            pass  # Don't fail the error response if Firestore update fails
         return jsonify({'error': str(e)}), 500
 
 
