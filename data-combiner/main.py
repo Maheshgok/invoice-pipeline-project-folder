@@ -49,10 +49,14 @@ def parse_amount(value) -> float:
 def validate_accounting_balance(journal_entries: List[Dict]) -> Dict[str, Any]:
     """Validate that all journal entries are balanced (debits = credits)"""
     try:
+        logger.info(f"📊 Starting balance validation for {len(journal_entries)} entries")
         total_debit = 0.0
         total_credit = 0.0
         
-        for entry in journal_entries:
+        for idx, entry in enumerate(journal_entries):
+            if idx % 10 == 0:
+                logger.info(f"📊 Processing entry {idx}/{len(journal_entries)}")
+            
             # Check for enrichment_data with pre-calculated totals (from enrichment-worker)
             enrichment_data = entry.get('enrichment_data', {})
             if enrichment_data:
@@ -81,6 +85,8 @@ def validate_accounting_balance(journal_entries: List[Dict]) -> Dict[str, Any]:
                 total_credit += parse_amount(entry.get('credit', 0))
         
         is_balanced = abs(total_debit - total_credit) < 0.01  # Allow for rounding
+        
+        logger.info(f"✅ Balance validation complete: debit={total_debit}, credit={total_credit}, balanced={is_balanced}")
         
         return {
             'is_balanced': is_balanced,
@@ -318,13 +324,20 @@ def combine_and_store_data():
             logger.warning(f"⚠️ Job {job_id} - Accounting entries not balanced! Diff: {balance_check['difference']}")
         
         # Flatten entries for frontend (converts nested structure to flat format)
+        logger.info(f"📋 Starting flatten process for {len(journal_entries)} entries")
         frontend_journal_entries = flatten_journal_entries_for_frontend(journal_entries, header_data)
+        logger.info(f"📋 Flattened to {len(frontend_journal_entries)} frontend entries")
         
         # Get Firestore client
+        logger.info(f"🔥 Getting Firestore client...")
         db = get_firestore_client()
+        logger.info(f"🔥 Firestore client ready")
         
         # Create final document for frontend
-        # Frontend expects 'result' field containing journal_entries and invoice_details
+        # Store metadata + summary in main doc, journal entries in subcollection
+        logger.info(f"📝 Building invoice result document for {job_id}")
+        
+        # Main document - lightweight metadata and summary
         invoice_result = {
             'id': job_id,
             'job_id': job_id,
@@ -336,9 +349,8 @@ def combine_and_store_data():
             'gcs_input_path': job_metadata.get('gcs_input_path', ''),
             'user_email': user_context.get('email', ''),
             'userUID': user_uid,
-            # Frontend expects 'result' field with nested structure
+            # Summary only in main doc - full entries go to subcollection
             'result': {
-                'journal_entries': frontend_journal_entries,  # Flattened for frontend
                 'invoice_details': {
                     'invoice_number': header_data.get('invoice_number', ''),
                     'invoice_date': header_data.get('invoice_date', ''),
@@ -353,11 +365,12 @@ def combine_and_store_data():
                     'name': header_data.get('buyer_name', ''),
                     'gstin': header_data.get('buyer_gstin', '')
                 },
-                'balance_validation': balance_check
+                'balance_validation': balance_check,
+                'journal_entries_count': len(frontend_journal_entries)  # Reference to subcollection
             },
             'processing_metadata': {
-                'total_entries': len(frontend_journal_entries),  # Flattened count
-                'raw_line_items': len(journal_entries),  # Original line item count
+                'total_entries': len(frontend_journal_entries),
+                'raw_line_items': len(journal_entries),
                 'is_balanced': balance_check['is_balanced'],
                 'total_debit': balance_check['total_debit'],
                 'total_credit': balance_check['total_credit'],
@@ -376,19 +389,44 @@ def combine_and_store_data():
         # Add organization reference to document if available (for future queries)
         if organization_id:
             invoice_result['organizationId'] = organization_id
-            
-        db.collection('users').document(user_uid).collection('invoice_results').document(job_id).set(invoice_result)
-        logger.info(f"💾 Stored result to {storage_path}")
+        
+        # Use batch write for atomicity: write main doc + subcollection entries
+        logger.info(f"📦 Starting batch write: main doc + {len(frontend_journal_entries)} journal entries")
+        batch = db.batch()
+        
+        # Write main document to users/{uid}/invoice_results/{job_id}
+        main_doc_ref = db.collection('users').document(user_uid).collection('invoice_results').document(job_id)
+        batch.set(main_doc_ref, invoice_result)
+        
+        # Write journal entries to subcollection: users/{uid}/invoice_results/{job_id}/journal_entries/{lineId}
+        for idx, entry in enumerate(frontend_journal_entries):
+            entry_ref = main_doc_ref.collection('journal_entries').document(f"line_{idx}")
+            batch.set(entry_ref, entry)
+        
+        # Commit batch with 30-second timeout
+        try:
+            logger.info(f"💾 Committing batch with {len(frontend_journal_entries) + 1} documents (1 main + {len(frontend_journal_entries)} entries)")
+            batch.commit(timeout=30.0)
+            logger.info(f"✅ Batch committed successfully to {storage_path}")
+        except Exception as e:
+            logger.error(f"❌ Batch write failed: {str(e)}")
+            return jsonify({
+                'status': 'error',
+                'error': 'Firestore batch write failed',
+                'message': str(e)
+            }), 500
         
         storage_result = {
             'stored': True,
             'document_id': job_id,
             'storage_timestamp': datetime.now().isoformat(),
             'storage_location': storage_path,
-            'document_size_bytes': len(json.dumps(invoice_result))
+            'main_document_size_bytes': len(json.dumps(invoice_result)),
+            'total_entries_stored': len(frontend_journal_entries),
+            'storage_method': 'batch_write_with_subcollection'
         }
         
-        logger.info(f"✅ Job {job_id} completed - {len(frontend_journal_entries)} frontend entries from {len(journal_entries)} line items, balanced: {balance_check['is_balanced']}, debit: {balance_check['total_debit']}, credit: {balance_check['total_credit']}")
+        logger.info(f"✅ Job {job_id} completed - {len(frontend_journal_entries)} entries (batch), balanced: {balance_check['is_balanced']}, debit: {balance_check['total_debit']}, credit: {balance_check['total_credit']}")
         
         return jsonify({
             'status': 'SUCCESS',
@@ -399,7 +437,8 @@ def combine_and_store_data():
                 'raw_line_items': len(journal_entries),
                 'is_balanced': balance_check['is_balanced'],
                 'total_debit': balance_check['total_debit'],
-                'total_credit': balance_check['total_credit']
+                'total_credit': balance_check['total_credit'],
+                'entries_stored_in_subcollection': True
             }
         }), 200
         
