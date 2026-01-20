@@ -337,7 +337,8 @@ def combine_and_store_data():
         # Store metadata + summary in main doc, journal entries in subcollection
         logger.info(f"📝 Building invoice result document for {job_id}")
         
-        # Main document - lightweight metadata and summary
+        # Main document - includes journal entries for frontend compatibility
+        # Frontend expects journal_entries array in the main document
         invoice_result = {
             'id': job_id,
             'job_id': job_id,
@@ -349,7 +350,27 @@ def combine_and_store_data():
             'gcs_input_path': job_metadata.get('gcs_input_path', ''),
             'user_email': user_context.get('email', ''),
             'userUID': user_uid,
-            # Summary only in main doc - full entries go to subcollection
+            # Include journal_entries for frontend compatibility
+            'journal_entries': frontend_journal_entries,
+            'invoice_header': {
+                'vendor_name': header_data.get('vendor_name', ''),
+                'vendor_gstin': header_data.get('vendor_gstin', ''),
+                'invoice_number': header_data.get('invoice_number', ''),
+                'invoice_date': header_data.get('invoice_date', ''),
+                'total_amount': header_data.get('total_amount', 0),
+                'tax_amount': header_data.get('tax_amount', 0)
+            },
+            'invoice_details': {
+                'invoice_number': header_data.get('invoice_number', ''),
+                'invoice_date': header_data.get('invoice_date', ''),
+                'total_amount': header_data.get('total_amount', 0),
+                'tax_amount': header_data.get('tax_amount', 0)
+            },
+            'vendor_details': {
+                'name': header_data.get('vendor_name', ''),
+                'gstin': header_data.get('vendor_gstin', '')
+            },
+            'balance_validation': balance_check,
             'result': {
                 'invoice_details': {
                     'invoice_number': header_data.get('invoice_number', ''),
@@ -366,7 +387,7 @@ def combine_and_store_data():
                     'gstin': header_data.get('buyer_gstin', '')
                 },
                 'balance_validation': balance_check,
-                'journal_entries_count': len(frontend_journal_entries)  # Reference to subcollection
+                'journal_entries_count': len(frontend_journal_entries)
             },
             'processing_metadata': {
                 'total_entries': len(frontend_journal_entries),
