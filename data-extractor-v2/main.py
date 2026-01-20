@@ -135,7 +135,8 @@ def update_job_status(tenant_id: str, job_id: str, ui_status: str, pipeline_stat
         update_data['pipeline_status'] = pipeline_status
     if extra:
         update_data.update(extra)
-    db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).update(update_data)
+    # Use set with merge=True to create document if it doesn't exist
+    db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).set(update_data, merge=True)
 
 
 @app.route('/health', methods=['GET'])
