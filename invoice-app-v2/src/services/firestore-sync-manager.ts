@@ -57,7 +57,12 @@ export class FirestoreSyncManager {
 
     // USE FINAL SIMPLIFIED SERVICE - uses existing perfect journal entries
     finalSimplifiedFirestoreService.listenToUserResults(
-      (entries) => this.handleDirectJournalEntries(entries),
+      (entries, results) => {
+        this.handleDirectJournalEntries(entries)
+        if (results) {
+          this.handleFirestoreUpdate(results)  // Update batch manager with status info
+        }
+      },
       (error) => this.handleFirestoreError(error)
     )
   }

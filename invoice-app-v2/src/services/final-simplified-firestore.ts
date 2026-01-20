@@ -18,7 +18,10 @@ import { collectionPathResolver } from './collectionPathResolver'
 export class FinalSimplifiedFirestoreService {
   private unsubscribers: Array<() => void> = []
 
-  async listenToUserResults(onUpdate: (entries: any[]) => void, onError: (error: Error) => void): Promise<() => void> {
+  async listenToUserResults(
+    onUpdate: (entries: any[], results?: any[]) => void, 
+    onError: (error: Error) => void
+  ): Promise<() => void> {
     const user = authService.getCurrentUser()
     if (!user?.uid) {
       onError(new Error('User not authenticated'))
@@ -50,7 +53,10 @@ export class FinalSimplifiedFirestoreService {
             id: doc.id,
             jobId: data.job_id || doc.id,
             userEmail: data.user_email || '',
+            status: data.status || 'processing',  // Include status for bucket counting
             createdAt: data.created_at || data.updated_at || new Date(),
+            fileName: data.original_filename || '',
+            error: data.failure_reason || data.error_message,
             // Support both old (data.result) and new (direct fields) structure
             extractedData: data.result || {
               journal_entries: data.journal_entries || [],
@@ -65,7 +71,7 @@ export class FinalSimplifiedFirestoreService {
         })
         
         const journalEntries = this.extractFromBackendJournalEntries(results)
-        onUpdate(journalEntries)
+        onUpdate(journalEntries, results)  // Pass both journal entries and raw results for status tracking
       },
       onError
     )
