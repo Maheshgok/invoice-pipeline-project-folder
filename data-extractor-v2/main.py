@@ -128,6 +128,7 @@ def update_job_status(tenant_id: str, job_id: str, ui_status: str, pipeline_stat
     """Write UI-friendly status plus optional pipeline status to Firestore."""
     update_data = {
         'status': ui_status,
+        'userUID': tenant_id,  # Ensure userUID is set for frontend queries
         'updated_at': datetime.utcnow().isoformat()
     }
     if pipeline_status:
