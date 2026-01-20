@@ -387,7 +387,7 @@ def combine_and_store_data():
                     'gstin': header_data.get('buyer_gstin', '')
                 },
                 'balance_validation': balance_check,
-                'journal_entries_count': len(frontend_journal_entries)
+                'journal_entries': frontend_journal_entries
             },
             'processing_metadata': {
                 'total_entries': len(frontend_journal_entries),
