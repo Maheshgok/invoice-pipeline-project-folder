@@ -993,20 +993,35 @@ export class UserService {
    */
   async updatePaymentStatus(update: Partial<PaymentStatus>): Promise<void> {
     try {
+      console.log('🔍 updatePaymentStatus called with:', update)
+      
       const currentUser = authService.getCurrentUser()
-      if (!currentUser) throw new Error('User not authenticated')
+      if (!currentUser) {
+        console.error('❌ No authenticated user found')
+        throw new Error('User not authenticated')
+      }
+
+      console.log('👤 Current user:', currentUser.uid, currentUser.email)
 
       const userRef = doc(db, 'users', currentUser.uid)
+      console.log('📄 Fetching user document:', `users/${currentUser.uid}`)
+      
       const userDoc = await getDoc(userRef)
       
       if (!userDoc.exists()) {
+        console.error('❌ User document does not exist in Firestore')
         throw new Error('User profile not found')
       }
+
+      console.log('✅ User document found:', userDoc.data())
 
       const userData = userDoc.data() as UserProfile
       const currentPaymentStatus = userData.paymentStatus
 
+      console.log('💳 Current payment status:', currentPaymentStatus)
+
       if (!currentPaymentStatus) {
+        console.error('❌ No payment status record found on user')
         throw new Error('No payment record found')
       }
 
@@ -1020,23 +1035,57 @@ export class UserService {
         ...update
       }
 
-      console.log(`💳 Setting payment status to 'paid' for user ${currentUser.uid}:`, {
+      console.log('💳 Preparing to save payment status:', {
         previousStatus: currentPaymentStatus.status,
         newStatus: update.status,
         transactionRef: update.transactionRef,
-        updatedPaymentStatus
+        updatedPaymentStatus: JSON.stringify(updatedPaymentStatus, null, 2)
       })
 
       // Update user profile
+      console.log('📝 Updating Firestore document...')
       await updateDoc(userRef, {
         paymentStatus: updatedPaymentStatus,
         updatedAt: serverTimestamp()
       })
 
-      console.log('✅ Payment status updated successfully for user:', currentUser.uid)
-    } catch (error) {
+      console.log('✅ Firestore update completed successfully')
+      console.log('📊 Updated payment status saved to:', `users/${currentUser.uid}.paymentStatus`)
+      console.log('📊 Payment status now:', {
+        status: updatedPaymentStatus.status,
+        transactionRef: updatedPaymentStatus.transactionRef,
+        amount: updatedPaymentStatus.amount
+      })
+    } catch (error: any) {
       console.error('❌ Error updating payment status:', error)
+      console.error('❌ Error code:', error?.code)
+      console.error('❌ Error message:', error?.message)
       throw error
+    }
+  }
+
+  /**
+   * Get payment status for verification (for debugging)
+   */
+  async getPaymentStatusForUser(uid?: string): Promise<PaymentStatus | null> {
+    try {
+      const userUid = uid || authService.getCurrentUser()?.uid
+      if (!userUid) throw new Error('No user UID provided')
+
+      const userRef = doc(db, 'users', userUid)
+      const userDoc = await getDoc(userRef)
+
+      if (!userDoc.exists()) {
+        console.error('❌ User document not found:', userUid)
+        return null
+      }
+
+      const paymentStatus = (userDoc.data() as UserProfile).paymentStatus
+      console.log('💳 Retrieved payment status for', userUid, ':', paymentStatus)
+      return paymentStatus || null
+    } catch (error) {
+      console.error('❌ Error retrieving payment status:', error)
+      return null
     }
   }
 
@@ -2154,6 +2203,170 @@ export class UserService {
       }
     } catch (error) {
       console.error('❌ Error initializing workspace:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Delete user and all associated data (super admin only)
+   * PERMANENTLY removes:
+   * - User profile document
+   * - All invoice results (active)
+   * - All archived results
+   * - All processing jobs
+   * - All workspace data
+   */
+  async deleteUserCompletely(userUid: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can delete users')
+      }
+
+      console.log('⚠️ DELETING USER - Starting complete user removal:', userUid)
+
+      // Use batch writes to ensure atomicity
+      const batch = writeBatch(db)
+      let deletedCount = 0
+
+      // 1. Delete user profile document
+      console.log('🗑️ Deleting user profile document...')
+      const userRef = doc(db, 'users', userUid)
+      batch.delete(userRef)
+      deletedCount++
+
+      // 2. Delete all invoice results
+      console.log('🗑️ Deleting invoice results...')
+      const resultsRef = collection(db, `users/${userUid}/invoice_results`)
+      const resultsSnapshot = await getDocs(resultsRef)
+      resultsSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref)
+        deletedCount++
+      })
+      console.log(`  ✓ Marked ${resultsSnapshot.size} invoice result documents for deletion`)
+
+      // 3. Delete all archived results
+      console.log('🗑️ Deleting archived results...')
+      const archiveRef = collection(db, `users/${userUid}/invoice_results_archive`)
+      const archiveSnapshot = await getDocs(archiveRef)
+      archiveSnapshot.docs.forEach(doc => {
+        batch.delete(doc.ref)
+        deletedCount++
+      })
+      console.log(`  ✓ Marked ${archiveSnapshot.size} archived result documents for deletion`)
+
+      // 4. Delete all processing jobs
+      console.log('🗑️ Deleting processing jobs...')
+      try {
+        const jobsRef = collection(db, `users/${userUid}/jobs`)
+        const jobsSnapshot = await getDocs(jobsRef)
+        jobsSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref)
+          deletedCount++
+        })
+        console.log(`  ✓ Marked ${jobsSnapshot.size} job documents for deletion`)
+      } catch (error) {
+        console.warn('⚠️ Jobs collection may not exist, continuing...')
+      }
+
+      // 5. Delete workspace data
+      console.log('🗑️ Deleting workspace data...')
+      try {
+        const workspaceRef = collection(db, `users/${userUid}/workspace`)
+        const workspaceSnapshot = await getDocs(workspaceRef)
+        workspaceSnapshot.docs.forEach(doc => {
+          batch.delete(doc.ref)
+          deletedCount++
+        })
+        console.log(`  ✓ Marked ${workspaceSnapshot.size} workspace documents for deletion`)
+      } catch (error) {
+        console.warn('⚠️ Workspace collection may not exist, continuing...')
+      }
+
+      // 6. Commit all deletions
+      console.log('📝 Committing batch delete operation...')
+      await batch.commit()
+
+      console.log(`✅ USER DELETION COMPLETE - Deleted ${deletedCount} total Firestore documents`)
+      console.log('📊 Removal summary:')
+      console.log(`  - User profile: 1`)
+      console.log(`  - Invoice results: ${resultsSnapshot.size}`)
+      console.log(`  - Archived results: ${archiveSnapshot.size}`)
+      console.log(`  - Processing jobs: ${resultsSnapshot.size}`)
+      console.log(`  - Workspace data: 0 (Cloud Storage cleanup via separate process)`)
+      console.log('✅ User and all associated data have been permanently deleted')
+    } catch (error: any) {
+      console.error('❌ ERROR deleting user - Operation may have partially completed:', error)
+      console.error('❌ Error details:', {
+        code: error?.code,
+        message: error?.message
+      })
+      throw new Error(`Failed to delete user: ${error?.message || 'Unknown error'}`)
+    }
+  }
+
+  /**
+   * Suspend user account (reversible alternative to deletion)
+   */
+  async suspendUser(userUid: string, reason?: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can suspend users')
+      }
+
+      console.log('🔒 Suspending user:', userUid)
+
+      const userRef = doc(db, 'users', userUid)
+      await updateDoc(userRef, {
+        isActive: false,
+        approvalStatus: 'suspended',
+        suspendedAt: serverTimestamp(),
+        suspendedBy: currentUser.uid,
+        suspensionReason: reason || 'User account suspended by admin',
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User suspended successfully:', userUid)
+    } catch (error) {
+      console.error('❌ Error suspending user:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Reactivate suspended user
+   */
+  async reactivateUser(userUid: string): Promise<void> {
+    try {
+      const currentUser = authService.getCurrentUser()
+      if (!currentUser) throw new Error('Admin not authenticated')
+
+      const currentProfile = await this.getUserProfile()
+      if (currentProfile?.role !== 'super_admin') {
+        throw new Error('Only super admins can reactivate users')
+      }
+
+      console.log('🟢 Reactivating user:', userUid)
+
+      const userRef = doc(db, 'users', userUid)
+      await updateDoc(userRef, {
+        isActive: true,
+        approvalStatus: 'approved',
+        reactivatedAt: serverTimestamp(),
+        reactivatedBy: currentUser.uid,
+        updatedAt: serverTimestamp()
+      })
+
+      console.log('✅ User reactivated successfully:', userUid)
+    } catch (error) {
+      console.error('❌ Error reactivating user:', error)
       throw error
     }
   }

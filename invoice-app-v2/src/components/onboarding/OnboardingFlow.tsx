@@ -161,18 +161,33 @@ const OnboardingFlow: React.FC = () => {
   const handlePaymentComplete = async (transactionRef: string) => {
     try {
       setLoading(true)
+      console.log('🔍 Payment Flow Debug - Starting payment update')
+      console.log('📊 User UID:', user?.uid)
+      console.log('📊 User Email:', user?.email)
+      console.log('📝 Transaction Ref:', transactionRef)
       
       // Update payment status to 'paid' (waiting for verification)
+      console.log('🔄 Calling updatePaymentStatus...')
       await userService.updatePaymentStatus({
         status: 'paid',
         transactionRef
       })
       
+      console.log('✅ updatePaymentStatus completed successfully')
+      console.log('🔄 Refreshing user profile...')
       await refreshUserProfile()
+      console.log('✅ Profile refreshed, current paymentStatus:', userProfile?.paymentStatus)
+      
       setCurrentStep(6) // Move to verification after payment
+      console.log('✅ Moved to verification step (6)')
       toast.success('Payment completed! Waiting for verification.')
     } catch (error: any) {
-      console.error('Payment completion error:', error)
+      console.error('❌ Payment completion error:', error)
+      console.error('❌ Error details:', {
+        message: error?.message,
+        code: error?.code,
+        stack: error?.stack
+      })
       toast.error(error.message || 'Failed to update payment status')
     } finally {
       setLoading(false)

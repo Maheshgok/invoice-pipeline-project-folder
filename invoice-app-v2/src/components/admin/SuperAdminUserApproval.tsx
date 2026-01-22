@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react'
-import { Check, X, Clock, Search, Filter, Eye, Mail, AlertCircle, RefreshCw } from 'lucide-react'
+import { Check, X, Clock, Search, Filter, Eye, Mail, AlertCircle, RefreshCw, Trash2, Lock, Unlock } from 'lucide-react'
 import { useAuth } from '../../contexts/AuthContext'
 import { userService, type UserProfile } from '../../services/userService'
 import { pricingService, type PricingPlan } from '../../services/pricingService'
@@ -129,6 +129,99 @@ const SuperAdminUserApproval: React.FC = () => {
       toast.error(error.message || 'Failed to reject user')
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  const deleteUserCompletely = async (userId: string, userEmail: string) => {
+    const confirmDelete = window.confirm(
+      `⚠️ PERMANENT DELETE\n\nThis will irreversibly delete:\n- User profile\n- All invoice results\n- All archived data\n- All processing jobs\n- All workspace data\n\nUser: ${userEmail}\n\nType 'DELETE' to confirm:`
+    )
+    
+    if (!confirmDelete) return
+
+    const typedConfirmation = prompt('Type DELETE to confirm permanent deletion:')
+    if (typedConfirmation !== 'DELETE') {
+      toast.error('Deletion cancelled - confirmation mismatch')
+      return
+    }
+
+    try {
+      setActionLoading(userId)
+      console.log('⚠️ Admin initiated user deletion:', userEmail)
+      
+      await userService.deleteUserCompletely(userId)
+      
+      toast.success(`✅ User ${userEmail} and all data permanently deleted`)
+      await loadAllData()
+    } catch (error: any) {
+      console.error('Error deleting user:', error)
+      toast.error(error.message || 'Failed to delete user')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const suspendUserAccount = async (userId: string, userEmail: string) => {
+    const reason = prompt('Enter suspension reason (optional):')
+    
+    try {
+      setActionLoading(userId)
+      console.log('🔒 Admin suspending user:', userEmail)
+      
+      await userService.suspendUser(userId, reason)
+      
+      toast.success(`User ${userEmail} suspended`)
+      await loadAllData()
+    } catch (error: any) {
+      console.error('Error suspending user:', error)
+      toast.error(error.message || 'Failed to suspend user')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const reactivateUserAccount = async (userId: string, userEmail: string) => {
+    const confirm = window.confirm(`Reactivate user ${userEmail}?`)
+    if (!confirm) return
+
+    try {
+      setActionLoading(userId)
+      console.log('🟢 Admin reactivating user:', userEmail)
+      
+      await userService.reactivateUser(userId)
+      
+      toast.success(`User ${userEmail} reactivated`)
+      await loadAllData()
+    } catch (error: any) {
+      console.error('Error reactivating user:', error)
+      toast.error(error.message || 'Failed to reactivate user')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const verifyUserPaymentStatus = async () => {
+    const email = prompt('Enter user email to check payment status:')
+    if (!email) return
+
+    try {
+      console.log('🔍 Manual verification for:', email)
+      // Find user by email
+      const allUsers = [...paidUsers, ...pendingUsers, ...rejectedUsers]
+      const user = allUsers.find(u => u.email?.toLowerCase() === email.toLowerCase())
+      
+      if (user) {
+        console.log('👤 User found:', user)
+        const paymentStatus = await userService.getPaymentStatusForUser(user.uid)
+        console.log('💳 Payment status:', paymentStatus)
+        
+        alert(`User: ${user.email}\nStatus: ${paymentStatus?.status}\nAmount: ₹${paymentStatus?.amount}\nTransaction Ref: ${paymentStatus?.transactionRef || 'N/A'}`)
+      } else {
+        alert('User not found in payment approval lists')
+      }
+    } catch (error: any) {
+      console.error('Error verifying payment status:', error)
+      alert('Error: ' + error.message)
     }
   }
 
@@ -270,6 +363,15 @@ const SuperAdminUserApproval: React.FC = () => {
                 <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
                 Refresh
               </button>
+
+              <button
+                onClick={verifyUserPaymentStatus}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2"
+                title="Manually check a user's payment status"
+              >
+                <Eye className="w-4 h-4" />
+                Check Payment
+              </button>
             </div>
           </div>
         </div>
@@ -352,13 +454,14 @@ const SuperAdminUserApproval: React.FC = () => {
                           {user.createdAt?.toDate().toLocaleDateString() || 'N/A'}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex gap-2">
+                          <div className="flex gap-2 flex-wrap">
                             {user.paymentStatus?.status === 'paid' && (
                               <>
                                 <button
                                   onClick={() => approveUser(user.id, user.email || '')}
                                   disabled={actionLoading === user.id}
                                   className="text-green-600 hover:text-green-900 flex items-center gap-1 disabled:opacity-50"
+                                  title="Approve payment"
                                 >
                                   {actionLoading === user.id ? (
                                     <RefreshCw className="w-4 h-4 animate-spin" />
@@ -371,15 +474,58 @@ const SuperAdminUserApproval: React.FC = () => {
                                   onClick={() => rejectUser(user.id, user.email || '')}
                                   disabled={actionLoading === user.id}
                                   className="text-red-600 hover:text-red-900 flex items-center gap-1 disabled:opacity-50"
+                                  title="Reject payment"
                                 >
                                   <X className="w-4 h-4" />
                                   Reject
                                 </button>
                               </>
                             )}
+                            
+                            {user.approvalStatus === 'suspended' ? (
+                              <button
+                                onClick={() => reactivateUserAccount(user.id, user.email || '')}
+                                disabled={actionLoading === user.id}
+                                className="text-blue-600 hover:text-blue-900 flex items-center gap-1 disabled:opacity-50"
+                                title="Reactivate suspended user"
+                              >
+                                {actionLoading === user.id ? (
+                                  <RefreshCw className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <Unlock className="w-4 h-4" />
+                                )}
+                                Reactivate
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => suspendUserAccount(user.id, user.email || '')}
+                                disabled={actionLoading === user.id}
+                                className="text-orange-600 hover:text-orange-900 flex items-center gap-1 disabled:opacity-50"
+                                title="Suspend user account"
+                              >
+                                <Lock className="w-4 h-4" />
+                                Suspend
+                              </button>
+                            )}
+                            
+                            <button
+                              onClick={() => deleteUserCompletely(user.id, user.email || '')}
+                              disabled={actionLoading === user.id}
+                              className="text-red-800 hover:text-red-950 flex items-center gap-1 disabled:opacity-50"
+                              title="Permanently delete user and all data"
+                            >
+                              {actionLoading === user.id ? (
+                                <RefreshCw className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Trash2 className="w-4 h-4" />
+                              )}
+                              Delete
+                            </button>
+                            
                             <button
                               onClick={() => console.log('View user:', user.id)}
                               className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
+                              title="View user details"
                             >
                               <Eye className="w-4 h-4" />
                               View
@@ -388,6 +534,7 @@ const SuperAdminUserApproval: React.FC = () => {
                               <button
                                 onClick={() => window.open(`mailto:${user.email}`)}
                                 className="text-gray-600 hover:text-gray-900 flex items-center gap-1"
+                                title="Send email to user"
                               >
                                 <Mail className="w-4 h-4" />
                                 Email
