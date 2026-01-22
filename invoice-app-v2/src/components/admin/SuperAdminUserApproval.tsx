@@ -54,20 +54,24 @@ const SuperAdminUserApproval: React.FC = () => {
 
   const loadPendingUsers = async () => {
     try {
+      console.log('🔄 Loading pending users...')
       // Load users with 'paid' status (submitted payment, awaiting verification)
       const paidUsersData = await userService.getUsersByPaymentStatus('paid')
+      console.log(`✅ Found ${paidUsersData.length} users with 'paid' status`, paidUsersData)
       setPaidUsers(paidUsersData as PendingUser[])
       
       // Load users with 'pending' status (started but not submitted)
       const pendingUsersData = await userService.getUsersByPaymentStatus('pending')
+      console.log(`✅ Found ${pendingUsersData.length} users with 'pending' status`, pendingUsersData)
       setPendingUsers(pendingUsersData as PendingUser[])
       
       // Load rejected users
       const rejectedUsersData = await userService.getUsersByPaymentStatus('rejected')
+      console.log(`✅ Found ${rejectedUsersData.length} users with 'rejected' status`, rejectedUsersData)
       setRejectedUsers(rejectedUsersData as PendingUser[])
     } catch (error) {
-      console.error('Error loading users:', error)
-      toast.error('Failed to load users')
+      console.error('❌ Error loading users:', error)
+      toast.error('Failed to load users: ' + (error instanceof Error ? error.message : 'Unknown error'))
     }
   }
 

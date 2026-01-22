@@ -13,17 +13,19 @@ const VerificationStep: React.FC<VerificationStepProps> = ({
   paymentStatus,
   onVerified
 }) => {
-  const { refreshUserProfile } = useAuth()
+  const { refreshUserProfile, userProfile } = useAuth()
   const [checking, setChecking] = useState(false)
   const [timeElapsed, setTimeElapsed] = useState(0)
+  const [lastCheckStatus, setLastCheckStatus] = useState<string | null>(null)
 
   // Auto-refresh profile every 30 seconds to check for verification
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
+        console.log('🔄 Auto-checking verification status...')
         await refreshUserProfile()
       } catch (error) {
-        console.error('Error refreshing profile:', error)
+        console.error('❌ Error auto-refreshing profile:', error)
       }
     }, 30000) // 30 seconds
 
@@ -41,22 +43,46 @@ const VerificationStep: React.FC<VerificationStepProps> = ({
 
   // Check if payment is verified
   useEffect(() => {
+    console.log('💳 Current payment status:', {
+      status: paymentStatus?.status,
+      transactionRef: paymentStatus?.transactionRef,
+      paidAt: paymentStatus?.paidAt,
+      verifiedAt: paymentStatus?.verifiedAt
+    })
+
     if (paymentStatus?.status === 'verified') {
+      console.log('✅ Payment verified! Redirecting...')
       onVerified()
     }
-  }, [paymentStatus?.status, onVerified])
+  }, [paymentStatus?.status, onVerified, paymentStatus])
 
   const handleManualRefresh = async () => {
     setChecking(true)
     try {
+      console.log('🔄 Manual refresh initiated...')
       await refreshUserProfile()
-      if (paymentStatus?.status === 'verified') {
+      
+      const currentStatus = userProfile?.paymentStatus?.status
+      setLastCheckStatus(currentStatus || 'unknown')
+      
+      console.log('✅ Profile refreshed. Current status:', currentStatus)
+      
+      if (currentStatus === 'verified') {
         toast.success('Payment verified!')
         onVerified()
+      } else if (currentStatus === 'paid') {
+        toast('Payment received - awaiting admin verification...', { 
+          icon: '⏳',
+          duration: 3000
+        })
       } else {
-        toast('Still waiting for verification...', { icon: 'ℹ️' })
+        toast(`Current status: ${currentStatus}`, { 
+          icon: 'ℹ️',
+          duration: 3000
+        })
       }
     } catch (error) {
+      console.error('❌ Error refreshing:', error)
       toast.error('Failed to check verification status')
     } finally {
       setChecking(false)

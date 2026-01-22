@@ -1020,13 +1020,20 @@ export class UserService {
         ...update
       }
 
+      console.log(`💳 Setting payment status to 'paid' for user ${currentUser.uid}:`, {
+        previousStatus: currentPaymentStatus.status,
+        newStatus: update.status,
+        transactionRef: update.transactionRef,
+        updatedPaymentStatus
+      })
+
       // Update user profile
       await updateDoc(userRef, {
         paymentStatus: updatedPaymentStatus,
         updatedAt: serverTimestamp()
       })
 
-      console.log('💳 Payment status updated for user:', currentUser.uid)
+      console.log('✅ Payment status updated successfully for user:', currentUser.uid)
     } catch (error) {
       console.error('❌ Error updating payment status:', error)
       throw error
@@ -1907,6 +1914,7 @@ export class UserService {
 
   /**
    * Get users by payment/approval status (for admin approval flow)
+   * NOTE: Uses in-memory filtering since nested field queries require composite indexes
    */
   async getUsersByPaymentStatus(status: 'pending' | 'paid' | 'verified' | 'rejected'): Promise<Array<UserProfile & { id: string }>> {
     try {
@@ -1918,16 +1926,36 @@ export class UserService {
         throw new Error('Only super admins can view users by status')
       }
 
+      console.log(`🔍 Fetching users with payment status: ${status}`)
+
       const usersRef = collection(db, 'users')
-      const q = query(usersRef, where('paymentStatus.status', '==', status))
+      
+      // Fetch all users (admin permission via security rules)
+      // Then filter in-memory by payment status to avoid composite index requirement
+      const q = query(usersRef, limit(500))
       const snapshot = await getDocs(q)
       
-      return snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data() as UserProfile
-      }))
-    } catch (error) {
-      console.error('❌ Error fetching users by status:', error)
+      console.log(`📦 Fetched ${snapshot.size} total users, filtering by status '${status}'`)
+      
+      const filteredUsers = snapshot.docs
+        .map(doc => ({
+          id: doc.id,
+          ...doc.data() as UserProfile
+        }))
+        .filter(user => {
+          const paymentStatus = user.paymentStatus?.status
+          const matches = paymentStatus === status
+          if (matches) {
+            console.log(`  ✓ User ${user.email} has status '${status}'`)
+          }
+          return matches
+        })
+      
+      console.log(`✅ Found ${filteredUsers.length} users with status '${status}'`)
+      
+      return filteredUsers
+    } catch (error: any) {
+      console.error(`❌ Error fetching users by status '${status}':`, error)
       throw error
     }
   }
