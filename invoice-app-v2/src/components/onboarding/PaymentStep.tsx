@@ -96,10 +96,21 @@ const PaymentStep: React.FC<PaymentStepProps> = ({
 
     setSubmitting(true)
     try {
+      console.log('💳 Submitting payment proof for user:', userEmail)
+      console.log('📝 Transaction Reference:', transactionRef.trim())
+      
       // Here you could upload payment proof to storage if needed
       await onPaymentComplete(transactionRef.trim())
-    } catch (error) {
-      console.error('Payment proof submission error:', error)
+      
+      console.log('✅ Payment proof submitted successfully')
+    } catch (error: any) {
+      console.error('❌ Payment proof submission error:', error)
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        type: error?.constructor?.name
+      })
+      toast.error(`Failed to submit payment: ${error?.message || 'Unknown error'}`)
     } finally {
       setSubmitting(false)
     }
