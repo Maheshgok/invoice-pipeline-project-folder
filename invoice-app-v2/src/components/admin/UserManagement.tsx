@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { packageService, type PackageDefinition } from '../../services/packageService'
 import { userService, UserProfile } from '../../services/userService'
+import SuperAdminUserApproval from './SuperAdminUserApproval'
 import toast from 'react-hot-toast'
 
 interface UserManagementProps {}
@@ -26,6 +27,8 @@ interface UserStats {
   expired: number
   expiringIn7Days: number
 }
+
+type UserManagementTab = 'active' | 'approvals' | 'analytics'
 
 
 // Utility function to safely convert Firestore Timestamp to Date
@@ -41,6 +44,7 @@ const UserManagement: React.FC<UserManagementProps> = () => {
   const [users, setUsers] = useState<(UserProfile & { id: string })[]>([])
   const [filteredUsers, setFilteredUsers] = useState<(UserProfile & { id: string })[]>([])
   const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<UserManagementTab>('approvals')
   const [searchTerm, setSearchTerm] = useState('')
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'expired' | 'suspended' | 'expiring'>('all')
   const [selectedUser, setSelectedUser] = useState<(UserProfile & { id: string }) | null>(null)
@@ -271,7 +275,58 @@ const UserManagement: React.FC<UserManagementProps> = () => {
 
   return (
     <div className="space-y-6">
-      {/* Stats Grid */}
+      {/* Tabs */}
+      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+        <div className="flex border-b border-gray-200">
+          <button
+            onClick={() => setActiveTab('approvals')}
+            className={`flex-1 px-6 py-4 font-medium border-b-2 transition-colors ${
+              activeTab === 'approvals'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <div className="flex items-center justify-center space-x-2">
+              <UserCheck size={18} />
+              <span>Pending Approvals</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('active')}
+            className={`flex-1 px-6 py-4 font-medium border-b-2 transition-colors ${
+              activeTab === 'active'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <div className="flex items-center justify-center space-x-2">
+              <Users size={18} />
+              <span>Active Users</span>
+            </div>
+          </button>
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`flex-1 px-6 py-4 font-medium border-b-2 transition-colors ${
+              activeTab === 'analytics'
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-600 hover:text-gray-900'
+            }`}
+          >
+            <div className="flex items-center justify-center space-x-2">
+              <Clock size={18} />
+              <span>Analytics</span>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'approvals' && (
+        <SuperAdminUserApproval />
+      )}
+
+      {activeTab === 'active' && (
+      <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <StatCard
           title="Total Users"
@@ -682,6 +737,16 @@ const UserManagement: React.FC<UserManagementProps> = () => {
                 </div>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'analytics' && (
+        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+          <div className="text-gray-500">
+            <Clock className="mx-auto h-12 w-12 mb-4 opacity-50" />
+            <p className="text-lg font-medium">Analytics coming soon</p>
+            <p className="text-sm mt-2">Detailed user analytics and reports will be available here</p>
           </div>
         </div>
       )}
