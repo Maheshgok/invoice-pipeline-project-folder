@@ -326,8 +326,8 @@ const UserManagement: React.FC<UserManagementProps> = () => {
       )}
 
       {activeTab === 'active' && (
-      <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <StatCard
           title="Total Users"
           value={stats.total}
