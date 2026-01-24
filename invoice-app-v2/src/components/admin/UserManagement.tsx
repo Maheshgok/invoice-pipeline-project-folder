@@ -11,7 +11,10 @@ import {
   RefreshCw,
   Download,
   Eye,
-  ChevronDown
+  ChevronDown,
+  Trash2,
+  Lock,
+  Unlock
 } from 'lucide-react'
 import { packageService, type PackageDefinition } from '../../services/packageService'
 import { userService, UserProfile } from '../../services/userService'
@@ -209,6 +212,39 @@ const UserManagement: React.FC<UserManagementProps> = () => {
       loadUsers()
     } catch (error: any) {
       toast.error(error.message || 'Failed to activate user')
+    }
+  }
+
+  const handleDeleteUser = async (userUid: string, userEmail: string) => {
+    const firstConfirm = window.confirm(
+      `⚠️ WARNING: This will permanently delete ${userEmail} and ALL their data.\n\n` +
+      `This includes:\n` +
+      `- User profile\n` +
+      `- All invoices\n` +
+      `- All processing jobs\n` +
+      `- Workspace data\n\n` +
+      `This action CANNOT be undone.\n\n` +
+      `Are you sure you want to proceed?`
+    )
+    
+    if (!firstConfirm) return
+    
+    const deleteConfirmation = prompt(
+      `To confirm deletion, type: DELETE`
+    )
+    
+    if (deleteConfirmation !== 'DELETE') {
+      toast.error('Deletion cancelled - confirmation text did not match')
+      return
+    }
+    
+    try {
+      await userService.deleteUserCompletely(userUid)
+      toast.success(`✅ User ${userEmail} and all data permanently deleted`)
+      loadUsers()
+    } catch (error: any) {
+      console.error('Error deleting user:', error)
+      toast.error(error.message || 'Failed to delete user')
     }
   }
 
@@ -490,39 +526,50 @@ const UserManagement: React.FC<UserManagementProps> = () => {
                           ) : 'Never'}
                         </td>
                         
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium space-x-2">
-                          <button
-                            onClick={() => { setSelectedUser(user); setShowUserModal(true) }}
-                            className="text-blue-600 hover:text-blue-900"
-                          >
-                            <Eye size={16} />
-                          </button>
-                          
-                          {user.isActive === false ? (
+                        <td className="px-6 py-4 text-right text-sm font-medium">
+                          <div className="flex gap-2 justify-end items-center">
                             <button
-                              onClick={() => handleActivateUser(user.id)}
-                              className="text-green-600 hover:text-green-900"
-                              title="Activate User"
+                              onClick={() => { setSelectedUser(user); setShowUserModal(true) }}
+                              className="text-blue-600 hover:text-blue-900 p-1"
+                              title="View user details"
                             >
-                              <UserCheck size={16} />
+                              <Eye size={16} />
                             </button>
-                          ) : (
+                            
+                            {user.isActive === false || user.approvalStatus === 'suspended' ? (
+                              <button
+                                onClick={() => handleActivateUser(user.id)}
+                                className="text-blue-600 hover:text-blue-900 p-1"
+                                title="Reactivate suspended user"
+                              >
+                                <Unlock size={16} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => handleSuspendUser(user.id)}
+                                className="text-orange-600 hover:text-orange-900 p-1"
+                                title="Suspend user account"
+                              >
+                                <Lock size={16} />
+                              </button>
+                            )}
+                            
                             <button
-                              onClick={() => handleSuspendUser(user.id)}
-                              className="text-red-600 hover:text-red-900"
-                              title="Suspend User"
+                              onClick={() => handleDeleteUser(user.id, user.email)}
+                              className="text-red-800 hover:text-red-950 p-1"
+                              title="Permanently delete user and all data"
                             >
-                              <UserX size={16} />
+                              <Trash2 size={16} />
                             </button>
-                          )}
-                          
-                          <button
-                            onClick={() => handleSendReminder(user.id)}
-                            className="text-amber-600 hover:text-amber-900"
-                            title="Send Reminder"
-                          >
-                            <Mail size={16} />
-                          </button>
+                            
+                            <button
+                              onClick={() => handleSendReminder(user.id)}
+                              className="text-gray-600 hover:text-gray-900 p-1"
+                              title="Send email to user"
+                            >
+                              <Mail size={16} />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     )
