@@ -738,16 +738,18 @@ const UserManagement: React.FC<UserManagementProps> = () => {
                   </div>
                 </div>
               </div>
+            </div>
             )}
-        
 
-      {activeTab === 'analytics' && (
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
-          <div className="text-gray-500">
-            <Clock className="mx-auto h-12 w-12 mb-4 opacity-50" />
-            <p className="text-lg font-medium">Analytics coming soon</p>
-            <p className="text-sm mt-2">Detailed user analytics and reports will be available here</p>
-          </div>
+          {activeTab === 'analytics' && (
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-8 text-center">
+              <div className="text-gray-500">
+                <Clock className="mx-auto h-12 w-12 mb-4 opacity-50" />
+                <p className="text-lg font-medium">Analytics coming soon</p>
+                <p className="text-sm mt-2">Detailed user analytics and reports will be available here</p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
