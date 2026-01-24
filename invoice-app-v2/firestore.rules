@@ -47,12 +47,40 @@ service cloud.firestore {
       // Allow service account writes for queue-processor
       allow write: if request.auth == null  // Service account context
         && request.resource.data.userUID == userId;  // Verify data integrity
+      // Allow super_admin to delete any user's invoice results
+      allow delete: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
     
     // User-specific archived invoice results (for local archiving)
     match /users/{userId}/invoice_results_archive/{resultId} {
       allow read, write: if request.auth != null 
         && request.auth.uid == userId;
+      // Allow super_admin to delete any user's archived results
+      allow delete: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+    
+    // User-specific processing jobs
+    match /users/{userId}/processing_jobs/{jobId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == userId;
+      // Allow super_admin to delete any user's processing jobs
+      allow delete: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
+    }
+    
+    // User-specific workspace data
+    match /users/{userId}/workspace/{docId} {
+      allow read, write: if request.auth != null 
+        && request.auth.uid == userId;
+      // Allow super_admin to delete any user's workspace data
+      allow delete: if request.auth != null 
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'super_admin';
     }
     
     // User organization stored under each user: allow user to manage their own organization
