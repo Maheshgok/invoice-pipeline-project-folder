@@ -58,6 +58,11 @@ const SuperAdminUserApproval: React.FC = () => {
       // Load users with 'paid' status (submitted payment, awaiting verification)
       const paidUsersData = await userService.getUsersByPaymentStatus('paid')
       console.log(`✅ Found ${paidUsersData.length} users with 'paid' status`, paidUsersData)
+      if (paidUsersData.length > 0) {
+        console.log('📋 User data structure:', paidUsersData[0])
+        console.log('🔍 isActive field:', paidUsersData[0].isActive)
+        console.log('🔍 approvalStatus field:', paidUsersData[0].approvalStatus)
+      }
       setPaidUsers(paidUsersData as PendingUser[])
       
       // Load users with 'pending' status (started but not submitted)
@@ -171,7 +176,8 @@ const SuperAdminUserApproval: React.FC = () => {
       await userService.suspendUser(userId, reason)
       
       toast.success(`User ${userEmail} suspended`)
-      await loadAllData()
+      // Reload pending users to refresh the UI
+      await loadPendingUsers()
     } catch (error: any) {
       console.error('Error suspending user:', error)
       toast.error(error.message || 'Failed to suspend user')
@@ -191,7 +197,8 @@ const SuperAdminUserApproval: React.FC = () => {
       await userService.reactivateUser(userId)
       
       toast.success(`User ${userEmail} reactivated`)
-      await loadAllData()
+      // Reload pending users to refresh the UI
+      await loadPendingUsers()
     } catch (error: any) {
       console.error('Error reactivating user:', error)
       toast.error(error.message || 'Failed to reactivate user')
@@ -453,14 +460,14 @@ const SuperAdminUserApproval: React.FC = () => {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                           {user.createdAt?.toDate().toLocaleDateString() || 'N/A'}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                          <div className="flex gap-2 flex-wrap">
+                        <td className="px-6 py-4 text-sm font-medium">
+                          <div className="flex gap-2 flex-wrap items-center min-h-10">
                             {user.paymentStatus?.status === 'paid' && (
                               <>
                                 <button
                                   onClick={() => approveUser(user.id, user.email || '')}
                                   disabled={actionLoading === user.id}
-                                  className="text-green-600 hover:text-green-900 flex items-center gap-1 disabled:opacity-50"
+                                  className="text-green-600 hover:text-green-900 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                                   title="Approve payment"
                                 >
                                   {actionLoading === user.id ? (
@@ -473,7 +480,7 @@ const SuperAdminUserApproval: React.FC = () => {
                                 <button
                                   onClick={() => rejectUser(user.id, user.email || '')}
                                   disabled={actionLoading === user.id}
-                                  className="text-red-600 hover:text-red-900 flex items-center gap-1 disabled:opacity-50"
+                                  className="text-red-600 hover:text-red-900 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                                   title="Reject payment"
                                 >
                                   <X className="w-4 h-4" />
@@ -482,11 +489,11 @@ const SuperAdminUserApproval: React.FC = () => {
                               </>
                             )}
                             
-                            {user.approvalStatus === 'suspended' ? (
+                            {user.isActive === false || user.approvalStatus === 'suspended' ? (
                               <button
                                 onClick={() => reactivateUserAccount(user.id, user.email || '')}
                                 disabled={actionLoading === user.id}
-                                className="text-blue-600 hover:text-blue-900 flex items-center gap-1 disabled:opacity-50"
+                                className="text-blue-600 hover:text-blue-900 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                                 title="Reactivate suspended user"
                               >
                                 {actionLoading === user.id ? (
@@ -500,7 +507,7 @@ const SuperAdminUserApproval: React.FC = () => {
                               <button
                                 onClick={() => suspendUserAccount(user.id, user.email || '')}
                                 disabled={actionLoading === user.id}
-                                className="text-orange-600 hover:text-orange-900 flex items-center gap-1 disabled:opacity-50"
+                                className="text-orange-600 hover:text-orange-900 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                                 title="Suspend user account"
                               >
                                 <Lock className="w-4 h-4" />
@@ -511,7 +518,7 @@ const SuperAdminUserApproval: React.FC = () => {
                             <button
                               onClick={() => deleteUserCompletely(user.id, user.email || '')}
                               disabled={actionLoading === user.id}
-                              className="text-red-800 hover:text-red-950 flex items-center gap-1 disabled:opacity-50"
+                              className="text-red-800 hover:text-red-950 flex items-center gap-1 disabled:opacity-50 whitespace-nowrap"
                               title="Permanently delete user and all data"
                             >
                               {actionLoading === user.id ? (
@@ -524,7 +531,7 @@ const SuperAdminUserApproval: React.FC = () => {
                             
                             <button
                               onClick={() => console.log('View user:', user.id)}
-                              className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
+                              className="text-blue-600 hover:text-blue-900 flex items-center gap-1 whitespace-nowrap"
                               title="View user details"
                             >
                               <Eye className="w-4 h-4" />
