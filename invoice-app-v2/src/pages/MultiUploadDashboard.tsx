@@ -906,7 +906,7 @@ const MultiUploadDashboard: React.FC = () => {
         </div>
 
         {/* Right - Progress Indicator */}
-        <div className="bg-white rounded-lg shadow-lg p-6 flex flex-col min-h-96">
+        <div className="bg-white rounded-lg shadow-lg p-6 flex flex-col h-96">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Processing Queue</h2>
           </div>
