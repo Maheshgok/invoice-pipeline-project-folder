@@ -148,11 +148,120 @@ def run_extraction(base64_content: str, mime_type: str, model: str = "gpt-4o") -
     """
     Reusable extraction logic - called both initially and during retries.
     Returns (success, extracted_data, line_items_count)
+    Comprehensive extraction of ALL invoice data including vendor, buyer, line items, taxes, transport, and payment details.
     """
-    extraction_prompt = """You are an invoice data extraction expert. Extract all data from the invoice.
-Return JSON with:
-- headers_raw: {invoice_number, invoice_date, vendor_name, vendor_gstin, buyer_name, buyer_gstin, total_amount, tax_amount}
-- line_items_raw: [{description, quantity, unit_price, amount, hsn_code, tax_rate}]"""
+    extraction_prompt = """You are an expert OCR data extractor. Extract MAXIMUM possible data from this invoice image.
+
+EXTRACTION RULES:
+1. Extract ALL visible text fields
+2. Capture ALL line items with complete details
+3. Extract vendor/buyer information comprehensively
+4. Identify ALL tax-related information (GST rates, amounts)
+5. Capture payment terms, due dates, reference numbers
+6. Extract bank details, contact information, addresses
+7. Identify transport/shipping information
+8. Note any discounts, charges, or fees
+
+COMPREHENSIVE OUTPUT FORMAT:
+{
+  "document_type": "",
+  "vendor_details": {
+    "name": "",
+    "address": "",
+    "gstin": "",
+    "pan": "",
+    "contact_number": "",
+    "email": "",
+    "website": ""
+  },
+  "buyer_details": {
+    "name": "",
+    "address": "",
+    "gstin": "",
+    "contact_number": "",
+    "email": ""
+  },
+  "invoice_details": {
+    "invoice_number": "",
+    "invoice_date": "",
+    "due_date": "",
+    "po_number": "",
+    "challan_number": "",
+    "dispatch_doc_no": "",
+    "dispatched_through": "",
+    "destination": "",
+    "terms_of_delivery": ""
+  },
+  "line_items": [
+    {
+      "serial_no": "",
+      "item_description": "",
+      "hsn_sac_code": "",
+      "quantity": 0,
+      "unit": "",
+      "rate": 0,
+      "per": "",
+      "discount_percent": 0,
+      "discount_amount": 0,
+      "taxable_value": 0,
+      "cgst_rate": 0,
+      "cgst_amount": 0,
+      "sgst_rate": 0,
+      "sgst_amount": 0,
+      "igst_rate": 0,
+      "igst_amount": 0,
+      "total_amount": 0
+    }
+  ],
+  "additional_charges": [
+    {
+      "description": "",
+      "amount": 0,
+      "tax_applicable": false
+    }
+  ],
+  "tax_summary": {
+    "total_taxable_value": 0,
+    "total_cgst": 0,
+    "total_sgst": 0,
+    "total_igst": 0,
+    "total_tax_amount": 0,
+    "round_off": 0,
+    "grand_total": 0
+  },
+  "payment_details": {
+    "bank_name": "",
+    "account_number": "",
+    "ifsc_code": "",
+    "branch": "",
+    "upi_id": ""
+  },
+  "transport_details": {
+    "transport_mode": "",
+    "vehicle_number": "",
+    "lr_rr_number": "",
+    "lr_rr_date": "",
+    "freight_charges": 0
+  },
+  "additional_info": {
+    "terms_and_conditions": "",
+    "payment_terms": "",
+    "delivery_terms": "",
+    "warranty_terms": "",
+    "notes": "",
+    "certifications": ""
+  }
+}
+
+EXTRACTION GUIDELINES:
+1. If a field is not visible, use "" for strings and 0 for numbers
+2. Extract exact text as visible on the invoice
+3. Don't interpret or modify the extracted data
+4. Include ALL line items, even if incomplete
+5. Extract partial information rather than omit entirely
+6. Note any unclear or partially visible text
+
+Return ONLY the JSON object with maximum extracted data."""
     
     try:
         response = openai_client.chat.completions.create(
@@ -165,12 +274,13 @@ Return JSON with:
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": "Extract all data from this invoice:"},
+                        {"type": "text", "text": "Extract all invoice data comprehensively:"},
                         {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_content}"}}
                     ]
                 }
             ],
-            max_tokens=4000
+            max_tokens=4000,
+            temperature=0.2  # Lower temperature for consistent extraction
         )
         
         response_text = response.choices[0].message.content
@@ -189,11 +299,20 @@ Return JSON with:
             extracted_data = json.loads(json_str)
         except:
             extracted_data = {
-                'headers_raw': {'raw_text': response_text},
-                'line_items_raw': []
+                'vendor_details': {},
+                'buyer_details': {},
+                'invoice_details': {},
+                'line_items': [],
+                'additional_charges': [],
+                'tax_summary': {},
+                'payment_details': {},
+                'transport_details': {},
+                'additional_info': {},
+                'raw_text': response_text
             }
         
-        line_items_count = len(extracted_data.get('line_items_raw', []))
+        # Extract line items count from comprehensive format
+        line_items_count = len(extracted_data.get('line_items', []))
         return (True, extracted_data, line_items_count)
     
     except Exception as e:
@@ -265,14 +384,43 @@ def extract_invoice():
         
         logger.info(f"✅ Initial extraction: {line_items_count} line items found")
         
-        # Store extraction
+        # Store comprehensive extraction (all fields preserved)
         extraction_doc = {
-            'headers_raw': extracted_data.get('headers_raw', {}),
-            'line_items_raw': extracted_data.get('line_items_raw', []),
+            'document_type': extracted_data.get('document_type', 'invoice'),
+            'vendor_details': extracted_data.get('vendor_details', {}),
+            'buyer_details': extracted_data.get('buyer_details', {}),
+            'invoice_details': extracted_data.get('invoice_details', {}),
+            'line_items': extracted_data.get('line_items', []),
+            'additional_charges': extracted_data.get('additional_charges', []),
+            'tax_summary': extracted_data.get('tax_summary', {}),
+            'payment_details': extracted_data.get('payment_details', {}),
+            'transport_details': extracted_data.get('transport_details', {}),
+            'additional_info': extracted_data.get('additional_info', {}),
             'extracted_at': datetime.utcnow().isoformat(),
-            'model_used': 'gpt-4o'
+            'model_used': 'gpt-4o',
+            'extraction_completeness': {
+                'vendor_extracted': bool(extracted_data.get('vendor_details', {}).get('name')),
+                'buyer_extracted': bool(extracted_data.get('buyer_details', {}).get('name')),
+                'line_items_count': line_items_count,
+                'has_payment_details': bool(extracted_data.get('payment_details', {}).get('bank_name')),
+                'has_transport_details': bool(extracted_data.get('transport_details', {}).get('transport_mode'))
+            }
         }
         db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).collection('extraction').document('main').set(extraction_doc)
+        
+        # Legacy format for backward compatibility: also store headers_raw and line_items_raw
+        extraction_doc['headers_raw'] = {
+            'invoice_number': extracted_data.get('invoice_details', {}).get('invoice_number', ''),
+            'invoice_date': extracted_data.get('invoice_details', {}).get('invoice_date', ''),
+            'vendor_name': extracted_data.get('vendor_details', {}).get('name', ''),
+            'vendor_gstin': extracted_data.get('vendor_details', {}).get('gstin', ''),
+            'buyer_name': extracted_data.get('buyer_details', {}).get('name', ''),
+            'buyer_gstin': extracted_data.get('buyer_details', {}).get('gstin', ''),
+            'total_amount': extracted_data.get('tax_summary', {}).get('grand_total', 0),
+            'tax_amount': extracted_data.get('tax_summary', {}).get('total_tax_amount', 0)
+        }
+        extraction_doc['line_items_raw'] = extracted_data.get('line_items', [])
+        db.collection('users').document(tenant_id).collection('invoice_results').document(job_id).collection('extraction').document('main').update(extraction_doc)
         
         # ⚠️ SOFT ERROR CHECK: Zero items → retry with backoff using cheaper model
         if line_items_count == 0:
