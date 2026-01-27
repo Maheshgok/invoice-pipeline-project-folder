@@ -350,8 +350,10 @@ def combine_and_store_data():
             'gcs_input_path': job_metadata.get('gcs_input_path', ''),
             'user_email': user_context.get('email', ''),
             'userUID': user_uid,
-            # Include journal_entries for frontend compatibility
+            # Include journal_entries for frontend compatibility (UNCHANGED - maintains current display)
             'journal_entries': frontend_journal_entries,
+            # Flag indicating data schemas are available for tracking
+            'has_data_schemas': True,
             'invoice_header': {
                 'vendor_name': header_data.get('vendor_name', ''),
                 'vendor_gstin': header_data.get('vendor_gstin', ''),
@@ -411,8 +413,8 @@ def combine_and_store_data():
         if organization_id:
             invoice_result['organizationId'] = organization_id
         
-        # Use batch write for atomicity: write main doc + subcollection entries
-        logger.info(f"📦 Starting batch write: main doc + {len(frontend_journal_entries)} journal entries")
+        # Use batch write for atomicity: write main doc + subcollection entries + data schemas
+        logger.info(f"📦 Starting batch write: main doc + {len(frontend_journal_entries)} journal entries + data schemas")
         batch = db.batch()
         
         # Write main document to users/{uid}/invoice_results/{job_id}
@@ -424,11 +426,52 @@ def combine_and_store_data():
             entry_ref = main_doc_ref.collection('journal_entries').document(f"line_{idx}")
             batch.set(entry_ref, entry)
         
+        # NEW: Create data_schemas subcollection for versioning and tracking
+        # Store original entries as they came from the pipeline
+        logger.info(f"📝 Creating data_schemas/original with {len(frontend_journal_entries)} original entries")
+        original_schema_doc = {
+            'entries': frontend_journal_entries,  # Original state as received from pipeline
+            'created_at': datetime.now().isoformat(),
+            'entry_count': len(frontend_journal_entries),
+            'schema_version': '1.0',
+            'source': 'data_combiner_initial_processing'
+        }
+        data_schemas_original_ref = db.collection('users').document(user_uid).collection('invoice_results').document(job_id).collection('data_schemas').document('original')
+        batch.set(data_schemas_original_ref, original_schema_doc)
+        
+        # Store current version (same as original at creation time)
+        logger.info(f"📝 Creating data_schemas/current (mirror of original)")
+        current_schema_doc = {
+            'entries': frontend_journal_entries,  # Current state
+            'created_at': datetime.now().isoformat(),
+            'last_updated': datetime.now().isoformat(),
+            'updated_by': user_uid,
+            'entry_count': len(frontend_journal_entries),
+            'schema_version': '1.0',
+            'has_modifications': False,
+            'modification_count': 0
+        }
+        data_schemas_current_ref = db.collection('users').document(user_uid).collection('invoice_results').document(job_id).collection('data_schemas').document('current')
+        batch.set(data_schemas_current_ref, current_schema_doc)
+        
+        # Initialize modifications log (empty at creation)
+        logger.info(f"📝 Initializing data_schemas/modifications log")
+        modifications_doc = {
+            'total_modifications': 0,
+            'created_at': datetime.now().isoformat(),
+            'first_modification': None,
+            'last_modification': None,
+            'modification_history': []  # Will grow as user makes edits
+        }
+        data_schemas_modifications_ref = db.collection('users').document(user_uid).collection('invoice_results').document(job_id).collection('data_schemas').document('modifications')
+        batch.set(data_schemas_modifications_ref, modifications_doc)
+        
         # Commit batch with 30-second timeout
         try:
-            logger.info(f"💾 Committing batch with {len(frontend_journal_entries) + 1} documents (1 main + {len(frontend_journal_entries)} entries)")
+            logger.info(f"💾 Committing batch with {len(frontend_journal_entries) + 4} documents (1 main + {len(frontend_journal_entries)} entries + 3 data schemas)")
             batch.commit(timeout=30.0)
             logger.info(f"✅ Batch committed successfully to {storage_path}")
+            logger.info(f"✅ Data schemas created: original, current, modifications")
         except Exception as e:
             logger.error(f"❌ Batch write failed: {str(e)}")
             return jsonify({
@@ -444,7 +487,12 @@ def combine_and_store_data():
             'storage_location': storage_path,
             'main_document_size_bytes': len(json.dumps(invoice_result)),
             'total_entries_stored': len(frontend_journal_entries),
-            'storage_method': 'batch_write_with_subcollection'
+            'storage_method': 'batch_write_with_subcollection',
+            'data_schemas_created': {
+                'original': 'Stores original entries as received from pipeline',
+                'current': 'Current version (can be modified by user)',
+                'modifications': 'Audit log of all changes made'
+            }
         }
         
         logger.info(f"✅ Job {job_id} completed - {len(frontend_journal_entries)} entries (batch), balanced: {balance_check['is_balanced']}, debit: {balance_check['total_debit']}, credit: {balance_check['total_credit']}")
@@ -459,7 +507,8 @@ def combine_and_store_data():
                 'is_balanced': balance_check['is_balanced'],
                 'total_debit': balance_check['total_debit'],
                 'total_credit': balance_check['total_credit'],
-                'entries_stored_in_subcollection': True
+                'entries_stored_in_subcollection': True,
+                'data_schemas_available': True
             }
         }), 200
         

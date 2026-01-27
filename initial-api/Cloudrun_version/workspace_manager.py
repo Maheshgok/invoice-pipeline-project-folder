@@ -56,6 +56,7 @@ def create_user_workspace_structure(user_uid: str, bucket_name: str):
         # Create folder structure by creating placeholder files
         folders = [
             f'users/{user_uid}/raw/.gitkeep',
+            f'users/{user_uid}/results/.gitkeep',
             f'users/{user_uid}/processed/.gitkeep', 
             f'users/{user_uid}/archived/.gitkeep',
             f'users/{user_uid}/temp/.gitkeep'
@@ -87,6 +88,7 @@ def initialize_workspace_metadata(user_uid: str, user_email: str):
             'last_accessed': datetime.utcnow(),
             'folder_structure': {
                 'raw': f'users/{user_uid}/raw/',
+                'results': f'users/{user_uid}/results/',
                 'processed': f'users/{user_uid}/processed/',
                 'archived': f'users/{user_uid}/archived/',
                 'temp': f'users/{user_uid}/temp/'

@@ -751,6 +751,134 @@ def generate_signed_url():
         logger.error(f"Error generating signed URL: {str(e)}")
         return jsonify({"error": f"Failed to generate signed URL: {str(e)}"}), 500
 
+@app.route('/invoice-results/<job_id>/entries/<line_id>', methods=['PUT', 'OPTIONS'])
+def update_journal_entry(job_id, line_id):
+    """
+    Update a journal entry and track modification in data_schemas
+    
+    Request body: {
+        "field": "account_code",
+        "new_value": "6210",
+        "old_value": "6200"
+    }
+    
+    Updates:
+    1. Main document's journal_entries array
+    2. Subcollection journal_entries/{line_id}
+    3. data_schemas/current/entries array
+    4. data_schemas/modifications log
+    """
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        origin = request.headers.get('Origin')
+        allowed_origins = ['https://invoiceparse.netlify.app', 'https://profound-babka-8bbaa6.netlify.app', 'http://localhost:3000', 'http://localhost:3001']
+        if origin in allowed_origins:
+            response.headers['Access-Control-Allow-Origin'] = origin
+        response.headers['Access-Control-Allow-Methods'] = 'PUT, OPTIONS'
+        response.headers['Access-Control-Allow-Headers'] = 'Authorization, Content-Type'
+        return response
+    
+    try:
+        # Authenticate user
+        auth_header = request.headers.get('Authorization', '')
+        try:
+            user_context = verify_auth_token(auth_header)
+            user_uid = user_context['uid']
+        except ValueError:
+            return jsonify({'error': 'Unauthorized'}), 401
+        
+        data = request.get_json()
+        field = data.get('field')
+        new_value = data.get('new_value')
+        old_value = data.get('old_value')
+        
+        if not field or new_value is None:
+            return jsonify({'error': 'Missing field or new_value'}), 400
+        
+        logger.info(f"📝 Updating entry {line_id} in job {job_id} for user {user_uid[:8]}")
+        logger.info(f"   Field: {field}, Old: {old_value}, New: {new_value}")
+        
+        # Get Firestore references
+        db = firestore_client
+        job_ref = db.collection('users').document(user_uid).collection('invoice_results').document(job_id)
+        entry_ref = job_ref.collection('journal_entries').document(line_id)
+        current_schema_ref = job_ref.collection('data_schemas').document('current')
+        modifications_ref = job_ref.collection('data_schemas').document('modifications')
+        
+        # Get current journal entries to update the array
+        job_doc = job_ref.get()
+        if not job_doc.exists:
+            return jsonify({'error': 'Job not found'}), 404
+        
+        # Update in batch
+        batch = db.batch()
+        
+        # 1. Update main document's journal_entries array
+        current_entries = job_doc.get('journal_entries', [])
+        line_num = int(line_id.split('_')[1]) if '_' in line_id else int(line_id)
+        
+        if line_num < len(current_entries):
+            current_entries[line_num][field] = new_value
+            batch.update(job_ref, {'journal_entries': current_entries, 'updated_at': datetime.now().isoformat()})
+        
+        # 2. Update subcollection entry
+        batch.update(entry_ref, {field: new_value})
+        
+        # 3. Update data_schemas/current entries
+        current_schema_doc = current_schema_ref.get()
+        if current_schema_doc.exists:
+            current_schema_entries = current_schema_doc.get('entries', [])
+            if line_num < len(current_schema_entries):
+                current_schema_entries[line_num][field] = new_value
+            
+            batch.update(current_schema_ref, {
+                'entries': current_schema_entries,
+                'last_updated': datetime.now().isoformat(),
+                'updated_by': user_uid,
+                'has_modifications': True
+            })
+        
+        # 4. Log modification
+        modification_log = {
+            'timestamp': datetime.now().isoformat(),
+            'modified_by': user_uid,
+            'line_id': line_id,
+            'field': field,
+            'old_value': old_value,
+            'new_value': new_value
+        }
+        
+        modifications_doc = modifications_ref.get()
+        if modifications_doc.exists:
+            mod_count = modifications_doc.get('total_modifications', 0)
+            mod_history = modifications_doc.get('modification_history', [])
+            mod_history.append(modification_log)
+            
+            batch.update(modifications_ref, {
+                'total_modifications': mod_count + 1,
+                'last_modification': datetime.now().isoformat(),
+                'modification_history': mod_history
+            })
+        
+        # Commit batch
+        batch.commit()
+        
+        logger.info(f"✅ Entry {line_id} updated successfully - modification logged")
+        
+        return jsonify({
+            'status': 'success',
+            'job_id': job_id,
+            'line_id': line_id,
+            'field': field,
+            'new_value': new_value,
+            'timestamp': datetime.now().isoformat(),
+            'modification_logged': True
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"❌ Error updating entry: {str(e)}")
+        return jsonify({'error': f'Failed to update entry: {str(e)}'}), 500
+
 @app.route('/health', methods=['GET', 'OPTIONS'])
 def health_check():
     """Health check endpoint - standard Cloud Run health check"""

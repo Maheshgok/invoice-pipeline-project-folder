@@ -906,12 +906,12 @@ const MultiUploadDashboard: React.FC = () => {
         </div>
 
         {/* Right - Progress Indicator */}
-        <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="bg-white rounded-lg shadow-lg p-6 flex flex-col min-h-96">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-800">Processing Queue</h2>
           </div>
           
-          <div className="space-y-3 max-h-80 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto space-y-3">
             {uploadedFiles.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <FileText className="mx-auto h-12 w-12 text-gray-300 mb-2" />
@@ -919,7 +919,7 @@ const MultiUploadDashboard: React.FC = () => {
               </div>
             ) : (
               uploadedFiles.map((file) => (
-                <div key={file.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg">
+                <div key={file.id} className="flex items-center space-x-3 p-3 bg-gray-50 rounded-lg flex-shrink-0">
                   <div className="flex-shrink-0">
                     {getStatusIcon(file.status)}
                   </div>

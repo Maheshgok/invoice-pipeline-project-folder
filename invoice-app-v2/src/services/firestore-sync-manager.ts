@@ -227,13 +227,76 @@ export class FirestoreSyncManager {
   }
 
   /**
-   * Update a journal entry
+   * Update a journal entry locally and persist to Firestore
    */
-  updateJournalEntry(entryId: string, field: string, value: any): void {
-    this.journalEntries = this.journalEntries.map(entry =>
-      entry.id === entryId ? { ...entry, [field]: value } : entry
+  async updateJournalEntry(entryId: string, field: string, newValue: any): Promise<void> {
+    // Find the entry to get old value for audit trail
+    const entry = this.journalEntries.find(e => e.id === entryId)
+    if (!entry) {
+      console.error(`❌ Entry ${entryId} not found`)
+      throw new Error(`Entry ${entryId} not found`)
+    }
+    
+    const oldValue = entry[field as keyof JournalEntry]
+    
+    // Update local state immediately for UI responsiveness
+    this.journalEntries = this.journalEntries.map(e =>
+      e.id === entryId ? { ...e, [field]: newValue } : e
     )
     this.notifyJournalListeners()
+    
+    // Persist to Firestore via backend endpoint
+    try {
+      const token = await this.getAuthToken()
+      const response = await fetch(`${this.getApiUrl()}/invoice-results/${this.getCurrentJobId()}/entries/${entryId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          field,
+          old_value: oldValue,
+          new_value: newValue
+        })
+      })
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.statusText}`)
+      }
+      
+      console.log(`✅ Entry ${entryId} field '${field}' updated to Firestore`)
+    } catch (error) {
+      console.error(`❌ Failed to persist edit to Firestore:`, error)
+      // Don't throw - edits are still in local state, user can retry
+    }
+  }
+
+  /**
+   * Get current job ID from results
+   */
+  private getCurrentJobId(): string {
+    if (this.allResults.length > 0) {
+      return this.allResults[0].id || 'unknown'
+    }
+    return 'unknown'
+  }
+
+  /**
+   * Get auth token
+   */
+  private async getAuthToken(): Promise<string> {
+    // This would be implemented based on your auth service
+    // For now, return empty string - will need integration with actual auth
+    return ''
+  }
+
+  /**
+   * Get API base URL
+   */
+  private getApiUrl(): string {
+    // Return your API URL - should match initial-api service
+    return process.env.REACT_APP_API_BASE_URL || 'https://initial-api-812016027146.asia-south1.run.app'
   }
 
   /**

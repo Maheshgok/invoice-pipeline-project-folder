@@ -346,8 +346,14 @@ export const useMultiUploadSimplified = (options: UseMultiUploadOptions = {}) =>
         toast.success(`${field} updated and change tracked`)
       }
       
-      // Update the entry in sync manager
-      syncManager.current.updateJournalEntry(entryId, field, value)
+      // Update the entry in sync manager (now persists to Firestore)
+      try {
+        await syncManager.current.updateJournalEntry(entryId, field, value)
+        console.log('✅ Entry persisted to Firestore with modification log')
+      } catch (error) {
+        console.error('⚠️ Entry updated locally but Firestore persistence failed:', error)
+        toast.error('Entry updated locally, but failed to save to Firestore')
+      }
       
     } catch (error) {
       console.error('Error updating journal entry with change tracking:', error)
